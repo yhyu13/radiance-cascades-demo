@@ -1,3 +1,20 @@
+## Edit by yhyu13
+
+Original repo https://gitlab.doc.gold.ac.uk/ahall001/radiance-cascades-demo
+
+Credit to original author. Reupload by yhyu13 on github.com, only the `main` branch is uploaded! Check out the original author's repo for latest code.
+
+Implementation references in ./Renderences directory.
+
+![Rainbow_scene](References/radiance_cascades_u9y1vjcJHe.png)
+
+## Caveats
+
+1. Must run in root dir
+2. OpenGL renderdoc debugging not working for v1.42
+
+---
+
 # Radiance Cascades Demo
 
 ![Penumbra](penumbra.png)
