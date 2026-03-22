@@ -16,6 +16,8 @@
 - ✅ 光线追踪与步进原理
 - ✅ Radiance Cascades 层级优化技术
 - ✅ 实时全局光照实现方法
+- ✅ 交互式绘制功能
+- ✅ 调试和性能优化技巧
 
 ### 课程结构
 
@@ -42,15 +44,15 @@
 │  进阶篇 (Class 7-9)                                         │
 │  ┌───────────┬───────────┬───────────┬───────────┐        │
 │  │  Class 7  │  Class 8  │  Class 9  │  Class 10 │        │
-│  │ 传统 GI   │    RC     │  RC 级联   │  用户交互  │        │
-│  │  光线投射  │  基础理论  │  合并技术  │  画笔绘制  │        │
+│  │ 传统 GI   │    RC     │  RC 级联   │  输出与   │        │
+│  │  光线投射  │  基础理论  │  合并技术  │   调试    │        │
 │  └───────────┴───────────┴───────────┴───────────┘        │
 │           │                                                 │
 │           ▼                                                 │
 │  实战篇 (Class 11)                                          │
 │  ┌───────────────────────────────────────────┐             │
 │  │              Class 11                      │             │
-│  │         完整管线整合与调试技巧             │             │
+│  │         完整管线整合与性能优化             │             │
 │  └───────────────────────────────────────────┘             │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -87,7 +89,8 @@ flowchart TD
   - GLSL 语法基础
   - fragment shader 工作原理
   - `default.vert` 顶点变换
-- **参考文档**: `./res/doc/default_vert.md`
+- **参考文档**: [`./res/doc/default_vert.md`](./res/doc/default_vert.md)
+- **课程文件**: [`class1_GLSL_basics.md`](./class1_GLSL_basics.md)
 - **预计时间**: 2-3 小时
 
 #### Class 2: 场景预处理——prepscene.frag
@@ -97,7 +100,8 @@ flowchart TD
   - SDF（有符号距离场）圆形函数
   - HSV↔RGB 颜色空间转换
   - 动态元素（轨道球、鼠标光效）
-- **参考文档**: `./res/doc/prepscene_frag.md`
+- **参考文档**: [`./res/doc/prepscene_frag.md`](./res/doc/prepscene_frag.md)
+- **课程文件**: [`class2_scene_preparation.md`](./class2_scene_preparation.md)
 - **预计时间**: 3-4 小时
 
 #### Class 3: 距离场种子编码——prepjfa.frag
@@ -106,7 +110,8 @@ flowchart TD
   - UV 坐标编码到 RG 通道
   - 种子点标记策略
   - Alpha 通道作为有效性标志
-- **参考文档**: `./res/doc/prepjfa_frag.md`
+- **参考文档**: [`./res/doc/prepjfa_frag.md`](./res/doc/prepjfa_frag.md)
+- **课程文件**: [`class3_jfa_seed_encoding.md`](./class3_jfa_seed_encoding.md)
 - **预计时间**: 2-3 小时
 
 ---
@@ -120,7 +125,8 @@ flowchart TD
   - 跳跃式传播策略
   - O(log n) 复杂度分析
   - 多 pass 执行流程
-- **参考文档**: `./res/doc/jfa_frag.md`
+- **参考文档**: [`./res/doc/jfa_frag.md`](./res/doc/jfa_frag.md)
+- **课程文件**: [`class4_jfa_propagation.md`](./class4_jfa_propagation.md)
 - **预计时间**: 4-5 小时
 
 #### Class 5: 距离场提取与应用
@@ -129,7 +135,8 @@ flowchart TD
   - 通道分离技术
   - 灰度距离场可视化
   - 为光线步进做准备
-- **参考文档**: `./res/doc/distfield_frag.md`
+- **参考文档**: [`./res/doc/distfield_frag.md`](./res/doc/distfield_frag.md)
+- **课程文件**: [`class5_distance_field_extraction.md`](./class5_distance_field_extraction.md)
 - **预计时间**: 2-3 小时
 
 #### Class 6: 传统全局光照——gi.frag
@@ -139,7 +146,8 @@ flowchart TD
   - 光线步进（Raymarching）算法
   - 时间累积与衰减
   - 噪声抗锯齿技术
-- **参考文档**: `./res/doc/gi_frag.md`
+- **参考文档**: [`./res/doc/gi_frag.md`](./res/doc/gi_frag.md)
+- **课程文件**: [`class6_traditional_global_illumination.md`](./class6_traditional_global_illumination.md)
 - **预计时间**: 5-6 小时
 
 ---
@@ -153,7 +161,8 @@ flowchart TD
   - 探针网格层级结构
   - 区间光线步进
   - 性能优势分析
-- **参考文档**: `./res/doc/rc_frag.md`
+- **参考文档**: [`./res/doc/rc_frag.md`](./res/doc/rc_frag.md)
+- **课程文件**: [`class7_rc_theory.md`](./class7_rc_theory.md)
 - **预计时间**: 4-5 小时
 
 #### Class 8: RC 级联实现与合并技术
@@ -163,7 +172,8 @@ flowchart TD
   - 级联合并（Merging）策略
   - 从粗到细的照明计算
   - 参数调优技巧
-- **参考文档**: `./res/doc/rc_frag.md`
+- **参考文档**: [`./res/doc/rc_frag.md`](./res/doc/rc_frag.md)
+- **课程文件**: [`class8_rc_implementation.md`](./class8_rc_implementation.md)
 - **预计时间**: 5-6 小时
 
 #### Class 9: 用户交互绘制——draw.frag
@@ -172,12 +182,9 @@ flowchart TD
   - 线性插值平滑线条
   - 彩虹动画效果
   - macOS 平台适配
-- **参考文档**: `./res/doc/draw_shaders.md`
+- **参考文档**: [`./res/doc/draw_shaders.md`](./res/doc/draw_shaders.md)
+- **课程文件**: [`class9_user_interaction_drawing.md`](./class9_user_interaction_drawing.md)
 - **预计时间**: 3-4 小时
-
----
-
-### 实战篇
 
 #### Class 10: 输出与调试
 - **目标**: 掌握最终合成与调试技巧
@@ -185,17 +192,23 @@ flowchart TD
   - `final.frag` 简单传递
   - `broken.frag` 棋盘格调试
   - 常见问题排查
-- **参考文档**: `./res/doc/final_frag.md`, `./res/doc/broken_frag.md`
+- **参考文档**: [`./res/doc/final_frag.md`](./res/doc/final_frag.md), [`./res/doc/broken_frag.md`](./res/doc/broken_frag.md)
+- **课程文件**: [`class10_output_and_debugging.md`](./class10_output_and_debugging.md)
 - **预计时间**: 2-3 小时
 
+---
+
+### 实战篇
+
 #### Class 11: 完整管线整合
-- **目标**: 将所有shader串联成完整系统
+- **目标**: 将所有 shader 串联成完整系统
 - **核心内容**:
   - 帧渲染流程
   - 资源管理策略
   - 性能优化技巧
   - 扩展方向探讨
-- **参考文档**: 所有 `./res/doc/*` 文件
+- **参考文档**: 所有 [`./res/doc/*`](./res/doc/) 文件
+- **课程文件**: [`class11_complete_pipeline_integration.md`](./class11_complete_pipeline_integration.md)
 - **预计时间**: 4-5 小时
 
 ---
@@ -228,6 +241,20 @@ mindmap
       参考原始论文和文章
 ```
 
+### 推荐学习节奏
+
+**密集班（2-3 周）**：
+```
+Week 1: Class 1-4 (基础篇 + 核心篇上)
+Week 2: Class 5-8 (核心篇下 + 进阶篇上)
+Week 3: Class 9-11 (进阶篇下 + 实战篇)
+```
+
+**业余班（6-8 周）**：
+```
+每周 2-3 课，配合充分练习和项目实践
+```
+
 ### 常见问题解答
 
 **Q1: 我没有图形学基础，能学会吗？**  
@@ -249,6 +276,12 @@ A: 你将能够：
 - 理解大多数实时渲染论文的实现细节
 - 为自己的项目添加自定义光照效果
 - 为进一步学习更高级的渲染技术打下基础
+
+**Q5: 文档中标注的 [WIP_NEED_PIC] 是什么意思？**  
+A: 这表示该处需要配图但尚未提供。你需要：
+1. 运行程序截图来展示效果
+2. 或绘制示意图来帮助理解
+3. 这些图片会让文档更易读
 
 ---
 
@@ -277,6 +310,7 @@ git submodule update --init
 - **文本编辑器**: VS Code / CLion / 任何你喜欢的编辑器
 - **GPU 调试工具**: RenderDoc（可选，用于深入调试）
 - **笔记本**: 记录关键概念和公式
+- **截图工具**: 用于记录学习过程和作业提交
 
 ### 3. 参考资料准备
 
@@ -286,6 +320,35 @@ git submodule update --init
 - [Raylib 文档](https://www.raylib.com/)
 - [Radiance Cascades 原论文](https://github.com/Raikiri/RadianceCascadesPaper)
 - [GM Shaders 教程](https://gmshaders.com)
+- [The Book of Shaders](https://thebookofshaders.com/)
+
+---
+
+## 🎓 毕业项目建议
+
+完成全部 11 堂课后，你可以尝试以下项目来巩固所学：
+
+### 项目选项
+
+1. **🎨 交互式光影艺术**
+   - 使用所有技术创作 generative art
+   - 探索不同的颜色和形状组合
+   - 制作可交互的艺术装置
+
+2. **🎮 2D 游戏光照系统**
+   - 为简单 2D 游戏实现动态光照
+   - 支持多个移动光源
+   - 添加阴影和反射效果
+
+3. **📊 可视化工具**
+   - 帮助学生理解 JFA 和 RC 的教学工具
+   - 可视化中间 buffer 的内容
+   - 提供参数实时调整界面
+
+4. **🔬 性能对比研究**
+   - 详细分析 GI vs RC 的性能和质量
+   - 制作对比视频或图表
+   - 撰写技术报告
 
 ---
 
