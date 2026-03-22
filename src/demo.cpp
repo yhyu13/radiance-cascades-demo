@@ -6,6 +6,8 @@
 #define DEFAULT_PROPAGATION_RATE 1.3
 #define MAX_SCENES 5
 
+bool bRenderDoc = true;
+
 Demo::Demo() {
   // misc settings
   jfaSteps = 512;
@@ -75,7 +77,9 @@ Demo::Demo() {
   }
   UnloadDirectoryFiles(shaderFiles);
 
+  std::cout << "Loaded '" << "UnloadDirectoryFiles" << "' successfully." << std::endl;
   setBuffers();
+  std::cout << "Loaded '" << "setBuffers" << "' successfully." << std::endl;
 
   setScene(selectedScene);
 }
@@ -743,6 +747,8 @@ void Demo::resize() {
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 void Demo::setBuffers() {
+  if (!bRenderDoc)
+  {
   UnloadRenderTexture(jfaBufferA);
   UnloadRenderTexture(jfaBufferB);
   UnloadRenderTexture(jfaBufferC);
@@ -754,6 +760,8 @@ void Demo::setBuffers() {
   UnloadRenderTexture(lastFrameBuf);
   UnloadRenderTexture(occlusionBuf);
   UnloadRenderTexture(emissionBuf);
+  }
+
 
   // change bit depth for jfaBufferA, B, & C so that we can encode texture coordinates without losing data
   // default Raylib FBOs have a bit depth of 8 per channel, which would only cover for a window of maximum size 255x255
