@@ -11,7 +11,7 @@ Implementation references in ./Renderences directory.
 ## Caveats
 
 1. Must run in root dir
-2. OpenGL renderdoc debugging not working for v1.42
+2. OpenGL renderdoc need code fix (fixed! see bRenderDoc in demo.cpp)
 
 ---
 

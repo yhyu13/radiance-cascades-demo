@@ -1,0 +1,168 @@
+# =============================================================================
+# .gitattributes for Radiance Cascades Demo
+# =============================================================================
+# This file ensures consistent behavior across different platforms and tools
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Line Ending Configuration
+# -----------------------------------------------------------------------------
+# Normalize line endings to LF in Git repository
+# Checkout behavior depends on core.autocrlf setting
+* text=auto
+
+# Explicitly declare C/C++ source files as text with LF
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.c text eol=lf
+*.cc text eol=lf
+
+# Header-only libraries and internal headers
+*.inl text eol=lf
+
+# -----------------------------------------------------------------------------
+# Documentation Files
+# -----------------------------------------------------------------------------
+*.md text eol=lf diff=markdown
+*.txt text eol=lf
+*.rst text eol=lf
+
+# README files with language variants
+README*.md text eol=lf diff=markdown
+CONTRIBUTING.md text eol=lf diff=markdown
+LICENSE text eol=lf
+
+# -----------------------------------------------------------------------------
+# Build System Files
+# -----------------------------------------------------------------------------
+CMakeLists.txt text eol=lf
+*.cmake text eol=lf
+*.sh text eol=lf eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# premake files
+*.lua text eol=lf
+
+# -----------------------------------------------------------------------------
+# Shader Files (GLSL)
+# -----------------------------------------------------------------------------
+# GLSL shaders should maintain consistent line endings
+*.vert text eol=lf
+*.frag text eol=lf
+*.comp text eol=lf
+*.geom text eol=lf
+*.tesc text eol=lf
+*.tese text eol=lf
+*.glsl text eol=lf
+*.hlsl text eol=lf
+*.cg text eol=lf
+
+# -----------------------------------------------------------------------------
+# Resource Files
+# -----------------------------------------------------------------------------
+# Image files are binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.bmp binary
+*.tga binary
+*.webp binary
+*.ico binary
+
+# Font files are binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+
+# Other binary resources
+*.bin binary
+*.dat binary
+
+# -----------------------------------------------------------------------------
+# IDE and Editor Files
+# -----------------------------------------------------------------------------
+# Visual Studio
+*.sln text eol=crlf
+*.vcxproj text eol=crlf
+*.vcxproj.filters text eol=crlf
+*.props text eol=crlf
+*.user text eol=crlf
+
+# VS Code
+.vscode/* text eol=lf
+.settings.json text eol=lf
+launch.json text eol=lf
+tasks.json text eol=lf
+
+# CLion / CMake IDE
+.idea/* text eol=lf
+CMakeSettings.json text eol=crlf
+
+# -----------------------------------------------------------------------------
+# Diff Behavior Customization
+# -----------------------------------------------------------------------------
+# Use markdown diff for documentation files
+[diff "markdown"]
+	textconv = cat
+
+# Better diff for C/C++ files
+[diff "cpp"]
+	textconv = cat
+	wordregex = [a-zA-Z0-9_]+|[^[:space:]]
+
+# -----------------------------------------------------------------------------
+# Submodule Handling
+# -----------------------------------------------------------------------------
+# Submodules directory
+lib/**/.git* text eol=lf
+
+# -----------------------------------------------------------------------------
+# Export Ignore
+# -----------------------------------------------------------------------------
+# Don't include certain files when using git archive
+.gitignore export-ignore
+.gitattributes export-ignore
+build/ export-ignore
+.screenshots/ export-ignore
+*.diff export-ignore
+
+# -----------------------------------------------------------------------------
+# Binary File Detection
+# -----------------------------------------------------------------------------
+# Ensure these are always treated as binary
+*.a binary
+*.lib binary
+*.so binary
+*.dll binary
+*.dylib binary
+*.o binary
+*.obj binary
+*.exe binary
+*.app binary
+
+# Archive files
+*.zip binary
+*.tar binary
+*.gz binary
+*.7z binary
+*.rar binary
+
+# -----------------------------------------------------------------------------
+# Misc
+# -----------------------------------------------------------------------------
+# ImGui files (from submodule)
+lib/imgui/**/* text eol=lf
+
+# Raylib files (from submodule)
+lib/raylib/**/* text eol=lf
+
+# rlImGui files (from submodule)
+lib/rlImGui/**/* text eol=lf
+
+# Resource documentation
+res/**/*.md text eol=lf diff=markdown
