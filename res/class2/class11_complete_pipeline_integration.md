@@ -62,6 +62,98 @@ flowchart TB
 
 [WIP_NEED_PIC: 完整渲染管线的流程图]
 
+```mermaid
+flowchart TB
+    subgraph Inputs["📥 Inputs"]
+        Mouse[("Mouse Input<br/>Position, Click, Brush Size")]
+        Time[("Time uTime")]
+        Scene[("Scene Map<br/>RGBA8")]
+    end
+
+    subgraph ScenePrep["🎨 Scene Preparation (prep.frag)"]
+        SP_Prog[["Program 84<br/>ScenePrep"]]
+        SP_FB["FB 133 → Tex 151<br/>RGB5_A1"]
+    end
+
+    subgraph Brush["🖌️ Brush System (brush.frag)"]
+        Brush_Prog[["Program 72<br/>Brush"]]
+        Brush_FB["FB 124 → Tex 149<br/>RGBA32F"]
+    end
+
+    subgraph JFA_Init["🔧 JFA Initialization"]
+        Prep_Prog[["Program 82<br/>Prep"]]
+        Prep_FB["FB 130 → Tex 131<br/>RGBA8"]
+    end
+
+    subgraph JFA_Pass["🌊 Jump Flood Algorithm (jfa.frag)"]
+        JFA_Prog[["Program 80<br/>JFA"]]
+        JFA_FB1["FB 127 → Tex 128<br/>RGBA8"]
+        JFA_FB2["FB 139 → Tex 140<br/>RGBA8"]
+    end
+
+    subgraph ReadDF["📏 Distance Field Read (read.frag)"]
+        Read_Prog[["Program 70<br/>Read"]]
+        Read_FB["FB 136 → Tex 152<br/>R16F Distance Field"]
+    end
+
+    subgraph Radiance["💡 Radiance Cascades (rc.frag)"]
+        RC_Prog[["Program 86<br/>Radiance Cascade"]]
+        RC_FB1["FB 121 → Tex 150<br/>RGBA32F Radiance 0"]
+        RC_FB2["FB 145 → Tex 153<br/>RG8 JFA Output"]
+    end
+
+    subgraph Output["📤 Output"]
+        Screen[("Screen Display")]
+    end
+
+    %% Scene Preparation Flow
+    Scene --> SP_Prog
+    Mouse --> SP_Prog
+    Time --> SP_Prog
+    SP_Prog --> SP_FB
+    
+    %% Brush Flow
+    Mouse --> Brush_Prog
+    Time --> Brush_Prog
+    Brush_Prog --> Brush_FB
+    
+    %% JFA Pipeline
+    SP_FB --> Prep_Prog
+    Brush_FB -.-> Prep_Prog
+    Prep_Prog --> Prep_FB
+    
+    Prep_FB --> JFA_Prog
+    JFA_Prog -->|"Ping"| JFA_FB1
+    JFA_FB1 -->|"Pong"| JFA_Prog
+    JFA_Prog -->|"Final"| JFA_FB2
+    
+    %% Distance Field
+    JFA_FB2 --> Read_Prog
+    Read_Prog --> Read_FB
+    
+    %% Radiance Cascades
+    Read_FB --> RC_Prog
+    SP_FB --> RC_Prog
+    RC_Prog -->|"Cascade 0"| RC_FB1
+    RC_FB1 -->|"Cascade N+1"| RC_Prog
+    RC_Prog --> RC_FB2
+    
+    %% Output
+    RC_FB1 --> Screen
+    RC_FB2 -.-> Screen
+    
+    %% Styling
+    classDef program fill:#4a90d9,stroke:#2c5aa0,stroke-width:2px,color:#fff
+    classDef framebuffer fill:#7cb342,stroke:#558b2f,stroke-width:2px,color:#fff
+    classDef texture fill:#ffa726,stroke:#ef6c00,stroke-width:2px,color:#000
+    classDef input fill:#ab47bc,stroke:#7b1fa2,stroke-width:2px,color:#fff
+    classDef output fill:#ef5350,stroke:#c62828,stroke-width:2px,color:#fff
+    
+    class SP_Prog,Brush_Prog,Prep_Prog,JFA_Prog,Read_Prog,RC_Prog program
+    class SP_FB,Brush_FB,Prep_FB,JFA_FB1,JFA_FB2,Read_FB,RC_FB1,RC_FB2 framebuffer
+    class Mouse,Time,Scene,Screen input,output
+```
+
 ### C++ 实现框架
 
 ```cpp
