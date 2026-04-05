@@ -1,0 +1,625 @@
+/**
+ * @file demo3d.h
+ * @brief Main demo class for 3D Radiance Cascades implementation
+ * 
+ * This header defines the core rendering system for volumetric global illumination
+ * using radiance cascades in 3D space. The implementation uses compute shaders
+ * for voxel processing and fragment shaders for final raymarching.
+ * 
+ * Architecture Overview:
+ * 1. Voxelization Pass: Convert 3D geometry to sparse voxel representation
+ * 2. SDF Generation: Compute 3D signed distance field using jump flooding
+ * 3. Radiance Cascades: Hierarchical probe grid for efficient light transport
+ * 4. Raymarching: Volume rendering for final pixel color
+ * 
+ * Key Differences from 2D Version:
+ * - Uses 3D volume textures instead of 2D render textures
+ * - Compute shaders for parallel voxel processing
+ * - Sparse Voxel Octree (SVO) for memory efficiency
+ * - Temporal reprojection to reduce per-frame computation
+ */
+
+#ifndef DEMO3D_H
+#define DEMO3D_H
+
+#include <string>
+#include <map>
+#include <vector>
+#include <memory>
+#include "config.h"
+#include "raylib.h"
+#include "camera.h"
+#include "imgui.h"
+#include "rlImGui.h"
+#include "gl_helpers.h"
+#include <glm/glm.hpp>
+
+// =============================================================================
+// Constants and Configuration
+// =============================================================================
+
+/** Maximum number of cascade levels in the hierarchy */
+constexpr int MAX_CASCADES = 6;
+
+/** Default volume resolution (start small for performance) */
+constexpr int DEFAULT_VOLUME_RESOLUTION = 128;
+
+/** Maximum volume resolution supported */
+constexpr int MAX_VOLUME_RESOLUTION = 512;
+
+/** Number of rays per cascade probe (base count, increases per cascade) */
+constexpr int BASE_RAY_COUNT = 4;
+
+/** Enable/disable sparse voxel optimization */
+constexpr bool USE_SPARSE_VOXELS_DEFAULT = true;
+
+// =============================================================================
+// Data Structures
+// =============================================================================
+
+/**
+ * @brief Sparse Voxel Node for memory-efficient representation
+ * 
+ * Only voxels near surfaces are allocated, reducing memory from O(n³) to
+ * O(surface area). Each node can have 8 children for hierarchical subdivision.
+ */
+struct VoxelNode {
+    /** Packed density and material info */
+    float density;
+    
+    /** Radiance stored in this voxel (RGB + alpha for emission) */
+    glm::vec4 radiance;
+    
+    /** Child node indices in the voxel array (-1 if leaf) */
+    int children[8];
+    
+    /** Parent node index (-1 for root) */
+    int parent;
+    
+    /** World-space position of voxel center */
+    glm::vec3 position;
+    
+    /** Size of voxel in world units */
+    float size;
+    
+    /** Constructor for empty voxel */
+    VoxelNode();
+};
+
+/**
+ * @brief Radiance Cascade Level Configuration
+ * 
+ * Each cascade level has different resolution, cell size, and ray count.
+ * Finer cascades near camera, coarser cascades for far field.
+ */
+struct RadianceCascade3D {
+    /** OpenGL texture ID for 3D probe grid */
+    GLuint probeGridTexture;
+    
+    /** Resolution of probe grid (e.g., 32, 64, 128) */
+    int resolution;
+    
+    /** Size of each probe cell in world units */
+    float cellSize;
+    
+    /** World-space origin of cascade grid */
+    glm::vec3 origin;
+    
+    /** Number of rays cast per probe */
+    int raysPerProbe;
+    
+    /** Distance interval start for this cascade */
+    float intervalStart;
+    
+    /** Distance interval end for this cascade */
+    float intervalEnd;
+    
+    /** Whether this cascade is currently active */
+    bool active;
+    
+    /** Constructor */
+    RadianceCascade3D();
+    
+    /** Initialize cascade with parameters */
+    void initialize(int res, float cellSz, const glm::vec3& org, int rays);
+    
+    /** Cleanup OpenGL resources */
+    void destroy();
+};
+
+/**
+ * @brief Camera configuration for 3D navigation
+ */
+struct Camera3DConfig {
+    /** Camera position in world space */
+    glm::vec3 position;
+    
+    /** Camera target point (look-at) */
+    glm::vec3 target;
+    
+    /** Camera up vector */
+    glm::vec3 up;
+    
+    /** Field of view in degrees */
+    float fovy;
+    
+    /** Camera projection mode */
+    CameraProjection projection;
+    
+    /** Movement speed */
+    float moveSpeed;
+    
+    /** Rotation sensitivity */
+    float rotationSpeed;
+};
+
+// =============================================================================
+// Main Demo Class
+// =============================================================================
+
+/**
+ * @brief Main demo controller for 3D Radiance Cascades
+ * 
+ * Manages the complete rendering pipeline from voxelization through final
+ * raymarched output. Handles resource management, shader binding, and
+ * UI interaction.
+ * 
+ * Usage Example:
+ * @code
+ *   Demo3D demo;
+ *   while (!WindowShouldClose()) {
+ *       demo.processInput();
+ *       demo.update();
+ *       demo.render();
+ *   }
+ * @endcode
+ */
+class Demo3D {
+public:
+    // =============================================================================
+    // Construction & Initialization
+    // =============================================================================
+    
+    /**
+     * @brief Construct new 3D demo object
+     * 
+     * Initializes OpenGL resources, loads shaders, creates volume textures,
+     * and sets up default scene configuration.
+     */
+    Demo3D();
+    
+    /**
+     * @brief Destructor - cleanup all resources
+     * 
+     * Releases OpenGL textures, buffers, shaders, and other GPU resources.
+     */
+    ~Demo3D();
+    
+    // =============================================================================
+    // Main Loop Functions
+    // =============================================================================
+    
+    /**
+     * @brief Process keyboard and mouse input
+     * 
+     * Handles camera movement, brush controls, and debug commands.
+     * Called once per frame before update().
+     */
+    void processInput();
+    
+    /**
+     * @brief Update simulation state
+     * 
+     * Processes dynamic elements, updates voxel data, and prepares
+     * rendering state. Called once per frame after processInput().
+     */
+    void update();
+    
+    /**
+     * @brief Render the current frame
+     * 
+     * Executes the complete rendering pipeline:
+     * 1. Voxelization
+     * 2. SDF generation
+     * 3. Radiance cascade update
+     * 4. Raymarching
+     * 5. UI overlay
+     */
+    void render();
+    
+    // =============================================================================
+    // Rendering Pipeline Stages
+    // =============================================================================
+    
+    /**
+     * @brief Voxelization pass - convert geometry to voxels
+     * 
+     * Renders scene from multiple viewpoints to create 3D voxel representation.
+     * Uses geometry shader or transform feedback for voxel generation.
+     */
+    void voxelizationPass();
+    
+    /**
+     * @brief Signed Distance Field generation
+     * 
+     * Computes 3D SDF from voxel grid using jump flooding algorithm extended to 3D.
+     * Runs as compute shader on GPU.
+     */
+    void sdfGenerationPass();
+    
+    /**
+     * @brief Update all radiance cascade levels
+     * 
+     * Iterates through cascade hierarchy from fine to coarse, computing
+     * radiance at each probe location.
+     */
+    void updateRadianceCascades();
+    
+    /**
+     * @brief Update single cascade level
+     * 
+     * @param cascadeIndex Index of cascade to update (0 = finest)
+     */
+    void updateSingleCascade(int cascadeIndex);
+    
+    /**
+     * @brief Inject direct lighting into cascades
+     * 
+     * Adds emission from light sources to appropriate cascade probes.
+     */
+    void injectDirectLighting();
+    
+    /**
+     * @brief Raymarching pass for final visualization
+     * 
+     * Casts rays through volume to produce final pixel colors.
+     * Supports both perspective and orthographic projections.
+     */
+    void raymarchPass();
+    
+    /**
+     * @brief Debug visualization of intermediate buffers
+     * 
+     * Renders slices through volume textures for debugging.
+     */
+    void renderDebugVisualization();
+    
+    // =============================================================================
+    // Resource Management
+    // =============================================================================
+    
+    /**
+     * @brief Load shader from file
+     * 
+     * @param shaderName Name of shader file (without path)
+     * @return true if loaded successfully
+     */
+    bool loadShader(const std::string& shaderName);
+    
+    /**
+     * @brief Reload all shaders (for hot-reloading)
+     */
+    void reloadShaders();
+    
+    /**
+     * @brief Create all volume textures and framebuffers
+     */
+    void createVolumeBuffers();
+    
+    /**
+     * @brief Destroy all volume textures and framebuffers
+     */
+    void destroyVolumeBuffers();
+    
+    /**
+     * @brief Initialize radiance cascade hierarchy
+     */
+    void initCascades();
+    
+    /**
+     * @brief Destroy radiance cascade resources
+     */
+    void destroyCascades();
+    
+    /**
+     * @brief Set up scene geometry
+     * 
+     * @param sceneType Type of scene to load (-1 = clear, 0+ = preset scenes)
+     */
+    void setScene(int sceneType);
+    
+    /**
+     * @brief Helper to add a box of voxels to the volume
+     * 
+     * @param center Box center in world space
+     * @param size Box dimensions (width, height, depth)
+     * @param color RGB color (0-1 range)
+     * @param emissive Whether the box is emissive (light source)
+     */
+    void addVoxelBox(
+        const glm::vec3& center,
+        const glm::vec3& size,
+        const glm::vec3& color,
+        bool emissive = false
+    );
+
+    // =============================================================================
+    // UI Rendering
+    // =============================================================================
+    
+    /**
+     * @brief Render ImGui interface
+     * 
+     * Displays controls for lighting, cascades, and debug options.
+     */
+    void renderUI();
+    
+    /**
+     * @brief Render settings panel
+     */
+    void renderSettingsPanel();
+    
+    /**
+     * @brief Render cascade visualization panel
+     */
+    void renderCascadePanel();
+    
+    /**
+     * @brief Render tutorial/information panel
+     */
+    void renderTutorialPanel();
+    
+    // =============================================================================
+    // Utility Functions
+    // =============================================================================
+    
+    /**
+     * @brief Handle window resize event
+     * 
+     * Recreates volume buffers at new resolution.
+     */
+    void onResize();
+    
+    /**
+     * @brief Take screenshot of current frame
+     */
+    void takeScreenshot();
+    
+    /**
+     * @brief Reset camera to default position
+     */
+    void resetCamera();
+    
+    /**
+     * @brief Calculate optimal work group size for compute shader
+     * 
+     * @param dimX Total work items in X
+     * @param dimY Total work items in Y
+     * @param dimZ Total work items in Z
+     * @param localSize Local work group size from shader
+     * @return glm::ivec3 Work group count (x, y, z)
+     */
+    glm::ivec3 calculateWorkGroups(
+        int dimX, int dimY, int dimZ,
+        int localSize = 8
+    );
+    
+private:
+    // =============================================================================
+    // Scene State
+    // =============================================================================
+    
+    /** Current scene type/index */
+    int currentScene;
+    
+    /** Whether scene has been modified */
+    bool sceneDirty;
+    
+    /** Time accumulator for animations */
+    float time;
+    
+    // =============================================================================
+    // Camera
+    // =============================================================================
+    
+    /** 3D camera configuration */
+    Camera3DConfig camera;
+    
+    /** Last mouse position for rotation */
+    glm::vec2 lastMousePos;
+    
+    /** Whether mouse is being dragged */
+    bool mouseDragging;
+    
+    // =============================================================================
+    // Volume Textures (OpenGL)
+    // =============================================================================
+    
+    /** Voxel grid storage (RGBA8) */
+    GLuint voxelGridTexture;
+    
+    /** Signed distance field (R32F) */
+    GLuint sdfTexture;
+    
+    /** Direct lighting buffer (RGBA16F) */
+    GLuint directLightingTexture;
+    
+    /** Previous frame radiance for temporal reprojection (RGBA16F) */
+    GLuint prevFrameTexture;
+    
+    /** Current frame radiance output (RGBA16F) */
+    GLuint currentRadianceTexture;
+    
+    /** Volume resolution (isotropic) */
+    int volumeResolution;
+    
+    // =============================================================================
+    // Radiance Cascades
+    // =============================================================================
+    
+    /** Array of cascade levels */
+    RadianceCascade3D cascades[MAX_CASCADES];
+    
+    /** Number of active cascades */
+    int cascadeCount;
+    
+    /** Base interval size in voxels */
+    float baseInterval;
+    
+    /** Whether to use bilinear filtering for cascades */
+    bool cascadeBilinear;
+    
+    /** Which cascade to visualize (debug) */
+    int cascadeDisplayIndex;
+    
+    /** Disable cascade merging (debug) */
+    bool disableCascadeMerging;
+    
+    // =============================================================================
+    // Shaders
+    // =============================================================================
+    
+    /** Map of shader name to program object */
+    std::map<std::string, GLuint> shaders;
+    
+    /** Current active shader program */
+    GLuint activeShader;
+    
+    // =============================================================================
+    // User Interaction
+    // =============================================================================
+    
+    /** Current editing mode (voxel placement vs light placement) */
+    enum class Mode { VOXELIZE, LIGHT } userMode;
+    
+    /** Brush size in world units */
+    float brushSize;
+    
+    /** Brush color for lights */
+    Color brushColor;
+    
+    /** Whether to draw rainbow colors */
+    bool drawRainbow;
+    
+    // =============================================================================
+    // Lighting Settings
+    // =============================================================================
+    
+    /** Use traditional GI algorithm instead of RC */
+    bool useTraditionalGI;
+    
+    /** Number of rays for traditional GI */
+    int giRayCount;
+    
+    /** Add noise to GI (dithering) */
+    bool giNoise;
+    
+    /** Enable ambient lighting term */
+    bool ambientLight;
+    
+    /** Ambient light color */
+    glm::vec3 ambientColor;
+    
+    /** Indirect lighting mix factor (0-1) */
+    float indirectMixFactor;
+    
+    /** Indirect lighting brightness multiplier */
+    float indirectBrightness;
+    
+    // =============================================================================
+    // Performance & Quality
+    // =============================================================================
+    
+    /** Use sparse voxel octree optimization */
+    bool useSparseVoxels;
+    
+    /** Enable temporal reprojection */
+    bool useTemporalReprojection;
+    
+    /** Adaptive step size for raymarching */
+    bool adaptiveStepSize;
+    
+    /** Raymarching step count */
+    int raymarchSteps;
+    
+    /** Early ray termination threshold */
+    float rayTerminationThreshold;
+    
+    // =============================================================================
+    // Debug Options
+    // =============================================================================
+    
+    /** Show debug visualization windows */
+    bool showDebugWindows;
+    
+    /** Display individual cascade slices */
+    bool showCascadeSlices;
+    
+    /** Visualize voxel grid structure */
+    bool showVoxelGrid;
+    
+    /** Show performance metrics */
+    bool showPerformanceMetrics;
+    
+    /** Skip UI rendering (F1 toggle) */
+    bool skipUIRendering;
+    
+    /** Show ImGui demo window */
+    bool showImGuiDemo;
+    
+    // =============================================================================
+    // Framebuffer Objects
+    // =============================================================================
+    
+    /** FBO for voxelization pass */
+    GLuint voxelizationFBO;
+    
+    /** FBO for SDF generation */
+    GLuint sdfFBO;
+    
+    /** FBO for cascade rendering */
+    GLuint cascadeFBO;
+    
+    // =============================================================================
+    // Query Objects (Performance)
+    // =============================================================================
+    
+    /** Timer query for voxelization pass */
+    GLuint voxelizationTimeQuery;
+    
+    /** Timer query for SDF pass */
+    GLuint sdfTimeQuery;
+    
+    /** Timer query for cascade update */
+    GLuint cascadeTimeQuery;
+    
+    /** Timer query for raymarching */
+    GLuint raymarchTimeQuery;
+    
+    // =============================================================================
+    // Cached Metrics
+    // =============================================================================
+    
+    /** Last frame voxelization time (ms) */
+    double voxelizationTimeMs;
+    
+    /** Last frame SDF generation time (ms) */
+    double sdfTimeMs;
+    
+    /** Last frame cascade update time (ms) */
+    double cascadeTimeMs;
+    
+    /** Last frame raymarching time (ms) */
+    double raymarchTimeMs;
+    
+    /** Total frame time (ms) */
+    double frameTimeMs;
+    
+    /** Active voxel count (for sparse representation) */
+    int activeVoxelCount;
+    
+    /** Memory usage in MB */
+    float memoryUsageMB;
+};
+
+#endif // DEMO3D_H

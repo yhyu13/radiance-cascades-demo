@@ -87,7 +87,7 @@ flowchart LR
 
 #### 代码解析
 
-``glsl
+```glsl
 void main() {
   vec2 resolution = textureSize(uOcclusionMap, 0);
   vec2 fragCoord = gl_FragCoord.xy / resolution;
@@ -108,7 +108,7 @@ void main() {
 
 #### 可视化理解
 
-``mermaid
+```mermaid
 flowchart TD
     subgraph "Occlusion Map 解释"
         A1["输入：白色像素<br/>vec41.0, 1.0, 1.0, 1.0]"] --> B1["输出：透明<br/>vec40.0, 0.0, 0.0, 0.0]"]
@@ -138,7 +138,7 @@ flowchart TD
 
 #### 为什么需要转换？
 
-``mermaid
+```mermaid
 quadrantChart
     title "RGB vs HSV 使用场景"
     x-axis "难做动画" --> "易做动画"
@@ -169,7 +169,7 @@ HSV 思维："我要做彩虹动画"
 
 #### 转换函数详解
 
-``glsl
+```glsl
 // RGB 转 HSV
 vec3 rgb2hsv(vec3 c) {
     vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -194,7 +194,7 @@ vec3 hsv2rgb(vec3 c) {
 
 #### 彩虹动画实现
 
-``glsl
+```glsl
 // 在 prepscene.frag 中
 vec3 ehsv = rgb2hsv(e.rgb);  // 先转到 HSV
 
@@ -240,7 +240,7 @@ flowchart LR
 
 #### 代码实现
 
-``glsl
+```glsl
 bool sdfCircle(vec2 center, float radius) {
   // 计算当前片段到圆心的欧几里得距离
   float distance = length(gl_FragCoord.xy - center);
@@ -273,7 +273,7 @@ distance = √[(110-100)² + (105-100)²]
 
 ### 2.4 鼠标光效实现
 
-``glsl
+```glsl
 // 在 main 函数中添加
 if (uMouseLight == 1) {
   // 以鼠标位置为圆心画一个圆
@@ -304,7 +304,7 @@ uBrushSize:   归一化的大小 (0.0 - 1.0)
 
 [WIP_NEED_PIC: 6 个轨道球在圆周上运动的动态示意图]
 
-``glsl
+```glsl
 if (uOrbs == 1) {
   for (int i = 0; i < 6; i++) {
     // 计算第 i 个球的位置
@@ -321,7 +321,7 @@ if (uOrbs == 1) {
 
 #### 运动分解图解
 
-``mermaid
+```mermaid
 flowchart TB
     A["i = 0 的球"] --> B["角度θ = uTime/ORB_SPEED + 0"]
     B --> C["X = cosθ × 半径"]
@@ -367,7 +367,7 @@ y(t) = R × sin(ωt + φ)
 
 #### 水平振荡条
 
-``glsl
+```glsl
 vec2 p = vec2(cos(uTime/ORB_SPEED*4) * resolution.x/4, 0) + CENTRE;
 if (sdfCircle(p, ORB_SIZE))
   fragColor = vec4(vec3(sin(uTime) + 1 / 2), 1.0);
@@ -375,7 +375,7 @@ if (sdfCircle(p, ORB_SIZE))
 
 #### 垂直振荡条
 
-``glsl
+```glsl
 p = vec2(0, sin(uTime/ORB_SPEED*4) * resolution.x/4) + CENTRE;
 if (sdfCircle(p, ORB_SIZE))
   fragColor = vec4(vec3(cos(uTime) + 1 / 2), 1.0);
@@ -383,7 +383,7 @@ if (sdfCircle(p, ORB_SIZE))
 
 #### 运动可视化
 
-``mermaid
+```mermaid
 flowchart LR
     subgraph "水平条 motion"
         H1["X = cosuTime × R"] --> H2["在 -R 到+R 之间移动"]
@@ -429,7 +429,7 @@ flowchart LR
 
 **目标**: 让彩虹动画更快或更慢
 
-``glsl
+```glsl
 // 原始代码（慢速）
 e = vec4(hsv2rgb(vec3(ehsv.r + uTime/8, 1.0, 1.0)), 1.0);
 
@@ -449,7 +449,7 @@ e = vec4(hsv2rgb(vec3(ehsv.r + uTime/16, 1.0, 1.0)), 1.0);
 **挑战**: 将 6 个球增加到 12 个球
 
 提示：
-``glsl
+```glsl
 // 修改循环次数
 for (int i = 0; i < 12; i++) {  // 原来是 6
   // 调整颜色映射
@@ -463,7 +463,7 @@ for (int i = 0; i < 12; i++) {  // 原来是 6
 **挑战**: 让球逆时针旋转
 
 提示：
-``glsl
+```glsl
 // 原始（顺时针）
 vec2(cos(uTime/ORB_SPEED + i), sin(uTime/ORB_SPEED + i))
 
@@ -482,7 +482,7 @@ vec2(cos(uTime/ORB_SPEED - i), -sin(uTime/ORB_SPEED - i))
 **症状**: 图像上下颠倒或左右翻转
 
 **解决**:
-``glsl
+```glsl
 // Raylib 的纹理坐标可能需要翻转
 vec2 fragCoord = gl_FragCoord.xy / textureSize(uSceneMap, 0);
 fragCoord.y = 1.0 - fragCoord.y;  // 翻转 Y 轴
@@ -496,7 +496,7 @@ fragCoord.y = 1.0 - fragCoord.y;  // 翻转 Y 轴
 3. ✅ 检查 SDF 函数的 `distance` 计算
 
 **调试技巧**:
-``glsl
+```glsl
 // 临时输出距离值来可视化
 float dist = distance(gl_FragCoord.xy, uMousePos);
 fragColor = vec4(vec3(dist / 100.0), 1.0);  // 灰度显示距离
@@ -509,7 +509,7 @@ fragColor = vec4(vec3(dist / 100.0), 1.0);  // 灰度显示距离
 - HSV→RGB 转换有 bug
 
 **调试方法**:
-``glsl
+```glsl
 // 直接输出 HSV 值查看
 vec3 hsv = vec3(fmod(uTime/8, 1.0), 1.0, 1.0);
 fragColor = vec4(hsv, 1.0);  // 应该看到 RGB 渐变
@@ -528,7 +528,7 @@ fragColor = vec4(hsv, 1.0);  // 应该看到 RGB 渐变
 3. **加速彩虹动画**: 让颜色变化快 2 倍
 
 参考答案:
-``glsl
+```glsl
 // 1. 固定青色
 if (uMouseLight == 1 && sdfCircle(uMousePos, uBrushSize*64))
   fragColor = vec4(0.0, 1.0, 1.0, 1.0);  // 青色
@@ -550,7 +550,7 @@ ehsv.r + uTime/4  // 原来是 /8
 - 颜色使用渐变的彩虹色
 
 提示:
-``glsl
+```glsl
 float pulseRadius = 50.0 + 20.0 * sin(uTime * 3.0);
 vec2 centerPos = resolution / 2.0;
 if (sdfCircle(centerPos, pulseRadius)) {
@@ -607,7 +607,7 @@ if (sdfCircle(centerPos, pulseRadius)) {
 
 ## 💡 关键要点总结
 
-``mermaid
+```mermaid
 mindmap
   root((本课重点))
     纹理处理[纹理操作]
