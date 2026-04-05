@@ -190,7 +190,7 @@ uniform sampler2D uTexture;  // 2D 纹理
 
 ### 3.1 完整的顶点着色器代码
 
-``glsl
+```glsl
 #version 330 core
 
 // 输入：顶点位置（来自 CPU）
@@ -209,7 +209,7 @@ void main() {
 
 [WIP_NEED_PIC: 顶点变换过程的可视化示意图，从本地坐标到屏幕坐标]
 
-``mermaid
+```mermaid
 flowchart TD
     A[vertexPosition<br/>vec3 类型<br/>例如：1.0, 0.5, 0.0] --> B[扩展为 vec4<br/>vec4vertexPosition, 1.0]
     B --> C[乘以 MVP 矩阵<br/>mvp × vec4]
@@ -236,7 +236,7 @@ flowchart TD
 
 #### 实验 1: 放大物体
 
-``glsl
+```glsl
 void main() {
   // 方法 1: 直接缩放顶点
   vec3 scaledPosition = vertexPosition * 2.0;
@@ -251,7 +251,7 @@ void main() {
 
 #### 实验 2: 翻转图像
 
-``glsl
+```glsl
 void main() {
   vec3 flippedPosition = vertexPosition;
   flippedPosition.x = -flippedPosition.x;  // 左右翻转
@@ -264,7 +264,7 @@ void main() {
 
 #### 实验 3: 添加动画
 
-``glsl
+```glsl
 uniform float uTime;  // 从 CPU 传入的时间
 
 void main() {
@@ -287,7 +287,7 @@ void main() {
 
 [WIP_NEED_PIC: MVP 矩阵变换的可视化示意图，展示从模型空间到屏幕空间的完整过程]
 
-``mermaid
+```mermaid
 flowchart LR
     subgraph "变换流水线"
         M[Model Matrix<br/>物体空间→世界空间]
@@ -455,7 +455,7 @@ void main() {
 ### 测验 2: 理解题
 
 解释以下代码的作用：
-``glsl
+```glsl
 gl_Position = mvp * vec4(vertexPosition, 1.0);
 ```
 
@@ -493,7 +493,7 @@ gl_Position = mvp * vec4(vertexPosition, 1.0);
 
 ## 💡 关键要点总结
 
-``mermaid
+```mermaid
 mindmap
   root((本课重点))
     GPU 架构[GPU 思维]

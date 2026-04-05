@@ -1,0 +1,238 @@
+/**
+ * @file inject_radiance.comp
+ * @brief Compute shader for injecting direct lighting into radiance cascades
+ * 
+ * This shader adds emissive light sources to the cascade hierarchy.
+ * It identifies which probes are affected by each light and accumulates
+ * direct illumination.
+ * 
+ * Supported Light Types:
+ * - Point lights (omnidirectional)
+ * - Directional lights (sun/moon)
+ * - Area lights (rectangular emissive surfaces)
+ * 
+ * Algorithm:
+ * 1. For each light in scene:
+ *    a. Determine affected cascade level
+ *    b. Find probes within light radius
+ *    c. Calculate contribution at each probe
+ *    d. Add to existing radiance
+ * 2. Handle multiple overlapping lights with additive blending
+ */
+
+#version 450 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+
+/** Volume dimensions */
+uniform ivec3 uVolumeSize;
+
+/** Grid parameters */
+uniform vec3 uGridSize;
+uniform vec3 uGridOrigin;
+
+/** Number of active lights */
+uniform int uLightCount;
+
+/** Ambient lighting term */
+uniform vec3 uAmbientColor;
+uniform float uAmbientIntensity;
+
+// =============================================================================
+// Light Structures
+// =============================================================================
+
+/**
+ * @brief Point light definition
+ */
+struct PointLight {
+    vec3 position;      // World position
+    vec3 color;         // RGB color
+    float radius;       // Influence radius
+    float intensity;    // Brightness multiplier
+};
+
+/**
+ * @brief Directional light definition
+ */
+struct DirectionalLight {
+    vec3 direction;     // Light direction (normalized)
+    vec3 color;         // RGB color
+    float intensity;    // Brightness
+    int padding;        // Alignment padding
+};
+
+/**
+ * @brief Area light (rectangular)
+ */
+struct AreaLight {
+    vec3 position;      // Center position
+    vec3 normal;        // Surface normal
+    vec3 right;         // Right vector
+    vec3 up;            // Up vector
+    float width;        // Width
+    float height;       // Height
+    vec3 color;         // Color
+    float intensity;    // Intensity
+};
+
+// =============================================================================
+// Texture Bindings
+// =============================================================================
+
+/** Radiance cascade to inject into (read-write) */
+layout(rgba16f, binding = 0) uniform image3D oRadiance;
+
+/** Optional: Direct lighting buffer */
+layout(rgba16f, binding = 1) uniform image3D oDirectLighting;
+
+// =============================================================================
+// Light Arrays (via UBO or SSBO)
+// =============================================================================
+
+#define MAX_POINT_LIGHTS 16
+#define MAX_DIR_LIGHTS 4
+#define MAX_AREA_LIGHTS 8
+
+layout(std140, binding = 0) uniform LightBuffer {
+    PointLight pointLights[MAX_POINT_LIGHTS];
+    DirectionalLight dirLights[MAX_DIR_LIGHTS];
+    AreaLight areaLights[MAX_AREA_LIGHTS];
+} lightBuffer;
+
+uniform int uPointLightCount;
+uniform int uDirLightCount;
+uniform int uAreaLightCount;
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/**
+ * @brief Convert probe index to world position
+ */
+vec3 probeToWorld(ivec3 probePos) {
+    return uGridOrigin + (vec3(probePos) + 0.5f) * (uGridSize / vec3(uVolumeSize));
+}
+
+/**
+ * @brief Calculate distance from point to line segment
+ */
+float distToSegment(vec3 p, vec3 a, vec3 b) {
+    vec3 ab = b - a;
+    vec3 ap = p - a;
+    float t = clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0);
+    vec3 closest = a + t * ab;
+    return length(p - closest);
+}
+
+/**
+ * @brief Calculate point light contribution at position
+ */
+vec3 calculatePointLight(PointLight light, vec3 pos) {
+    vec3 lightDir = light.position - pos;
+    float distSq = dot(lightDir, lightDir);
+    float radiusSq = light.radius * light.radius;
+    
+    if (distSq > radiusSq)
+        return vec3(0.0);
+    
+    // Attenuation: 1 - (dist/radius)^2
+    float attenuation = 1.0 - sqrt(distSq) / light.radius;
+    attenuation *= attenuation; // Quadratic falloff
+    
+    return light.color * light.intensity * attenuation;
+}
+
+/**
+ * @brief Calculate directional light contribution
+ */
+vec3 calculateDirectionalLight(DirectionalLight light, vec3 pos, vec3 normal) {
+    // Simple Lambertian diffuse
+    float NdotL = max(dot(normal, -light.direction), 0.0);
+    return light.color * light.intensity * NdotL;
+}
+
+/**
+ * @brief Calculate area light contribution (simplified)
+ */
+vec3 calculateAreaLight(AreaLight light, vec3 pos) {
+    // Simplified: treat as point light at center
+    // Full implementation would integrate over rectangle
+    
+    vec3 toCenter = light.position - pos;
+    float distSq = dot(toCenter, toCenter);
+    
+    // Approximate radius from area
+    float approxRadius = sqrt(light.width * light.height);
+    float radiusSq = approxRadius * approxRadius * 4.0;
+    
+    if (distSq > radiusSq)
+        return vec3(0.0);
+    
+    float attenuation = 1.0 - sqrt(distSq) / sqrt(radiusSq);
+    attenuation *= attenuation;
+    
+    return light.color * light.intensity * attenuation;
+}
+
+// =============================================================================
+// Main Compute Shader
+// =============================================================================
+
+void main() {
+    ivec3 probePos = ivec3(gl_GlobalInvocationID);
+    
+    // Bounds check
+    if (any(greaterThanEqual(probePos, uVolumeSize)))
+        return;
+    
+    // Get probe world position
+    vec3 worldPos = probeToWorld(probePos);
+    
+    // Initialize direct lighting
+    vec3 directRadiance = vec3(0.0);
+    
+    // Accumulate point lights
+    for (int i = 0; i < uPointLightCount; ++i) {
+        directRadiance += calculatePointLight(lightBuffer.pointLights[i], worldPos);
+    }
+    
+    // Accumulate directional lights
+    // For directional lights, we need surface normal
+    // Simplified: use default up vector
+    vec3 defaultNormal = vec3(0.0, 1.0, 0.0);
+    for (int i = 0; i < uDirLightCount; ++i) {
+        directRadiance += calculateDirectionalLight(
+            lightBuffer.dirLights[i], 
+            worldPos, 
+            defaultNormal
+        );
+    }
+    
+    // Accumulate area lights
+    for (int i = 0; i < uAreaLightCount; ++i) {
+        directRadiance += calculateAreaLight(lightBuffer.areaLights[i], worldPos);
+    }
+    
+    // Add ambient term
+    directRadiance += uAmbientColor * uAmbientIntensity;
+    
+    // Read existing radiance
+    vec4 existingRadiance = imageLoad(oRadiance, probePos);
+    
+    // Add direct lighting (additive blend)
+    vec4 finalRadiance = existingRadiance + vec4(directRadiance, 0.0);
+    
+    // Store result
+    imageStore(oRadiance, probePos, finalRadiance);
+    
+    // Optionally write to direct lighting buffer for debugging
+    if (binding == 1) {
+        imageStore(oDirectLighting, probePos, vec4(directRadiance, 1.0));
+    }
+}
