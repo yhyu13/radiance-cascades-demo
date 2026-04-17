@@ -28,7 +28,6 @@
 #include <memory>
 #include "config.h"
 #include "raylib.h"
-#include "camera.h"
 #include "imgui.h"
 #include "rlImGui.h"
 #include "gl_helpers.h"
@@ -389,6 +388,16 @@ public:
      * @brief Reset camera to default position
      */
     void resetCamera();
+    
+    /**
+     * @brief Get Raylib Camera3D from internal camera config
+     * 
+     * Converts the internal Camera3DConfig to Raylib's Camera3D type
+     * for use with BeginMode3D/EndMode3D.
+     * 
+     * @return Camera3D Raylib camera structure
+     */
+    Camera3D getRaylibCamera() const;
     
     /**
      * @brief Calculate optimal work group size for compute shader

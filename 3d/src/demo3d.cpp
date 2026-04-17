@@ -1088,6 +1088,21 @@ void Demo3D::resetCamera() {
               << camera.position.x << ", " << camera.position.y << ", " << camera.position.z << std::endl;
 }
 
+Camera3D Demo3D::getRaylibCamera() const {
+    /**
+     * @brief Convert internal Camera3DConfig to Raylib's Camera3D
+     */
+    
+    Camera3D raylibCamera;
+    raylibCamera.position = Vector3{camera.position.x, camera.position.y, camera.position.z};
+    raylibCamera.target = Vector3{camera.target.x, camera.target.y, camera.target.z};
+    raylibCamera.up = Vector3{camera.up.x, camera.up.y, camera.up.z};
+    raylibCamera.fovy = camera.fovy;
+    raylibCamera.projection = camera.projection;
+    
+    return raylibCamera;
+}
+
 glm::ivec3 Demo3D::calculateWorkGroups(int dimX, int dimY, int dimZ, int localSize) {
     /**
      * @brief Calculate optimal work group size for compute shader
