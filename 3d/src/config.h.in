@@ -1,0 +1,35 @@
+/**
+ * @file config.h.in
+ * @brief Configuration header template for CMake
+ * 
+ * This file is processed by CMake's configure_file() to generate
+ * config.h with actual version numbers and build configuration.
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// Version information (set by CMake)
+#define VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define VERSION "@PROJECT_VERSION@"
+
+// Build type
+#cmakedefine DEBUG
+#cmakedefine BUILD_3D_VERSION
+
+// Feature flags
+#cmakedefine ENABLE_COMPUTE_SHADERS
+#cmakedefine USE_SPARSE_VOXELS
+#cmakedefine TEMPORAL_REPROJECTION
+#cmakedefine DEBUG_VISUALIZATION
+
+// Stage identifier
+#ifdef DEBUG
+    #define VERSION_STAGE "Debug-"
+#else
+    #define VERSION_STAGE ""
+#endif
+
+#endif // CONFIG_H
