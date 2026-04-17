@@ -132,7 +132,7 @@ int main() {
             ClearBackground(BLACK);
             
             // Render 3D scene
-            BeginMode3D(demo->camera);
+            BeginMode3D(demo->getRaylibCamera());
                 demo->render();
             EndMode3D();
             
@@ -190,9 +190,8 @@ bool initializeApplication() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     
-    // Note: For core profile (required for compute shaders):
-    // SetConfigFlags(FLAG_OPENGL_CORE_PROFILE);
-    // This may need to be set before InitWindow in raylib
+    // Note: Raylib 5.x uses GLFW backend which may default to OpenGL 3.3
+    // The application will work with extension-based compute shaders on OpenGL 3.3+
     
     // Step 2: Create window
     InitWindow(DEFAULT_WIDTH, DEFAULT_HEIGHT, WINDOW_TITLE.c_str());
@@ -298,13 +297,25 @@ bool checkRequirements() {
     
     std::cout << "[CHECK] OpenGL Version: " << major << "." << minor << std::endl;
     
-    if (major < OPENGL_MAJOR_VERSION || (major == OPENGL_MAJOR_VERSION && minor < OPENGL_MINOR_VERSION)) {
-        std::cerr << "[ERROR] OpenGL 4.3+ required, found " << major << "." << minor << std::endl;
+    // Check for required extensions first (more important than base version)
+    bool hasComputeShaders = glewIsSupported("GL_ARB_compute_shader");
+    bool hasImageLoadStore = glewIsSupported("GL_ARB_shader_image_load_store");
+    
+    // Accept OpenGL 3.3+ if required extensions are available
+    // This allows systems with older contexts but modern extension support
+    bool versionOk = (major > 3) || (major == 3 && minor >= 3);
+    
+    if (!versionOk) {
+        std::cerr << "[ERROR] OpenGL 3.3+ required, found " << major << "." << minor << std::endl;
         allRequirementsMet = false;
+    } else if (major < OPENGL_MAJOR_VERSION || (major == OPENGL_MAJOR_VERSION && minor < OPENGL_MINOR_VERSION)) {
+        std::cout << "[WARNING] OpenGL " << OPENGL_MAJOR_VERSION << "." << OPENGL_MINOR_VERSION 
+                  << "+ recommended for optimal performance, found " << major << "." << minor << std::endl;
+        std::cout << "[INFO] Will attempt to use extension-based compute shader support" << std::endl;
     }
     
     // Check for compute shader support
-    if (!glewIsSupported("GL_ARB_compute_shader")) {
+    if (!hasComputeShaders) {
         std::cerr << "[ERROR] Compute shaders not supported (GL_ARB_compute_shader required)" << std::endl;
         allRequirementsMet = false;
     } else {
@@ -312,7 +323,7 @@ bool checkRequirements() {
     }
     
     // Check for image load/store
-    if (!glewIsSupported("GL_ARB_shader_image_load_store")) {
+    if (!hasImageLoadStore) {
         std::cerr << "[ERROR] Shader image load/store not supported" << std::endl;
         allRequirementsMet = false;
     } else {
