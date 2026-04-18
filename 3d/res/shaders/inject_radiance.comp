@@ -1,10 +1,15 @@
 /**
  * @file inject_radiance.comp
- * @brief Compute shader for injecting direct lighting into radiance cascades
+ * @brief Compute shader for injecting direct lighting into radiance cascades (Phase 1)
  * 
  * This shader adds emissive light sources to the cascade hierarchy.
  * It identifies which probes are affected by each light and accumulates
- * direct illumination.
+ * direct illumination, modulated by surface albedo for color bleeding.
+ * 
+ * Phase 1 Features:
+ * - Multi-light support (point, directional, area lights)
+ * - Material albedo integration for realistic color bleeding
+ * - SDF-based normal computation for accurate lighting
  * 
  * Supported Light Types:
  * - Point lights (omnidirectional)
@@ -12,12 +17,12 @@
  * - Area lights (rectangular emissive surfaces)
  * 
  * Algorithm:
- * 1. For each light in scene:
- *    a. Determine affected cascade level
- *    b. Find probes within light radius
- *    c. Calculate contribution at each probe
- *    d. Add to existing radiance
- * 2. Handle multiple overlapping lights with additive blending
+ * 1. For each probe in volume:
+ *    a. Sample SDF to determine if probe is near surface
+ *    b. If near surface, compute normal from SDF gradient
+ *    c. For each light, calculate contribution with NdotL
+ *    d. Multiply by albedo for color bleeding
+ *    e. Accumulate into radiance texture
  */
 
 #version 450 core
@@ -87,8 +92,11 @@ struct AreaLight {
 /** Radiance cascade to inject into (read-write) */
 layout(rgba16f, binding = 0) uniform image3D oRadiance;
 
-/** Optional: Direct lighting buffer */
-layout(rgba16f, binding = 1) uniform image3D oDirectLighting;
+/** SDF volume for surface detection and normal computation */
+layout(r32f, binding = 1) uniform image3D uSDFVolume;
+
+/** Optional: Direct lighting buffer for debugging */
+layout(rgba16f, binding = 2) uniform image3D oDirectLighting;
 
 // =============================================================================
 // Light Arrays (via UBO or SSBO)
@@ -120,6 +128,51 @@ vec3 probeToWorld(ivec3 probePos) {
 }
 
 /**
+ * @brief Compute surface normal from SDF gradient (central differences)
+ * @param coord Voxel coordinate
+ * @return Normalized surface normal
+ */
+vec3 computeNormal(ivec3 coord) {
+    // Central difference gradient
+    float dx = imageLoad(uSDFVolume, coord + ivec3(1,0,0)).r -
+               imageLoad(uSDFVolume, coord - ivec3(1,0,0)).r;
+    float dy = imageLoad(uSDFVolume, coord + ivec3(0,1,0)).r -
+               imageLoad(uSDFVolume, coord - ivec3(0,1,0)).r;
+    float dz = imageLoad(uSDFVolume, coord + ivec3(0,0,1)).r -
+               imageLoad(uSDFVolume, coord - ivec3(0,0,1)).r;
+    
+    vec3 grad = vec3(dx, dy, dz);
+    float len = length(grad);
+    
+    if (len < 1e-6)
+        return vec3(0.0, 1.0, 0.0); // Default up
+    
+    return normalize(grad);
+}
+
+/**
+ * @brief Sample albedo from analytic SDF primitives
+ * @param worldPos World space position
+ * @return Albedo color
+ * 
+ * Phase 1: Hardcoded Cornell Box colors for validation
+ * TODO: Replace with proper material system
+ */
+vec3 sampleAlbedo(vec3 worldPos) {
+    // Cornell Box wall colors (Phase 1 hardcoded)
+    // Left wall: Red
+    if (worldPos.x < -1.9 && worldPos.x > -2.1)
+        return vec3(0.65, 0.05, 0.05);
+    
+    // Right wall: Green
+    if (worldPos.x > 1.9 && worldPos.x < 2.1)
+        return vec3(0.12, 0.45, 0.15);
+    
+    // Back wall, floor, ceiling: White
+    return vec3(0.75, 0.75, 0.75);
+}
+
+/**
  * @brief Calculate distance from point to line segment
  */
 float distToSegment(vec3 p, vec3 a, vec3 b) {
@@ -133,7 +186,7 @@ float distToSegment(vec3 p, vec3 a, vec3 b) {
 /**
  * @brief Calculate point light contribution at position
  */
-vec3 calculatePointLight(PointLight light, vec3 pos) {
+vec3 calculatePointLight(PointLight light, vec3 pos, vec3 normal) {
     vec3 lightDir = light.position - pos;
     float distSq = dot(lightDir, lightDir);
     float radiusSq = light.radius * light.radius;
@@ -141,18 +194,24 @@ vec3 calculatePointLight(PointLight light, vec3 pos) {
     if (distSq > radiusSq)
         return vec3(0.0);
     
-    // Attenuation: 1 - (dist/radius)^2
+    // Normalize light direction
+    vec3 L = normalize(lightDir);
+    
+    // Lambertian diffuse (NdotL)
+    float NdotL = max(dot(normal, L), 0.0);
+    
+    // Attenuation: smooth falloff
     float attenuation = 1.0 - sqrt(distSq) / light.radius;
     attenuation *= attenuation; // Quadratic falloff
     
-    return light.color * light.intensity * attenuation;
+    return light.color * light.intensity * attenuation * NdotL;
 }
 
 /**
  * @brief Calculate directional light contribution
  */
 vec3 calculateDirectionalLight(DirectionalLight light, vec3 pos, vec3 normal) {
-    // Simple Lambertian diffuse
+    // Lambertian diffuse
     float NdotL = max(dot(normal, -light.direction), 0.0);
     return light.color * light.intensity * NdotL;
 }
@@ -160,7 +219,7 @@ vec3 calculateDirectionalLight(DirectionalLight light, vec3 pos, vec3 normal) {
 /**
  * @brief Calculate area light contribution (simplified)
  */
-vec3 calculateAreaLight(AreaLight light, vec3 pos) {
+vec3 calculateAreaLight(AreaLight light, vec3 pos, vec3 normal) {
     // Simplified: treat as point light at center
     // Full implementation would integrate over rectangle
     
@@ -174,10 +233,13 @@ vec3 calculateAreaLight(AreaLight light, vec3 pos) {
     if (distSq > radiusSq)
         return vec3(0.0);
     
+    vec3 L = normalize(toCenter);
+    float NdotL = max(dot(normal, L), 0.0);
+    
     float attenuation = 1.0 - sqrt(distSq) / sqrt(radiusSq);
     attenuation *= attenuation;
     
-    return light.color * light.intensity * attenuation;
+    return light.color * light.intensity * attenuation * NdotL;
 }
 
 // =============================================================================
@@ -194,45 +256,55 @@ void main() {
     // Get probe world position
     vec3 worldPos = probeToWorld(probePos);
     
+    // Sample SDF to check if near surface
+    float sdf = imageLoad(uSDFVolume, probePos).r;
+    
+    // Only process probes near surfaces (within 2 voxels)
+    float voxelSize = length(uGridSize) / float(max(uVolumeSize.x, max(uVolumeSize.y, uVolumeSize.z)));
+    if (abs(sdf) > voxelSize * 2.0) {
+        // Far from surface, skip lighting calculation
+        return;
+    }
+    
+    // Compute surface normal from SDF gradient
+    vec3 normal = computeNormal(probePos);
+    
+    // Sample material albedo
+    vec3 albedo = sampleAlbedo(worldPos);
+    
     // Initialize direct lighting
     vec3 directRadiance = vec3(0.0);
     
     // Accumulate point lights
     for (int i = 0; i < uPointLightCount; ++i) {
-        directRadiance += calculatePointLight(lightBuffer.pointLights[i], worldPos);
+        directRadiance += calculatePointLight(lightBuffer.pointLights[i], worldPos, normal);
     }
     
     // Accumulate directional lights
-    // For directional lights, we need surface normal
-    // Simplified: use default up vector
-    vec3 defaultNormal = vec3(0.0, 1.0, 0.0);
     for (int i = 0; i < uDirLightCount; ++i) {
         directRadiance += calculateDirectionalLight(
             lightBuffer.dirLights[i], 
             worldPos, 
-            defaultNormal
+            normal
         );
     }
     
     // Accumulate area lights
     for (int i = 0; i < uAreaLightCount; ++i) {
-        directRadiance += calculateAreaLight(lightBuffer.areaLights[i], worldPos);
+        directRadiance += calculateAreaLight(lightBuffer.areaLights[i], worldPos, normal);
     }
     
     // Add ambient term
     directRadiance += uAmbientColor * uAmbientIntensity;
     
-    // Read existing radiance
-    vec4 existingRadiance = imageLoad(oRadiance, probePos);
+    // Apply albedo for color bleeding (Phase 1 key feature)
+    directRadiance *= albedo;
     
-    // Add direct lighting (additive blend)
-    vec4 finalRadiance = existingRadiance + vec4(directRadiance, 0.0);
-    
-    // Store result
-    imageStore(oRadiance, probePos, finalRadiance);
+    // Store result (overwrite existing radiance)
+    imageStore(oRadiance, probePos, vec4(directRadiance, 1.0));
     
     // Optionally write to direct lighting buffer for debugging
-    if (binding == 1) {
-        imageStore(oDirectLighting, probePos, vec4(directRadiance, 1.0));
+    if (binding == 2) {
+        imageStore(oDirectLighting, probePos, vec4(directRadiance / max(albedo, vec3(0.01)), 1.0));
     }
 }
