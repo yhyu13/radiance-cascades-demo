@@ -245,6 +245,44 @@ GLuint createComputeProgram(const std::string& shaderSource) {
     return program;
 }
 
+GLuint compileShader(GLenum type, const std::string& filepath) {
+    /**
+     * @brief Compile a single shader stage from file
+     */
+    
+    // Read shader source
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        std::cerr << "[GL Error] Cannot open shader file: " << filepath << std::endl;
+        return 0;
+    }
+    
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string source = buffer.str();
+    
+    // Create shader object
+    GLuint shader = glCreateShader(type);
+    const char* src = source.c_str();
+    glShaderSource(shader, 1, &src, nullptr);
+    
+    // Compile
+    glCompileShader(shader);
+    
+    // Check compilation status
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        GLchar log[1024];
+        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+        std::cerr << "[GL Error] Shader compilation failed (" << filepath << "):\n" << log << std::endl;
+        glDeleteShader(shader);
+        return 0;
+    }
+    
+    return shader;
+}
+
 void dispatchComputeShader(
     GLuint program,
     GLuint workGroupsX,
