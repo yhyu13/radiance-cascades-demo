@@ -171,6 +171,18 @@ GLuint loadComputeShader(const std::string& filepath);
 GLuint createComputeProgram(const std::string& shaderSource);
 
 /**
+ * @brief Compile a single shader stage (vertex, fragment, etc.)
+ * 
+ * Reads GLSL source from file, compiles it, and returns shader object.
+ * Used for building multi-stage programs (e.g., vertex + fragment).
+ * 
+ * @param type Shader type (GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, etc.)
+ * @param filepath Path to shader file (.vert, .frag, etc.)
+ * @return GLuint Shader object ID (0 on failure)
+ */
+GLuint compileShader(GLenum type, const std::string& filepath);
+
+/**
  * @brief Dispatch compute shader with work group dimensions
  * 
  * Executes compute shader on GPU with specified number of work groups.

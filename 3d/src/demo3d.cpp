@@ -96,6 +96,8 @@ Demo3D::Demo3D()
     , time(0.0f)
     , mouseDragging(false)
     , volumeResolution(DEFAULT_VOLUME_RESOLUTION)
+    , volumeOrigin(-2.0f, -2.0f, -2.0f)  // Default volume origin (centered around origin)
+    , volumeSize(4.0f, 4.0f, 4.0f)        // Default volume size (4x4x4 world units)
     , cascadeCount(MAX_CASCADES)
     , baseInterval(0.5f)
     , cascadeBilinear(true)
@@ -132,6 +134,14 @@ Demo3D::Demo3D()
     , activeVoxelCount(0)
     , memoryUsageMB(0.0f)
     , lastMousePos(0.0f)
+    , analyticSDFEnabled(true)  // Phase 0: Enable analytic SDF by default
+    , primitiveSSBO(0)
+    , debugQuadVAO(0)
+    , debugQuadVBO(0)
+    , sdfSliceAxis(2)           // Default: Z-axis slice (XY plane)
+    , sdfSlicePosition(0.5f)    // Default: middle of volume
+    , sdfVisualizeMode(0)       // Default: grayscale mode
+    , showSDFDebug(false)       // Default: hidden, press 'D' to toggle
 {
     /**
      * @brief Construct 3D demo and initialize all resources
@@ -157,18 +167,24 @@ Demo3D::Demo3D()
     std::cout << "\n[Demo3D] Loading shaders..." << std::endl;
     loadShader("voxelize.comp");
     loadShader("sdf_3d.comp");
+    loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
     loadShader("radiance_3d.comp");
     loadShader("inject_radiance.comp");
+    loadShader("sdf_debug.vert");     // Phase 0: SDF debug visualization
+    loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization
     // Note: raymarch.frag needs special handling - skip for now
     
     // Step 5: Initialize cascades
     initCascades();
     
-    // Step 6: Set up initial scene
+    // Step 6: Initialize debug quad geometry
+    initDebugQuad();
+    
+    // Step 7: Set up initial scene
     std::cout << "\n[Demo3D] Setting up initial scene..." << std::endl;
     setScene(0); // Empty room
     
-    // Step 7: Initialize ImGui
+    // Step 8: Initialize ImGui
     ImGui::GetIO().IniFilename = NULL;
     
     std::cout << "\n========================================" << std::endl;
@@ -176,6 +192,7 @@ Demo3D::Demo3D()
     std::cout << "[Demo3D] Volume resolution: " << volumeResolution << "³" << std::endl;
     std::cout << "[Demo3D] Memory usage: ~" << memoryUsageMB << " MB" << std::endl;
     std::cout << "[Demo3D] Shaders loaded: " << shaders.size() << std::endl;
+    std::cout << "[Demo3D] SDF Debug View: Press 'D' to toggle" << std::endl;
     std::cout << "========================================\n" << std::endl;
 }
 
@@ -219,6 +236,42 @@ void Demo3D::processInput() {
         return;
     }
     
+    // Phase 0: SDF Debug Controls
+    if (IsKeyPressed(KEY_D)) {
+        showSDFDebug = !showSDFDebug;
+        std::cout << "[Demo3D] SDF Debug View: " << (showSDFDebug ? "ON" : "OFF") << std::endl;
+    }
+    
+    if (showSDFDebug) {
+        // Change slice axis
+        if (IsKeyPressed(KEY_ONE)) {
+            sdfSliceAxis = 0;
+            std::cout << "[Demo3D] SDF Slice: X-axis (YZ plane)" << std::endl;
+        }
+        if (IsKeyPressed(KEY_TWO)) {
+            sdfSliceAxis = 1;
+            std::cout << "[Demo3D] SDF Slice: Y-axis (XZ plane)" << std::endl;
+        }
+        if (IsKeyPressed(KEY_THREE)) {
+            sdfSliceAxis = 2;
+            std::cout << "[Demo3D] SDF Slice: Z-axis (XY plane)" << std::endl;
+        }
+        
+        // Cycle visualization mode
+        if (IsKeyPressed(KEY_M)) {
+            sdfVisualizeMode = (sdfVisualizeMode + 1) % 3;
+            const char* modes[] = {"Grayscale", "Surface Detection", "Gradient Magnitude"};
+            std::cout << "[Demo3D] SDF Visualize Mode: " << modes[sdfVisualizeMode] << std::endl;
+        }
+        
+        // Adjust slice position with mouse wheel
+        float wheel = GetMouseWheelMove();
+        if (wheel != 0.0f) {
+            sdfSlicePosition += wheel * 0.05f;
+            sdfSlicePosition = glm::clamp(sdfSlicePosition, 0.0f, 1.0f);
+        }
+    }
+    
     // Basic camera controls would go here
     // For quick start, rely on Raylib's built-in camera handling in main3d.cpp
 }
@@ -258,6 +311,9 @@ void Demo3D::render() {
     // Pass 5: Raymarching
     raymarchPass();
     
+    // Pass 6: SDF Debug Visualization (Phase 0)
+    renderSDFDebug();
+    
     // Calculate frame time
     frameTimeMs = GetFrameTime() * 1000.0;
 }
@@ -284,22 +340,251 @@ void Demo3D::voxelizationPass() {
     sceneDirty = false;
 }
 
-void Demo3D::sdfGenerationPass() {
+void Demo3D::uploadPrimitivesToGPU() {
     /**
-     * @brief Generate 3D signed distance field using jump flooding
-     * 
-     * Quick start implementation: Skip full JFA, just create a simple placeholder
+     * @brief Upload analytic SDF primitives to GPU SSBO
      */
     
-    std::cout << "[Demo3D] SDF generation (placeholder - full JFA not yet implemented)" << std::endl;
+    if (!analyticSDFEnabled) {
+        return;
+    }
     
-    // For quick start, we'll skip the full 3D JFA algorithm
-    // In production, this would:
-    // 1. Initialize seed buffer from voxel grid
-    // 2. Run log2(N) propagation passes
-    // 3. Extract distances
+    const auto& primitives = analyticSDF.getPrimitives();
+    size_t count = primitives.size();
     
-    // TODO: Implement full 3D JFA when ready
+    if (count == 0) {
+        std::cout << "[Demo3D] No primitives to upload" << std::endl;
+        return;
+    }
+    
+    // Create or resize SSBO
+    if (primitiveSSBO == 0) {
+        glGenBuffers(1, &primitiveSSBO);
+    }
+    
+    // Calculate buffer size (match shader struct layout)
+    // struct Primitive { int type; vec3 position; vec3 scale; vec3 color; float padding; }
+    // Total: 4 + 12 + 12 + 12 + 4 = 44 bytes, padded to 48 for alignment
+    size_t bufferSize = count * 48;  // 48 bytes per primitive with alignment
+    
+    // Pack data for GPU (interleave properly)
+    struct GPUPrimitive {
+        int type;
+        float position[3];
+        float scale[3];
+        float color[3];
+        float padding;
+    };
+    
+    std::vector<GPUPrimitive> gpuData(count);
+    for (size_t i = 0; i < count; ++i) {
+        gpuData[i].type = static_cast<int>(primitives[i].type);
+        gpuData[i].position[0] = primitives[i].position.x;
+        gpuData[i].position[1] = primitives[i].position.y;
+        gpuData[i].position[2] = primitives[i].position.z;
+        gpuData[i].scale[0] = primitives[i].scale.x;
+        gpuData[i].scale[1] = primitives[i].scale.y;
+        gpuData[i].scale[2] = primitives[i].scale.z;
+        gpuData[i].color[0] = primitives[i].color.x;
+        gpuData[i].color[1] = primitives[i].color.y;
+        gpuData[i].color[2] = primitives[i].color.z;
+        gpuData[i].padding = 0.0f;
+    }
+    
+    // Upload to GPU
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, primitiveSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, gpuData.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    std::cout << "[Demo3D] Uploaded " << count << " primitives to GPU (" 
+              << bufferSize << " bytes)" << std::endl;
+}
+
+void Demo3D::initDebugQuad() {
+    /**
+     * @brief Initialize full-screen quad for SDF debug visualization
+     */
+    
+    // Create VAO
+    glGenVertexArrays(1, &debugQuadVAO);
+    glBindVertexArray(debugQuadVAO);
+    
+    // Create VBO with quad vertices (two triangles covering clip space)
+    float vertices[] = {
+        // Positions (clip space)
+        -1.0f, -1.0f,  // Bottom-left
+         1.0f, -1.0f,  // Bottom-right
+         1.0f,  1.0f,  // Top-right
+         1.0f,  1.0f,  // Top-right
+        -1.0f,  1.0f,  // Top-left
+        -1.0f, -1.0f   // Bottom-left
+    };
+    
+    glGenBuffers(1, &debugQuadVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, debugQuadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    
+    // Set up vertex attribute
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    
+    std::cout << "[Demo3D] Debug quad initialized" << std::endl;
+}
+
+void Demo3D::renderSDFDebug() {
+    /**
+     * @brief Render SDF cross-section debug view (OpenGL part only)
+     * @note ImGui UI must be rendered in renderUI() method, not here
+     */
+    
+    if (!showSDFDebug) return;
+    
+    // Check if SDF shader is loaded
+    auto it = shaders.find("sdf_debug.frag");
+    if (it == shaders.end()) {
+        std::cerr << "[ERROR] SDF debug shader not loaded!" << std::endl;
+        return;
+    }
+    
+    // Save current viewport
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    
+    // Set viewport to small window in top-left corner (400x400)
+    int debugSize = 400;
+    glViewport(0, viewport[3] - debugSize, debugSize, debugSize);
+    
+    // Clear with dark background
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    // Use debug shader
+    glUseProgram(it->second);
+    
+    // Bind SDF texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_3D, sdfTexture);
+    glUniform1i(glGetUniformLocation(it->second, "sdfVolume"), 0);
+    
+    // Set uniforms
+    glUniform1i(glGetUniformLocation(it->second, "sliceAxis"), sdfSliceAxis);
+    glUniform1f(glGetUniformLocation(it->second, "slicePosition"), sdfSlicePosition);
+    glUniform3fv(glGetUniformLocation(it->second, "volumeOrigin"), 1, &volumeOrigin[0]);
+    glUniform3fv(glGetUniformLocation(it->second, "volumeSize"), 1, &volumeSize[0]);
+    glUniform1f(glGetUniformLocation(it->second, "visualizeMode"), static_cast<float>(sdfVisualizeMode));
+    
+    // Render quad
+    glBindVertexArray(debugQuadVAO);
+    glDisable(GL_DEPTH_TEST);  // Disable depth test for overlay
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glEnable(GL_DEPTH_TEST);   // Re-enable for rest of rendering
+    glBindVertexArray(0);
+    
+    // Restore viewport
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+}
+
+void Demo3D::renderSDFDebugUI() {
+    /**
+     * @brief Render SDF debug UI overlay (ImGui part only)
+     * @note Must be called between rlImGuiBegin() and rlImGuiEnd()
+     */
+    
+    if (!showSDFDebug) return;
+    
+    int debugSize = 400;
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    
+    // Add text label with border indication via ImGui
+    ImGui::SetNextWindowPos(ImVec2(10, viewport[3] - debugSize - 60));
+    ImGui::Begin("SDF Debug Info", nullptr, 
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize | 
+                 ImGuiWindowFlags_NoBackground);
+    
+    // Draw colored border indicator
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 pos = ImGui::GetWindowPos();
+    ImVec2 size = ImVec2(debugSize + 20, debugSize + 70);
+    draw_list->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), 
+                       IM_COL32(255, 255, 0, 255), 0.0f, ImDrawFlags_None, 2.0f);
+    
+    ImGui::Text("SDF Cross-Section Viewer");
+    ImGui::Separator();
+    ImGui::Text("Slice Axis: %s", (sdfSliceAxis == 0) ? "X (YZ plane)" : 
+                                (sdfSliceAxis == 1) ? "Y (XZ plane)" : "Z (XY plane)");
+    ImGui::Text("Slice Position: %.2f", sdfSlicePosition);
+    ImGui::Text("Mode: %s", (sdfVisualizeMode == 0) ? "Grayscale" : 
+                             (sdfVisualizeMode == 1) ? "Surface Detection" : "Gradient");
+    ImGui::Text("Controls:");
+    ImGui::Text("  [D] Toggle debug view");
+    ImGui::Text("  [1/2/3] Change slice axis");
+    ImGui::Text("  [Mouse Wheel] Adjust position");
+    ImGui::Text("  [M] Cycle visualize mode");
+    ImGui::End();
+}
+
+void Demo3D::sdfGenerationPass() {
+    /**
+     * @brief Generate 3D signed distance field
+     * 
+     * Phase 0 implementation: Use analytic SDF for quick validation.
+     * Future: Replace with voxel-based JFA when mesh loading is ready.
+     */
+    
+    if (analyticSDFEnabled) {
+        std::cout << "[Demo3D] Generating analytic SDF..." << std::endl;
+        
+        // Check if we have a valid shader
+        auto it = shaders.find("sdf_analytic.comp");
+        if (it == shaders.end()) {
+            std::cerr << "[ERROR] Analytic SDF shader not loaded!" << std::endl;
+            return;
+        }
+        
+        // Upload primitives to GPU
+        uploadPrimitivesToGPU();
+        
+        // Bind compute shader
+        glUseProgram(it->second);
+        activeShader = it->second;
+        
+        // Set uniforms
+        glUniform3fv(glGetUniformLocation(activeShader, "volumeOrigin"), 
+                     1, &volumeOrigin[0]);
+        glUniform3fv(glGetUniformLocation(activeShader, "volumeSize"), 
+                     1, &volumeSize[0]);
+        glUniform1i(glGetUniformLocation(activeShader, "primitiveCount"), 
+                    static_cast<GLint>(analyticSDF.getPrimitives().size()));
+        
+        // Bind primitive SSBO
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, primitiveSSBO);
+        
+        // Bind output texture
+        glBindImageTexture(0, sdfTexture, 0, GL_FALSE, 0, 
+                          GL_WRITE_ONLY, GL_R32F);
+        
+        // Dispatch compute shader
+        glm::ivec3 workGroups = calculateWorkGroups(
+            volumeResolution, volumeResolution, volumeResolution, 8);
+        glDispatchCompute(workGroups.x, workGroups.y, workGroups.z);
+        
+        // Ensure writes are visible
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        
+        std::cout << "[Demo3D] Analytic SDF generation complete." << std::endl;
+    } else {
+        std::cout << "[Demo3D] SDF generation skipped (analytic SDF disabled, JFA not implemented)" << std::endl;
+        
+        // TODO: Implement full 3D JFA when ready
+        // For now, just clear the SDF texture
+        glBindTexture(GL_TEXTURE_3D, sdfTexture);
+        glClearTexImage(sdfTexture, 0, GL_RED, GL_FLOAT, nullptr);
+        glBindTexture(GL_TEXTURE_3D, 0);
+    }
 }
 
 void Demo3D::updateRadianceCascades() {
@@ -384,10 +669,51 @@ bool Demo3D::loadShader(const std::string& shaderName) {
         // Compute shader
         program = gl::loadComputeShader(shaderPath);
     } else if (shaderName.find(".frag") != std::string::npos) {
-        // Fragment shader - need to create a simple program with vertex + fragment
-        // For now, we'll skip this as we're using compute shaders primarily
-        std::cerr << "[WARNING] Fragment shader loading not yet implemented: " << shaderName << std::endl;
-        return false;
+        // Fragment shader - need corresponding vertex shader
+        // Extract base name (e.g., "sdf_debug" from "sdf_debug.frag")
+        std::string baseName = shaderName.substr(0, shaderName.find(".frag"));
+        std::string vertPath = "res/shaders/" + baseName + ".vert";
+        
+        // Load and compile vertex shader
+        GLuint vertShader = gl::compileShader(GL_VERTEX_SHADER, vertPath);
+        if (vertShader == 0) {
+            std::cerr << "[ERROR] Failed to compile vertex shader: " << vertPath << std::endl;
+            return false;
+        }
+        
+        // Load and compile fragment shader
+        GLuint fragShader = gl::compileShader(GL_FRAGMENT_SHADER, shaderPath);
+        if (fragShader == 0) {
+            std::cerr << "[ERROR] Failed to compile fragment shader: " << shaderPath << std::endl;
+            glDeleteShader(vertShader);
+            return false;
+        }
+        
+        // Link program
+        program = glCreateProgram();
+        glAttachShader(program, vertShader);
+        glAttachShader(program, fragShader);
+        glLinkProgram(program);
+        
+        // Check link status
+        GLint success;
+        glGetProgramiv(program, GL_LINK_STATUS, &success);
+        if (!success) {
+            GLchar infoLog[1024];
+            glGetProgramInfoLog(program, sizeof(infoLog), nullptr, infoLog);
+            std::cerr << "[ERROR] Shader program link failed:\n" << infoLog << std::endl;
+            glDeleteProgram(program);
+            glDeleteShader(vertShader);
+            glDeleteShader(fragShader);
+            return false;
+        }
+        
+        // Clean up shaders (they're linked into program now)
+        glDetachShader(program, vertShader);
+        glDetachShader(program, fragShader);
+        glDeleteShader(vertShader);
+        glDeleteShader(fragShader);
+        
     } else {
         std::cerr << "[ERROR] Unknown shader type: " << shaderName << std::endl;
         return false;
@@ -417,8 +743,11 @@ void Demo3D::reloadShaders() {
     
     loadShader("voxelize.comp");
     loadShader("sdf_3d.comp");
+    loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
     loadShader("radiance_3d.comp");
     loadShader("inject_radiance.comp");
+    loadShader("sdf_debug.vert");     // Phase 0: SDF debug visualization
+    loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization
     
     std::cout << "[Demo3D] Shaders reloaded" << std::endl;
 }
@@ -579,6 +908,72 @@ void Demo3D::setScene(int sceneType) {
     
     currentScene = sceneType;
     sceneDirty = true;
+    
+    // Phase 0: Set up analytic SDF if enabled
+    if (analyticSDFEnabled) {
+        analyticSDF.clear();
+        
+        switch (sceneType) {
+            case -1:
+                // Empty scene
+                std::cout << "[Demo3D] Cleared scene (analytic SDF)" << std::endl;
+                break;
+                
+            case 0:
+            case 1: {
+                // Cornell Box using analytic primitives
+                std::cout << "[Demo3D] Loading: Cornell Box (analytic SDF)" << std::endl;
+                analyticSDF.createCornellBox();
+                break;
+            }
+            
+            case 2: {
+                // Simplified Sponza with boxes
+                std::cout << "[Demo3D] Loading: Simplified Sponza (analytic SDF)" << std::endl;
+                
+                // Floor
+                analyticSDF.addBox(
+                    glm::vec3(0.0f, -2.0f, 0.0f),
+                    glm::vec3(6.0f, 0.2f, 16.0f),
+                    glm::vec3(0.7f, 0.6f, 0.5f)
+                );
+                
+                // Ceiling
+                analyticSDF.addBox(
+                    glm::vec3(0.0f, 2.0f, 0.0f),
+                    glm::vec3(6.0f, 0.2f, 16.0f),
+                    glm::vec3(0.7f, 0.7f, 0.7f)
+                );
+                
+                // Pillars
+                for (int i = 0; i < 6; ++i) {
+                    float z = -7.0f + i * 2.8f;
+                    
+                    // Left pillar
+                    analyticSDF.addBox(
+                        glm::vec3(-2.5f, 0.0f, z),
+                        glm::vec3(0.4f, 4.0f, 0.8f),
+                        glm::vec3(0.8f, 0.8f, 0.8f)
+                    );
+                    
+                    // Right pillar
+                    analyticSDF.addBox(
+                        glm::vec3(2.5f, 0.0f, z),
+                        glm::vec3(0.4f, 4.0f, 0.8f),
+                        glm::vec3(0.8f, 0.8f, 0.8f)
+                    );
+                }
+                break;
+            }
+            
+            default:
+                std::cout << "[Demo3D] Scene " << sceneType << " not implemented for analytic SDF" << std::endl;
+                break;
+        }
+        
+        std::cout << "[Demo3D] Analytic SDF: " << analyticSDF.getPrimitiveCount() 
+                  << " primitives loaded" << std::endl;
+    }
     
     // Clear existing voxel grid by binding it and clearing via shader or CPU
     // For simplicity in this stub-filled implementation, we rely on addVoxelBox overwriting
@@ -966,6 +1361,9 @@ void Demo3D::renderUI() {
     renderSettingsPanel();
     renderCascadePanel();
     renderTutorialPanel();
+    
+    // Render SDF debug UI overlay (Phase 0)
+    renderSDFDebugUI();
     
     if (showImGuiDemo) {
         ImGui::ShowDemoWindow(&showImGuiDemo);

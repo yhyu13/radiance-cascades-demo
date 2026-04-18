@@ -31,6 +31,7 @@
 #include "imgui.h"
 #include "rlImGui.h"
 #include "gl_helpers.h"
+#include "analytic_sdf.h"  // Analytic SDF primitives for Phase 0
 #include <glm/glm.hpp>
 
 // =============================================================================
@@ -328,6 +329,34 @@ public:
     void setScene(int sceneType);
     
     /**
+     * @brief Upload analytic SDF primitives to GPU SSBO
+     * 
+     * Called before dispatching sdf_analytic.comp shader.
+     * Transfers primitive data from CPU to GPU for parallel evaluation.
+     */
+    void uploadPrimitivesToGPU();
+    
+    /**
+     * @brief Initialize debug quad geometry for SDF visualization
+     */
+    void initDebugQuad();
+    
+    /**
+     * @brief Render SDF cross-section debug view (OpenGL part)
+     * 
+     * Displays a 2D slice of the 3D SDF volume as grayscale.
+     * Useful for verifying SDF generation correctness.
+     */
+    void renderSDFDebug();
+    
+    /**
+     * @brief Render SDF debug UI overlay (ImGui part)
+     * 
+     * Must be called between rlImGuiBegin() and rlImGuiEnd().
+     */
+    void renderSDFDebugUI();
+    
+    /**
      * @brief Helper to add a box of voxels to the volume
      * 
      * @param center Box center in world space
@@ -450,6 +479,41 @@ private:
     /** Signed distance field (R32F) */
     GLuint sdfTexture;
     
+    // =============================================================================
+    // Analytic SDF (Phase 0 - Quick Validation)
+    // =============================================================================
+    
+    /** Analytic SDF primitive system for quick testing */
+    AnalyticSDF analyticSDF;
+    
+    /** Whether to use analytic SDF instead of voxel-based JFA */
+    bool analyticSDFEnabled;
+    
+    /** SSBO for uploading primitives to GPU */
+    GLuint primitiveSSBO;
+    
+    // =============================================================================
+    // SDF Debug Visualization (Phase 0)
+    // =============================================================================
+    
+    /** Quad VAO for debug visualization */
+    GLuint debugQuadVAO;
+    
+    /** Quad VBO for debug visualization */
+    GLuint debugQuadVBO;
+    
+    /** Which axis to slice (0=X, 1=Y, 2=Z) */
+    int sdfSliceAxis;
+    
+    /** Normalized position along slice axis (0.0-1.0) */
+    float sdfSlicePosition;
+    
+    /** Visualization mode (0=grayscale, 1=surface, 2=gradient) */
+    int sdfVisualizeMode;
+    
+    /** Whether to show SDF debug view */
+    bool showSDFDebug;
+    
     /** Direct lighting buffer (RGBA16F) */
     GLuint directLightingTexture;
     
@@ -461,6 +525,12 @@ private:
     
     /** Volume resolution (isotropic) */
     int volumeResolution;
+    
+    /** Volume origin in world space */
+    glm::vec3 volumeOrigin;
+    
+    /** Volume size in world space */
+    glm::vec3 volumeSize;
     
     // =============================================================================
     // Radiance Cascades

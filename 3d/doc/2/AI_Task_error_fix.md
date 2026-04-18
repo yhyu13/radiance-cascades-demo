@@ -1026,3 +1026,17 @@ INFO: TIMER: Target time per frame: 10.000 milliseconds
 [proc] The command: "C:\Program Files\CMake\bin\cmake.EXE" --build c:/Git-repo-3rd/Radiance_Cascade_repos/radiance-cascades-demo/3d/build --config Debug --target RadianceCascades3D -j 32 -- exited with code: 1
 [driver] Build completed: 00:00:02.895
 [build] Build finished with exit code 1
+
+[Demo3D] SDF Debug View: ON
+[Demo3D] Generating analytic SDF...
+[Demo3D] Uploaded 7 primitives to GPU (336 bytes)
+[Demo3D] Analytic SDF generation complete.
+[Demo3D] Injecting direct lighting (placeholder)
+[Demo3D] Updating radiance cascades (6 levels)
+  Cascade 0: resolution=0, cellSize=1
+  Cascade 1: resolution=0, cellSize=1
+  Cascade 2: resolution=0, cellSize=1
+  Cascade 3: resolution=0, cellSize=1
+  Cascade 4: resolution=0, cellSize=1
+  Cascade 5: resolution=0, cellSize=1
+Assertion failed: g.WithinFrameScope, file C:\Git-repo-3rd\Radiance_Cascade_repos\radiance-cascades-demo\lib\imgui\imgui.cpp, line 7008
