@@ -21,7 +21,7 @@
  * - Bilinear filtering between probes
  */
 
-#version 450 core
+#version 430 core
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
@@ -56,21 +56,24 @@ uniform mat4 uPrevVPMatrix;
 /** Current frame view-projection matrix */
 uniform mat4 uCurrVPMatrix;
 
+/** Flag indicating if previous frame data is available */
+uniform int uHasPreviousFrame;
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
 
 /** Signed distance field */
-layout(r32f, binding = 0) uniform sampler3D uSDF;
+uniform sampler3D uSDF;
 
 /** Output radiance for this cascade */
-layout(rgba16f, binding = 1) uniform image3D oRadiance;
+layout(rgba16f) uniform image3D oRadiance;
 
 /** Previous frame radiance (temporal) */
-layout(rgba16f, binding = 2) uniform sampler3D uPrevRadiance;
+uniform sampler3D uPrevRadiance;
 
 /** Coarser cascade for mip sampling */
-layout(rgba16f, binding = 3) uniform sampler3D uCoarseCascade;
+uniform sampler3D uCoarseCascade;
 
 // =============================================================================
 // Ray Configuration
@@ -179,7 +182,8 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
  * Uses camera motion to find corresponding pixel in previous frame.
  */
 vec4 temporalReproject(ivec3 probePos, vec3 worldPos) {
-    if (uCascadeIndex > 0 && uPrevRadiance != sampler3D(0)) {
+    // Check if we have valid previous frame data
+    if (uCascadeIndex > 0 && uHasPreviousFrame > 0) {
         // Transform world position to previous frame's clip space
         vec4 prevClip = uPrevVPMatrix * vec4(worldPos, 1.0);
         vec3 prevUV = prevClip.xyz / prevClip.w;

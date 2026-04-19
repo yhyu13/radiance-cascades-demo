@@ -25,7 +25,7 @@
  *    e. Accumulate into radiance texture
  */
 
-#version 450 core
+#version 430 core
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
@@ -90,13 +90,28 @@ struct AreaLight {
 // =============================================================================
 
 /** Radiance cascade to inject into (read-write) */
-layout(rgba16f, binding = 0) uniform image3D oRadiance;
+layout(rgba16f) uniform image3D oRadiance;
 
 /** SDF volume for surface detection and normal computation */
-layout(r32f, binding = 1) uniform image3D uSDFVolume;
+layout(r32f) uniform image3D uSDFVolume;
 
 /** Optional: Direct lighting buffer for debugging */
-layout(rgba16f, binding = 2) uniform image3D oDirectLighting;
+layout(rgba16f) uniform image3D oDirectLighting;
+
+/** Primitive buffer for material albedo lookup (Phase 1 enhancement) */
+struct Primitive {
+    int type;                 // 0 = box, 1 = sphere
+    vec3 position;            // World space center
+    vec3 scale;               // Box: half-extents, Sphere: radius
+    vec3 color;               // Albedo color
+    float padding;            // Alignment
+};
+
+layout(std430) buffer PrimitiveBuffer {
+    Primitive primitives[];
+};
+
+uniform int uPrimitiveCount;  // Number of primitives in buffer
 
 // =============================================================================
 // Light Arrays (via UBO or SSBO)
@@ -106,7 +121,7 @@ layout(rgba16f, binding = 2) uniform image3D oDirectLighting;
 #define MAX_DIR_LIGHTS 4
 #define MAX_AREA_LIGHTS 8
 
-layout(std140, binding = 0) uniform LightBuffer {
+layout(std140) uniform LightBuffer {
     PointLight pointLights[MAX_POINT_LIGHTS];
     DirectionalLight dirLights[MAX_DIR_LIGHTS];
     AreaLight areaLights[MAX_AREA_LIGHTS];
@@ -155,21 +170,38 @@ vec3 computeNormal(ivec3 coord) {
  * @param worldPos World space position
  * @return Albedo color
  * 
- * Phase 1: Hardcoded Cornell Box colors for validation
- * TODO: Replace with proper material system
+ * Phase 1 Enhancement: Lookup nearest primitive and return its material color
+ * Replaces hardcoded Cornell Box colors with dynamic material system
  */
 vec3 sampleAlbedo(vec3 worldPos) {
-    // Cornell Box wall colors (Phase 1 hardcoded)
-    // Left wall: Red
-    if (worldPos.x < -1.9 && worldPos.x > -2.1)
-        return vec3(0.65, 0.05, 0.05);
+    float minDist = 1e10;
+    vec3 albedo = vec3(0.75); // Default white
     
-    // Right wall: Green
-    if (worldPos.x > 1.9 && worldPos.x < 2.1)
-        return vec3(0.12, 0.45, 0.15);
+    // Find closest primitive to this position
+    for (int i = 0; i < uPrimitiveCount; ++i) {
+        Primitive prim = primitives[i];
+        
+        // Transform to primitive's local space
+        vec3 localPos = worldPos - prim.position;
+        
+        float dist;
+        if (prim.type == 0) {
+            // Box: use half-extents
+            vec3 d = abs(localPos) - prim.scale;
+            dist = length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0);
+        } else {
+            // Sphere
+            dist = length(localPos) - prim.scale.x;
+        }
+        
+        // If this primitive is closer, use its color
+        if (dist < minDist) {
+            minDist = dist;
+            albedo = prim.color;
+        }
+    }
     
-    // Back wall, floor, ceiling: White
-    return vec3(0.75, 0.75, 0.75);
+    return albedo;
 }
 
 /**
@@ -303,8 +335,8 @@ void main() {
     // Store result (overwrite existing radiance)
     imageStore(oRadiance, probePos, vec4(directRadiance, 1.0));
     
-    // Optionally write to direct lighting buffer for debugging
-    if (binding == 2) {
-        imageStore(oDirectLighting, probePos, vec4(directRadiance / max(albedo, vec3(0.01)), 1.0));
-    }
+    // TODO: Optionally write to direct lighting buffer for debugging
+    // if (/* some condition */) {
+    //     imageStore(oDirectLighting, probePos, vec4(directRadiance / max(albedo, vec3(0.01)), 1.0));
+    // }
 }
