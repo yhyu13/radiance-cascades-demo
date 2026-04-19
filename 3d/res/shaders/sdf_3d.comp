@@ -20,7 +20,7 @@
  * Output: 3D texture storing signed distance values
  */
 
-#version 450 core
+#version 430 core
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
@@ -45,13 +45,13 @@ uniform float uSurfaceThreshold;
 // =============================================================================
 
 /** Input voxel grid (density information) */
-layout(rgba8, binding = 0) uniform image3D uVoxelGrid;
+layout(rgba8) uniform image3D uVoxelGrid;
 
 /** Output SDF (single float per voxel) */
-layout(r32f, binding = 1) uniform image3D oSDF;
+layout(r32f) uniform image3D oSDF;
 
 /** Optional: Voronoi diagram (closest surface position) */
-layout(rgb32f, binding = 2) uniform image3D oVoronoi;
+layout(rgba32f) uniform image3D oVoronoi;
 
 // =============================================================================
 // Constants
@@ -78,7 +78,10 @@ vec4 safeLoad(image3D img, ivec3 pos) {
  * @brief Get density from voxel
  */
 float getDensity(ivec3 pos) {
-    return safeLoad(uVoxelGrid, pos).a;
+    if (any(lessThan(pos, ivec3(0))) || any(greaterThanEqual(pos, uVolumeSize))) {
+        return 0.0;
+    }
+    return imageLoad(uVoxelGrid, pos).a;
 }
 
 /**
@@ -112,8 +115,13 @@ void main() {
         ivec3 offset = getOffset(i);
         ivec3 samplePos = pos + offset;
         
-        // Load neighbor's distance value
-        vec4 neighborData = safeLoad(oSDF, samplePos);
+        // Load neighbor's distance value with bounds checking
+        vec4 neighborData;
+        if (any(lessThan(samplePos, ivec3(0))) || any(greaterThanEqual(samplePos, uVolumeSize))) {
+            neighborData = vec4(INF, 0.0, 0.0, 0.0);
+        } else {
+            neighborData = imageLoad(oSDF, samplePos);
+        }
         float neighborDist = neighborData.r;
         
         // If this is first iteration (step == maxStep), initialize from voxel grid
@@ -130,12 +138,13 @@ void main() {
                 minDist = neighborDist;
                 
                 // Load stored closest position from voronoi buffer
-                if (binding == 2) {
-                    vec4 voronoiData = safeLoad(oVoronoi, samplePos);
-                    if (voronoiData.a > 0.5) { // Valid position stored
-                        closestPos = ivec3(voronoiData.xyz);
-                    }
-                }
+                // TODO: Optional Voronoi diagram output
+                // if (enableVoronoi) {
+                //     vec4 voronoiData = imageLoad(oVoronoi, samplePos);
+                //     if (voronoiData.a > 0.5) { // Valid position stored
+                //         closestPos = ivec3(voronoiData.xyz);
+                //     }
+                // }
             }
         }
         
@@ -162,9 +171,10 @@ void main() {
     imageStore(oSDF, pos, vec4(minDist, 0.0, 0.0, 0.0));
     
     // Optionally store Voronoi diagram
-    if (binding == 2) {
-        // Store closest surface position (with validity flag in w)
-        float valid = (minDist < INF) ? 1.0 : 0.0;
-        imageStore(oVoronoi, pos, vec4(vec3(closestPos), valid));
-    }
+    // TODO: Optional Voronoi diagram output
+    // if (enableVoronoi) {
+    //     // Store closest surface position (with validity flag in w)
+    //     float valid = (minDist < INF) ? 1.0 : 0.0;
+    //     imageStore(oVoronoi, pos, vec4(vec3(closestPos), valid));
+    // }
 }

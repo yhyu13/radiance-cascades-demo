@@ -20,7 +20,7 @@
  * - 3D texture with voxel density and color
  */
 
-#version 450 core
+#version 430 core
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
@@ -48,10 +48,10 @@ uniform mat4 uVPMatrix;
 // =============================================================================
 
 /** Output voxel grid (density + color) */
-layout(rgba8, binding = 0) uniform image3D oVoxelGrid;
+layout(rgba8) uniform image3D oVoxelGrid;
 
 /** Optional: Output normals */
-layout(rgba8, binding = 1) uniform image3D oNormalGrid;
+layout(rgba8) uniform image3D oNormalGrid;
 
 // =============================================================================
 // Scene Data (via Shader Storage Buffer Objects)
@@ -68,7 +68,7 @@ struct Triangle {
 };
 
 /** Array of scene triangles */
-layout(std430, binding = 0) buffer TriangleBuffer {
+layout(std430) buffer TriangleBuffer {
     Triangle triangles[];
 } triBuffer;
 
@@ -191,11 +191,11 @@ void main() {
         // Surface voxel: store color and mark as occupied
         imageStore(oVoxelGrid, pos, vec4(surfaceColor, 1.0));
         
-        if (binding == 1) {
-            // Encode normal in RGB (map from [-1,1] to [0,1])
-            vec3 encodedNormal = surfaceNormal * 0.5 + 0.5;
-            imageStore(oNormalGrid, pos, vec4(encodedNormal, 1.0));
-        }
+        // TODO: Optional normal encoding for debugging
+        // if (some_condition) {
+        //     vec3 encodedNormal = surfaceNormal * 0.5 + 0.5;
+        //     imageStore(oNormalGrid, pos, vec4(encodedNormal, 1.0));
+        // }
     } else {
         // Empty voxel or interior
         float density = (minDistance < 0.1) ? 1.0 : 0.0;

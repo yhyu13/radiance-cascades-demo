@@ -32,6 +32,7 @@
 #include "rlImGui.h"
 #include "gl_helpers.h"
 #include "analytic_sdf.h"  // Analytic SDF primitives for Phase 0
+#include "obj_loader.h"    // OBJ mesh loader for scene import
 #include <glm/glm.hpp>
 
 // =============================================================================
@@ -329,12 +330,18 @@ public:
     void setScene(int sceneType);
     
     /**
-     * @brief Upload analytic SDF primitives to GPU SSBO
+     * @brief Upload analytic primitives to GPU SSBO
      * 
-     * Called before dispatching sdf_analytic.comp shader.
      * Transfers primitive data from CPU to GPU for parallel evaluation.
      */
     void uploadPrimitivesToGPU();
+    
+    /**
+     * @brief Load and voxelize OBJ mesh file
+     * @param filename Path to .obj file
+     * @return true if successful
+     */
+    bool loadOBJMesh(const std::string& filename);
     
     /**
      * @brief Initialize debug quad geometry for SDF visualization
@@ -355,6 +362,16 @@ public:
      * Must be called between rlImGuiBegin() and rlImGuiEnd().
      */
     void renderSDFDebugUI();
+    
+    /**
+     * @brief Render radiance cascade debug UI overlay (Phase 1)
+     */
+    void renderRadianceDebugUI();
+    
+    /**
+     * @brief Render lighting debug UI overlay (Phase 1)
+     */
+    void renderLightingDebugUI();
     
     /**
      * @brief Helper to add a box of voxels to the volume
@@ -492,6 +509,12 @@ private:
     /** SSBO for uploading primitives to GPU */
     GLuint primitiveSSBO;
     
+    /** OBJ mesh loader for importing real geometry */
+    OBJLoader objLoader;
+    
+    /** Whether to use loaded OBJ mesh instead of analytic primitives */
+    bool useOBJMesh;
+    
     // =============================================================================
     // SDF Debug Visualization (Phase 0)
     // =============================================================================
@@ -513,6 +536,53 @@ private:
     
     /** Whether to show SDF debug view */
     bool showSDFDebug;
+    
+    // ========================================================================
+    // Phase 1: Radiance Cascade Debug Controls
+    // ========================================================================
+    
+    /** Whether to show radiance cascade debug view */
+    bool showRadianceDebug;
+    
+    /** Radiance slice axis (0=X, 1=Y, 2=Z) */
+    int radianceSliceAxis;
+    
+    /** Radiance slice position (0.0-1.0) */
+    float radianceSlicePosition;
+    
+    /** Radiance visualization mode (0=Slice, 1=MaxProj, 2=Average, 3=Direct) */
+    int radianceVisualizeMode;
+    
+    /** Radiance exposure for tone mapping */
+    float radianceExposure;
+    
+    /** Radiance intensity scale */
+    float radianceIntensityScale;
+    
+    /** Show voxel grid overlay on radiance debug */
+    bool showRadianceGrid;
+    
+    // ========================================================================
+    // Phase 1: Lighting Debug Controls
+    // ========================================================================
+    
+    /** Whether to show lighting debug view */
+    bool showLightingDebug;
+    
+    /** Lighting debug slice axis */
+    int lightingSliceAxis;
+    
+    /** Lighting debug slice position */
+    float lightingSlicePosition;
+    
+    /** Lighting debug mode (0=Light0, 1=Light1, 2=Light2, 3=Combined, 4=Normals, 5=Albedo) */
+    int lightingDebugMode;
+    
+    /** Lighting exposure */
+    float lightingExposure;
+    
+    /** Lighting intensity scale */
+    float lightingIntensityScale;
     
     /** Direct lighting buffer (RGBA16F) */
     GLuint directLightingTexture;

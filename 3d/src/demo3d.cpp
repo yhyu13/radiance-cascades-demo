@@ -136,6 +136,7 @@ Demo3D::Demo3D()
     , lastMousePos(0.0f)
     , analyticSDFEnabled(true)  // Phase 0: Enable analytic SDF by default
     , primitiveSSBO(0)
+    , useOBJMesh(false)  // Default to analytic primitives, enable for OBJ loading
     , debugQuadVAO(0)
     , debugQuadVBO(0)
     , sdfSliceAxis(2)           // Default: Z-axis slice (XY plane)
@@ -170,8 +171,9 @@ Demo3D::Demo3D()
     loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
     loadShader("radiance_3d.comp");
     loadShader("inject_radiance.comp");
-    loadShader("sdf_debug.vert");     // Phase 0: SDF debug visualization
-    loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization
+    loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization (auto-loads .vert)
+    loadShader("radiance_debug.frag"); // Phase 1: Radiance cascade debug (auto-loads .vert)
+    loadShader("lighting_debug.frag"); // Phase 1: Lighting debug (auto-loads .vert)
     // Note: raymarch.frag needs special handling - skip for now
     
     // Step 5: Initialize cascades
@@ -527,6 +529,89 @@ void Demo3D::renderSDFDebugUI() {
     ImGui::End();
 }
 
+void Demo3D::renderRadianceDebugUI() {
+    /**
+     * @brief Render radiance cascade debug UI overlay
+     * @note Must be called between rlImGuiBegin() and rlImGuiEnd()
+     */
+    
+    if (!showRadianceDebug) return;
+    
+    int debugSize = 400;
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    
+    ImGui::SetNextWindowPos(ImVec2(10, viewport[3] - debugSize - 60));
+    ImGui::Begin("Radiance Debug Info", nullptr, 
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize | 
+                 ImGuiWindowFlags_NoBackground);
+    
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 pos = ImGui::GetWindowPos();
+    ImVec2 size = ImVec2(debugSize + 20, debugSize + 70);
+    draw_list->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), 
+                       IM_COL32(0, 255, 255, 255), 0.0f, ImDrawFlags_None, 2.0f);
+    
+    ImGui::Text("Radiance Cascade Viewer");
+    ImGui::Separator();
+    ImGui::Text("Slice Axis: %s", (radianceSliceAxis == 0) ? "X" : 
+                                (radianceSliceAxis == 1) ? "Y" : "Z");
+    ImGui::Text("Slice Position: %.2f", radianceSlicePosition);
+    ImGui::Text("Mode: %s", (radianceVisualizeMode == 0) ? "Slice" : 
+                             (radianceVisualizeMode == 1) ? "Max Projection" : "Average");
+    ImGui::Text("Exposure: %.2f", radianceExposure);
+    ImGui::Text("Intensity Scale: %.2f", radianceIntensityScale);
+    ImGui::Text("Controls:");
+    ImGui::Text("  [4/5/6] Change slice axis");
+    ImGui::Text("  [Mouse Wheel] Adjust position");
+    ImGui::Text("  [F] Cycle visualize mode");
+    ImGui::Text("  [+/-] Adjust exposure");
+    ImGui::End();
+}
+
+void Demo3D::renderLightingDebugUI() {
+    /**
+     * @brief Render per-light debug UI overlay
+     * @note Must be called between rlImGuiBegin() and rlImGuiEnd()
+     */
+    
+    if (!showLightingDebug) return;
+    
+    int debugSize = 400;
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    
+    ImGui::SetNextWindowPos(ImVec2(10, viewport[3] - debugSize - 60));
+    ImGui::Begin("Lighting Debug Info", nullptr, 
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize | 
+                 ImGuiWindowFlags_NoBackground);
+    
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 pos = ImGui::GetWindowPos();
+    ImVec2 size = ImVec2(debugSize + 20, debugSize + 70);
+    draw_list->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), 
+                       IM_COL32(255, 165, 0, 255), 0.0f, ImDrawFlags_None, 2.0f);
+    
+    ImGui::Text("Per-Light Contribution Viewer");
+    ImGui::Separator();
+    ImGui::Text("Slice Axis: %s", (lightingSliceAxis == 0) ? "X" : 
+                                  (lightingSliceAxis == 1) ? "Y" : "Z");
+    ImGui::Text("Slice Position: %.2f", lightingSlicePosition);
+    ImGui::Text("Mode: %s", (lightingDebugMode == 0) ? "Combined" : 
+                             (lightingDebugMode == 1) ? "Light 0" :
+                             (lightingDebugMode == 2) ? "Light 1" :
+                             (lightingDebugMode == 3) ? "Light 2" :
+                             (lightingDebugMode == 4) ? "Normals" : "Albedo");
+    ImGui::Text("Exposure: %.2f", lightingExposure);
+    ImGui::Text("Intensity Scale: %.2f", lightingIntensityScale);
+    ImGui::Text("Controls:");
+    ImGui::Text("  [7/8/9] Change slice axis");
+    ImGui::Text("  [Mouse Wheel] Adjust position");
+    ImGui::Text("  [H] Cycle visualize mode");
+    ImGui::Text("  [+/-] Adjust exposure");
+    ImGui::End();
+}
+
 void Demo3D::sdfGenerationPass() {
     /**
      * @brief Generate 3D signed distance field
@@ -818,8 +903,7 @@ void Demo3D::reloadShaders() {
     loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
     loadShader("radiance_3d.comp");
     loadShader("inject_radiance.comp");
-    loadShader("sdf_debug.vert");     // Phase 0: SDF debug visualization
-    loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization
+    loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization (auto-loads .vert)
     
     std::cout << "[Demo3D] Shaders reloaded" << std::endl;
 }
@@ -1434,8 +1518,10 @@ void Demo3D::renderUI() {
     renderCascadePanel();
     renderTutorialPanel();
     
-    // Render SDF debug UI overlay (Phase 0)
-    renderSDFDebugUI();
+    // Render debug UI overlays
+    renderSDFDebugUI();       // Phase 0: SDF visualization
+    renderRadianceDebugUI();  // Phase 1: Radiance cascade visualization
+    renderLightingDebugUI();  // Phase 1: Per-light contribution visualization
     
     if (showImGuiDemo) {
         ImGui::ShowDemoWindow(&showImGuiDemo);
@@ -1511,6 +1597,64 @@ void Demo3D::renderTutorialPanel() {
     ImGui::BulletText("F1: Toggle UI");
     ImGui::NewLine();
     
+    // Scene Selection Controls
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Scene Selection:");
+    ImGui::Separator();
+    
+    if (ImGui::Button(currentScene == 0 ? "[ACTIVE] Empty Room" : "Empty Room")) {
+        setScene(0);
+        std::cout << "[Demo3D] Switched to: Empty Room" << std::endl;
+    }
+    
+    if (ImGui::Button(currentScene == 1 ? "[ACTIVE] Cornell Box" : "Cornell Box")) {
+        setScene(1);
+        std::cout << "[Demo3D] Switched to: Cornell Box (classic test scene)" << std::endl;
+    }
+    
+    if (ImGui::Button(currentScene == 2 ? "[ACTIVE] Simplified Sponza" : "Simplified Sponza")) {
+        setScene(2);
+        std::cout << "[Demo3D] Switched to: Simplified Sponza" << std::endl;
+    }
+    
+    ImGui::Separator();
+    ImGui::Text("Advanced Scenes:");
+    
+    if (ImGui::Button(useOBJMesh ? "[ACTIVE] Cornell Box OBJ" : "Load Cornell Box OBJ")) {
+        if (loadOBJMesh("res/scene/cornell_box.obj")) {
+            std::cout << "[Demo3D] Loaded real Cornell Box mesh from OBJ!" << std::endl;
+        } else {
+            std::cerr << "[ERROR] Failed to load Cornell Box OBJ!" << std::endl;
+        }
+    }
+    
+    ImGui::NewLine();
+    ImGui::Text("Current Scene: %d", currentScene);
+    if (useOBJMesh) {
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Mode: OBJ Mesh");
+    }
+    
+    ImGui::NewLine();
+    
+    // Debug Visualization Controls
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Debug Visualizations:");
+    ImGui::Separator();
+    
+    if (ImGui::Button(showSDFDebug ? "[ON] SDF Debug (D)" : "[OFF] SDF Debug (D)")) {
+        showSDFDebug = !showSDFDebug;
+        std::cout << "[Demo3D] SDF Debug View: " << (showSDFDebug ? "ON" : "OFF") << std::endl;
+    }
+    
+    if (ImGui::Button(showRadianceDebug ? "[ON] Radiance Debug" : "[OFF] Radiance Debug")) {
+        showRadianceDebug = !showRadianceDebug;
+        std::cout << "[Demo3D] Radiance Debug View: " << (showRadianceDebug ? "ON" : "OFF") << std::endl;
+    }
+    if (ImGui::Button(showLightingDebug ? "[ON] Lighting Debug" : "[OFF] Lighting Debug")) {
+        showLightingDebug = !showLightingDebug;
+        std::cout << "[Demo3D] Lighting Debug View: " << (showLightingDebug ? "ON" : "OFF") << std::endl;
+    }
+    
+    ImGui::NewLine();
+    
     ImGui::Text("Current Features:");
     ImGui::BulletText("✓ Basic voxelization");
     ImGui::BulletText("✓ Volume textures created");
@@ -1583,4 +1727,59 @@ glm::ivec3 Demo3D::calculateWorkGroups(int dimX, int dimY, int dimZ, int localSi
         (dimY + localSize - 1) / localSize,
         (dimZ + localSize - 1) / localSize
     );
+}
+
+bool Demo3D::loadOBJMesh(const std::string& filename) {
+    std::cout << "\n[Demo3D] Loading OBJ mesh: " << filename << std::endl;
+    
+    // Try loading from multiple possible paths (handle different working directories)
+    std::vector<std::string> searchPaths = {
+        filename,                              // As provided
+        "../" + filename,                      // One level up (from build/)
+        "../../" + filename,                   // Two levels up
+        "res/scene/" + filename.substr(filename.find_last_of("/\\") + 1),  // Just filename in res/scene/
+        "../res/scene/" + filename.substr(filename.find_last_of("/\\") + 1)
+    };
+    
+    bool loaded = false;
+    std::string successfulPath;
+    
+    for (const auto& path : searchPaths) {
+        if (objLoader.load(path)) {
+            loaded = true;
+            successfulPath = path;
+            std::cout << "[Demo3D] Successfully loaded from: " << path << std::endl;
+            break;
+        }
+    }
+    
+    if (!loaded) {
+        std::cerr << "[ERROR] Failed to load OBJ from any location!" << std::endl;
+        std::cerr << "[ERROR] Tried paths:" << std::endl;
+        for (const auto& path : searchPaths) {
+            std::cerr << "  - " << path << std::endl;
+        }
+        return false;
+    }
+    
+    objLoader.normalize();
+    
+    std::vector<uint8_t> voxelData;
+    objLoader.voxelize(volumeResolution, voxelData, volumeOrigin, volumeSize);
+    
+    if (voxelData.empty()) {
+        std::cerr << "[ERROR] Empty voxelization!" << std::endl;
+        return false;
+    }
+    
+    glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
+    glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
+                    volumeResolution, volumeResolution, volumeResolution,
+                    GL_RGBA, GL_UNSIGNED_BYTE, voxelData.data());
+    
+    sceneDirty = true;
+    useOBJMesh = true;
+    
+    std::cout << "[Demo3D] OBJ mesh loaded and voxelized successfully!" << std::endl;
+    return true;
 }

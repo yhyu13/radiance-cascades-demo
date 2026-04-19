@@ -54,7 +54,7 @@ void main() {
         vec3 color = mix(vec3(0.1), vec3(1.0, 0.8, 0.2), surfaceWeight);
         fragColor = vec4(color, 1.0);
         
-    } else {
+    } else if (visualizeMode < 2.5) {
         // Mode 2: Gradient magnitude (edge detection)
         // Approximate gradient using finite differences
         float epsilon = 1.0 / 64.0; // Assuming 64³ resolution
@@ -70,5 +70,27 @@ void main() {
         // Visualize gradient magnitude
         float intensity = clamp(gradMag / 5.0, 0.0, 1.0);
         fragColor = vec4(vec3(intensity), 1.0);
+        
+    } else {
+        // Mode 3: Surface normals (RGB visualization)
+        // Compute gradient and normalize to get surface normal
+        float epsilon = 1.0 / 64.0; // Assuming 64³ resolution
+        
+        vec3 duvw = vec3(epsilon);
+        float sdf_x = texture(sdfVolume, uvw + vec3(duvw.x, 0.0, 0.0)).r;
+        float sdf_y = texture(sdfVolume, uvw + vec3(0.0, duvw.y, 0.0)).r;
+        float sdf_z = texture(sdfVolume, uvw + vec3(0.0, 0.0, duvw.z)).r;
+        
+        vec3 gradient = vec3(sdf_x - sdf, sdf_y - sdf, sdf_z - sdf);
+        vec3 normal = normalize(gradient);
+        
+        // Map normal from [-1, 1] to [0, 1] for visualization
+        vec3 normalRGB = normal * 0.5 + 0.5;
+        
+        // Only show normals near surface (where SDF ≈ 0)
+        float surfaceWeight = exp(-abs(sdf) * 20.0);
+        vec3 color = mix(vec3(0.05), normalRGB, surfaceWeight);
+        
+        fragColor = vec4(color, 1.0);
     }
 }

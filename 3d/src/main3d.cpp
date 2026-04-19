@@ -12,9 +12,16 @@
  * - Higher default resolution for volume rendering
  */
 
-#include "demo3d.h"
+#include "demo3d.h"  // This includes raylib.h
 #include <iostream>
 #include <cstdlib>
+
+#ifdef _WIN32
+    #include <direct.h>  // For _chdir on Windows
+    #define chdir _chdir
+#else
+    #include <unistd.h>  // For chdir on Linux/Mac
+#endif
 
 // =============================================================================
 // Application Configuration
@@ -71,7 +78,7 @@ int main() {
      * @brief Application entry point
      * 
      * Execution Flow:
-     * 1. Verify resource directory exists
+     * 1. Verify resource directory exists (auto-fix working directory)
      * 2. Initialize window and OpenGL context
      * 3. Check system requirements
      * 4. Configure OpenGL state
@@ -82,11 +89,21 @@ int main() {
      * @return Exit code (0 = success)
      */
     
-    // Step 1: Verify running from correct directory
+    // Step 1: Verify running from correct directory, auto-fix if needed
     if (!DirectoryExists("res")) {
-        printf("[ERROR] Please run from project root directory.\n");
-        printf("[ERROR] Resource directory 'res/' not found.\n");
-        return 1;
+        // Try to find res/ directory by going up one level (common when running from build/)
+        printf("[INFO] Resource directory 'res/' not found in current directory.\n");
+        printf("[INFO] Attempting to locate project root...\n");
+        
+        // Try going up one directory
+        if (DirectoryExists("../res")) {
+            printf("[INFO] Found 'res/' in parent directory. Changing working directory.\n");
+            chdir("..");
+        } else {
+            printf("[ERROR] Could not find resource directory 'res/'.\n");
+            printf("[ERROR] Please run from project root or ensure 'res/shaders/' exists.\n");
+            return 1;
+        }
     }
     
     std::cout << "========================================" << std::endl;
@@ -190,8 +207,8 @@ bool initializeApplication() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     
-    // Note: Raylib 5.x uses GLFW backend which may default to OpenGL 3.3
-    // The application will work with extension-based compute shaders on OpenGL 3.3+
+    // Note: Raylib will use the highest OpenGL version available on the system
+    // We've downgraded shaders to GLSL 430 for broader compatibility
     
     // Step 2: Create window
     InitWindow(DEFAULT_WIDTH, DEFAULT_HEIGHT, WINDOW_TITLE.c_str());
