@@ -141,6 +141,12 @@ Demo3D::Demo3D()
     , radianceExposure(1.0f)
     , radianceIntensityScale(1.0f)
     , showRadianceGrid(false)
+    , probeNonZero(0)
+    , probeTotal(0)
+    , probeMaxLum(0.0f)
+    , probeMeanLum(0.0f)
+    , probeCenterSample(0.0f)
+    , probeBackwallSample(0.0f)
     , showLightingDebug(false)
     , lightingSliceAxis(2)
     , lightingSlicePosition(0.5f)
@@ -267,10 +273,10 @@ void Demo3D::processInput() {
             std::cout << "[Demo3D] SDF Slice: Z-axis (XY plane)" << std::endl;
         }
         
-        // Cycle visualization mode
+        // Cycle visualization mode (0=Colorized SDF, 1=Surface, 2=Gradient, 3=Normals)
         if (IsKeyPressed(KEY_M)) {
-            sdfVisualizeMode = (sdfVisualizeMode + 1) % 3;
-            const char* modes[] = {"Grayscale", "Surface Detection", "Gradient Magnitude"};
+            sdfVisualizeMode = (sdfVisualizeMode + 1) % 4;
+            const char* modes[] = {"Colorized SDF", "Surface Detection", "Gradient Magnitude", "Surface Normals"};
             std::cout << "[Demo3D] SDF Visualize Mode: " << modes[sdfVisualizeMode] << std::endl;
         }
         
@@ -330,40 +336,38 @@ void Demo3D::render() {
         cascadeReady  = true;
     }
 
-    // ONE-TIME diagnostic: read probe texture and print stats (Tool 1)
+    // Probe readback: run once per cascade update, store results in member vars for UI display
     static bool probeDumped = false;
     if (!probeDumped && cascadeReady && cascades[0].active && cascades[0].probeGridTexture != 0) {
         probeDumped = true;
         int res = cascades[0].resolution;
-        int totalPixels = res * res * res;
-        std::vector<float> buf(static_cast<size_t>(totalPixels) * 4);
+        probeTotal = res * res * res;
+        std::vector<float> buf(static_cast<size_t>(probeTotal) * 4);
         glBindTexture(GL_TEXTURE_3D, cascades[0].probeGridTexture);
         glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, buf.data());
         glBindTexture(GL_TEXTURE_3D, 0);
 
         float maxLum = 0.0f, sumLum = 0.0f;
         int nonZero = 0;
-        for (int i = 0; i < totalPixels; ++i) {
+        for (int i = 0; i < probeTotal; ++i) {
             float r = buf[i*4+0], g = buf[i*4+1], b = buf[i*4+2];
             float lum = (r + g + b) / 3.0f;
             if (lum > 1e-4f) ++nonZero;
             sumLum += lum;
             maxLum = std::max(maxLum, lum);
         }
-        float meanLum = sumLum / static_cast<float>(totalPixels);
-        std::cout << "[Probe Readback] " << nonZero << "/" << totalPixels
-                  << " non-zero probes, maxLum=" << maxLum
-                  << ", meanLum=" << meanLum << std::endl;
+        probeNonZero  = nonZero;
+        probeMaxLum   = maxLum;
+        probeMeanLum  = sumLum / static_cast<float>(probeTotal);
 
         auto idx = [res](int x, int y, int z){ return (z*res*res + y*res + x)*4; };
         int cx = res/2, cy = res/2, cz = res/2;
-        std::cout << "[Probe center  (" << cx << "," << cy << "," << cz << ")] "
-                  << "R=" << buf[idx(cx,cy,cz)+0] << " G=" << buf[idx(cx,cy,cz)+1]
-                  << " B=" << buf[idx(cx,cy,cz)+2] << std::endl;
-        std::cout << "[Probe backwall (16,16,1)] "
-                  << "R=" << buf[idx(16,16,1)+0] << " G=" << buf[idx(16,16,1)+1]
-                  << " B=" << buf[idx(16,16,1)+2] << std::endl;
+        probeCenterSample   = glm::vec3(buf[idx(cx,cy,cz)+0], buf[idx(cx,cy,cz)+1], buf[idx(cx,cy,cz)+2]);
+        probeBackwallSample = glm::vec3(buf[idx(16,16,1)+0],  buf[idx(16,16,1)+1],  buf[idx(16,16,1)+2]);
     }
+
+    // Allow re-readback on next cascade update
+    if (!cascadeReady) probeDumped = false;
 
     // Pass 4: Raymarching
     {
@@ -374,6 +378,9 @@ void Demo3D::render() {
 
     // Pass 5: SDF Debug Visualization (Phase 0)
     renderSDFDebug();
+
+    // Pass 6: Radiance Cascade Slice Viewer (Phase 1)
+    renderRadianceDebug();
 
     frameTimeMs = GetFrameTime() * 1000.0;
 }
@@ -552,12 +559,53 @@ void Demo3D::renderSDFDebug() {
     glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
 }
 
+void Demo3D::renderRadianceDebug() {
+    if (!showRadianceDebug) return;
+    if (!cascades[0].active || cascades[0].probeGridTexture == 0) return;
+
+    auto it = shaders.find("radiance_debug.frag");
+    if (it == shaders.end()) return;
+
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+
+    int debugSize = 400;
+    // Place in top-right corner so it doesn't overlap the SDF debug (top-left)
+    glViewport(viewport[2] - debugSize, viewport[3] - debugSize, debugSize, debugSize);
+
+    glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glUseProgram(it->second);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_3D, cascades[0].probeGridTexture);
+    glUniform1i(glGetUniformLocation(it->second, "uRadianceTexture"), 0);
+
+    int res = cascades[0].resolution;
+    glUniform3i(glGetUniformLocation(it->second, "uVolumeSize"), res, res, res);
+    glUniform1i(glGetUniformLocation(it->second, "uSliceAxis"),       radianceSliceAxis);
+    glUniform1f(glGetUniformLocation(it->second, "uSlicePosition"),   radianceSlicePosition);
+    glUniform1i(glGetUniformLocation(it->second, "uVisualizeMode"),   radianceVisualizeMode);
+    glUniform1f(glGetUniformLocation(it->second, "uExposure"),        radianceExposure);
+    glUniform1i(glGetUniformLocation(it->second, "uShowGrid"),        showRadianceGrid ? 1 : 0);
+    glUniform1f(glGetUniformLocation(it->second, "uIntensityScale"),  radianceIntensityScale);
+
+    glBindVertexArray(debugQuadVAO);
+    glDisable(GL_DEPTH_TEST);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glEnable(GL_DEPTH_TEST);
+    glBindVertexArray(0);
+
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+}
+
 void Demo3D::renderSDFDebugUI() {
     /**
      * @brief Render SDF debug UI overlay (ImGui part only)
      * @note Must be called between rlImGuiBegin() and rlImGuiEnd()
      */
-    
+
     if (!showSDFDebug) return;
     
     int debugSize = 400;
@@ -582,8 +630,8 @@ void Demo3D::renderSDFDebugUI() {
     ImGui::Text("Slice Axis: %s", (sdfSliceAxis == 0) ? "X (YZ plane)" : 
                                 (sdfSliceAxis == 1) ? "Y (XZ plane)" : "Z (XY plane)");
     ImGui::Text("Slice Position: %.2f", sdfSlicePosition);
-    ImGui::Text("Mode: %s", (sdfVisualizeMode == 0) ? "Grayscale" : 
-                             (sdfVisualizeMode == 1) ? "Surface Detection" : "Gradient");
+    const char* sdfModeNames[] = {"Colorized SDF", "Surface Detection", "Gradient Magnitude", "Surface Normals"};
+    ImGui::Text("Mode: %s", sdfModeNames[sdfVisualizeMode % 4]);
     ImGui::Text("Controls:");
     ImGui::Text("  [D] Toggle debug view");
     ImGui::Text("  [1/2/3] Change slice axis");
@@ -1671,10 +1719,12 @@ void Demo3D::renderSettingsPanel() {
 
     ImGui::Separator();
     ImGui::Text("Debug Render Mode:");
-    ImGui::RadioButton("Final (0)",     &raymarchRenderMode, 0); ImGui::SameLine();
-    ImGui::RadioButton("Normals (1)",   &raymarchRenderMode, 1); ImGui::SameLine();
-    ImGui::RadioButton("SDF dist (2)",  &raymarchRenderMode, 2); ImGui::SameLine();
+    ImGui::RadioButton("Final (0)",       &raymarchRenderMode, 0); ImGui::SameLine();
+    ImGui::RadioButton("Normals (1)",     &raymarchRenderMode, 1); ImGui::SameLine();
+    ImGui::RadioButton("Depth (2)",       &raymarchRenderMode, 2); ImGui::SameLine();
     ImGui::RadioButton("Indirect*5 (3)", &raymarchRenderMode, 3);
+    ImGui::RadioButton("Direct only (4)", &raymarchRenderMode, 4); ImGui::SameLine();
+    ImGui::RadioButton("Steps (5)",       &raymarchRenderMode, 5);
 
     ImGui::Separator();
     ImGui::Checkbox("Show Performance Metrics", &showPerformanceMetrics);
@@ -1702,14 +1752,30 @@ void Demo3D::renderCascadePanel() {
     ImGui::Begin("Cascades");
     
     ImGui::Text("Cascade Count: %d", cascadeCount);
-    
+
     for (int i = 0; i < cascadeCount; ++i) {
         if (cascades[i].active) {
-            ImGui::Text("Level %d: %d^3 probes, cell=%.2f", 
+            ImGui::Text("Level %d: %d^3 probes, cell=%.2f",
                        i, cascades[i].resolution, cascades[i].cellSize);
         }
     }
-    
+
+    if (probeTotal > 0) {
+        ImGui::Separator();
+        ImGui::Text("Probe Readback (cascade 0):");
+        ImGui::Text("  Non-zero: %d / %d (%.1f%%)",
+                    probeNonZero, probeTotal,
+                    100.0f * probeNonZero / float(probeTotal));
+        ImGui::Text("  MaxLum:  %.4f", probeMaxLum);
+        ImGui::Text("  MeanLum: %.4f", probeMeanLum);
+        ImGui::Text("  Center:  (%.3f, %.3f, %.3f)",
+                    probeCenterSample.r, probeCenterSample.g, probeCenterSample.b);
+        ImGui::Text("  Backwall:(%.3f, %.3f, %.3f)",
+                    probeBackwallSample.r, probeBackwallSample.g, probeBackwallSample.b);
+    } else {
+        ImGui::TextDisabled("  (cascade not yet sampled)");
+    }
+
     ImGui::End();
 }
 
