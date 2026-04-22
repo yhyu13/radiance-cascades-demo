@@ -93,6 +93,7 @@ Demo3D::Demo3D()
     , cascadeDisplayIndex(0)
     , disableCascadeMerging(false)
     , useCascadeGI(false)
+    , selectedCascadeForRender(0)
     , activeShader(0)
     , userMode(Mode::VOXELIZE)
     , brushSize(0.5f)
@@ -953,11 +954,12 @@ void Demo3D::raymarchPass() {
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
     glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
 
-    // Cascade indirect lighting (sampler binding 1) — always bind so debug modes work
-    // regardless of the GI checkbox; uUseCascade controls blending in mode 0 only
-    if (cascades[0].active && cascades[0].probeGridTexture != 0) {
+    // Cascade indirect lighting — bind the user-selected cascade level so each can be
+    // inspected independently; uUseCascade only controls blending in mode 0
+    int selC = std::max(0, std::min(selectedCascadeForRender, cascadeCount - 1));
+    if (cascades[selC].active && cascades[selC].probeGridTexture != 0) {
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_3D, cascades[0].probeGridTexture);
+        glBindTexture(GL_TEXTURE_3D, cascades[selC].probeGridTexture);
         glUniform1i(glGetUniformLocation(prog, "uRadiance"), 1);
     }
     glUniform1i(glGetUniformLocation(prog, "uUseCascade"), useCascadeGI ? 1 : 0);
@@ -1181,16 +1183,24 @@ void Demo3D::destroyVolumeBuffers() {
 }
 
 void Demo3D::initCascades() {
-    // Phase 2: single 32^3 cascade covering the full volume
-    cascadeCount = 1;
+    // 4 cascades, all 32^3 probes at the same world positions.
+    // Probe positions are identical across levels; cascade index determines
+    // the ray interval band each probe samples.
+    //   Cascade 0: [0,        d   ]  d = cellSize = 4/32 = 0.125
+    //   Cascade 1: [d,        4d  ]  = [0.125, 0.5]
+    //   Cascade 2: [4d,       16d ]  = [0.5,   2.0]
+    //   Cascade 3: [16d,      64d ]  = [2.0,   8.0]  (beyond volume diagonal)
+    cascadeCount = 4;
 
-    const int probeRes = 32;
-    const float cellSz = volumeSize.x / float(probeRes);  // 4.0/32 = 0.125
+    const int   probeRes = 32;
+    const float cellSz   = volumeSize.x / float(probeRes);  // 0.125
 
-    cascades[0].initialize(probeRes, cellSz, volumeOrigin, 8);
-
-    std::cout << "[Demo3D] Cascade 0: " << probeRes << "^3 probes, cellSize=" << cellSz
-              << ", active=" << cascades[0].active << std::endl;
+    for (int i = 0; i < cascadeCount; ++i) {
+        cascades[i].initialize(probeRes, cellSz, volumeOrigin, 8);
+        std::cout << "[Demo3D] Cascade " << i << ": " << probeRes
+                  << "^3 probes, cellSize=" << cellSz
+                  << ", active=" << cascades[i].active << std::endl;
+    }
 }
 
 void Demo3D::destroyCascades() {
@@ -1747,7 +1757,7 @@ void Demo3D::renderSettingsPanel() {
         ImGui::Text("Pass times (CPU-side, last run):");
         ImGui::Text("  Voxelize  %.2f ms", voxelizationTimeMs);
         ImGui::Text("  SDF       %.2f ms", sdfTimeMs);
-        ImGui::Text("  Cascade   %.2f ms", cascadeTimeMs);
+        ImGui::Text("  Cascade   %.2f ms (%d levels)", cascadeTimeMs, cascadeCount);
         ImGui::Text("  Raymarch  %.2f ms", raymarchTimeMs);
         ImGui::Separator();
         ImGui::Text("  Frame     %.2f ms", frameTimeMs);
@@ -1767,11 +1777,26 @@ void Demo3D::renderCascadePanel() {
     
     ImGui::Text("Cascade Count: %d", cascadeCount);
 
-    for (int i = 0; i < cascadeCount; ++i) {
-        if (cascades[i].active) {
-            ImGui::Text("Level %d: %d^3 probes, cell=%.2f",
-                       i, cascades[i].resolution, cascades[i].cellSize);
+    // Per-level interval table
+    {
+        const float d = (cascadeCount > 0) ? cascades[0].cellSize : 0.125f;
+        for (int i = 0; i < cascadeCount; ++i) {
+            if (!cascades[i].active) continue;
+            float tMin = (i == 0) ? 0.02f : d * std::pow(4.0f, float(i - 1));
+            float tMax = d * std::pow(4.0f, float(i));
+            ImGui::Text("  C%d: %d^3  [%.3f, %.3f]", i, cascades[i].resolution, tMin, tMax);
         }
+    }
+
+    ImGui::Separator();
+
+    // Cascade selector for indirect lighting / debug views
+    ImGui::Text("Render using cascade:");
+    for (int i = 0; i < cascadeCount; ++i) {
+        if (i > 0) ImGui::SameLine();
+        char label[16];
+        std::snprintf(label, sizeof(label), "C%d", i);
+        ImGui::RadioButton(label, &selectedCascadeForRender, i);
     }
 
     if (probeTotal > 0) {

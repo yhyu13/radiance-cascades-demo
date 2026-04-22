@@ -124,12 +124,22 @@ void main() {
     vec3 worldPos      = probeToWorld(probePos);
     vec3 totalRadiance = vec3(0.0);
 
-    // Ray interval covers the full volume diagonal so center probes reach walls
-    float intervalEnd = length(uGridSize);
+    // Per-cascade ray interval: cascade 0 sees [0, d], cascade N sees [4^(N-1)*d, 4^N*d]
+    // uBaseInterval = d = cellSize (0.125 for a 32^3 grid in a 4-unit volume)
+    float d    = uBaseInterval;
+    float tMin, tMax;
+    if (uCascadeIndex == 0) {
+        tMin = 0.02;
+        tMax = d;
+    } else {
+        float f = pow(4.0, float(uCascadeIndex - 1));
+        tMin = f * d;
+        tMax = f * 4.0 * d;
+    }
 
     for (int i = 0; i < uRaysPerProbe; ++i) {
         vec3 rayDir = getRayDirection(i);
-        vec4 hit    = raymarchSDF(worldPos, rayDir, 0.05, intervalEnd);
+        vec4 hit    = raymarchSDF(worldPos, rayDir, tMin, tMax);
         if (hit.a > 0.0)
             totalRadiance += hit.rgb;
     }
