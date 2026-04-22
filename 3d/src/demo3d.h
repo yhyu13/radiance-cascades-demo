@@ -642,6 +642,9 @@ private:
 
     /** Whether to blend cascade indirect lighting in the final image */
     bool useCascadeGI;
+
+    /** Which cascade level to use for indirect lighting in the raymarch pass */
+    int selectedCascadeForRender;
     
     // =============================================================================
     // Shaders
