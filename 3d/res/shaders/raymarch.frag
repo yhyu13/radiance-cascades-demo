@@ -82,6 +82,9 @@ uniform sampler3D uSDF;
 /** Radiance volume (from cascades) */
 uniform sampler3D uRadiance;
 
+/** Albedo/material color volume */
+uniform sampler3D uAlbedo;
+
 /** Whether to blend in cascade indirect lighting */
 uniform bool uUseCascade;
 
@@ -248,37 +251,35 @@ void main() {
 
             // Debug mode 3: indirect radiance * 5 (magnified for visibility)
             if (uRenderMode == 3) {
-                if (uUseCascade) {
-                    vec3 uvw = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
-                    vec3 indirect = texture(uRadiance, uvw).rgb;
-                    fragColor = vec4(toneMapACES(indirect * 5.0), 1.0);
-                } else {
-                    // Cascade disabled: show normal map as fallback so mode looks active
-                    fragColor = vec4(normal * 0.5 + 0.5, 1.0);
-                }
+                vec3 uvw3 = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
+                vec3 indirect = texture(uRadiance, uvw3).rgb;
+                fragColor = vec4(toneMapACES(indirect * 5.0), 1.0);
                 return;
             }
+
+            // Sample material albedo (shared by modes 0, 4)
+            vec3 uvw    = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
+            vec3 albedo = texture(uAlbedo, uvw).rgb;
 
             // Debug mode 4: direct light only (bypass cascade regardless of uUseCascade)
             if (uRenderMode == 4) {
                 vec3 lightDir4 = normalize(uLightPos - pos);
-                float diff4 = max(dot(normal, lightDir4), 0.0);
-                vec3 direct = diff4 * uLightColor + vec3(0.05);
+                float diff4    = max(dot(normal, lightDir4), 0.0);
+                vec3 direct    = albedo * (diff4 * uLightColor + vec3(0.05));
                 fragColor = vec4(toneMapACES(direct), 1.0);
                 fragColor.rgb = pow(fragColor.rgb, vec3(1.0 / 2.2));
                 return;
             }
 
-            // Mode 0 / 5 shared direct-light computation
-            vec3 lightDir = normalize(uLightPos - pos);
-            float diff = max(dot(normal, lightDir), 0.0);
-            vec3 surfaceColor = diff * uLightColor + vec3(0.05); // diffuse + ambient
+            // Mode 0: final rendering
+            vec3 lightDir     = normalize(uLightPos - pos);
+            float diff        = max(dot(normal, lightDir), 0.0);
+            vec3 surfaceColor = albedo * (diff * uLightColor + vec3(0.05));
 
-            // Indirect lighting from cascade
+            // Indirect lighting from cascade (probes already store albedo-weighted radiance)
             if (uUseCascade) {
-                vec3 uvw = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
                 vec3 indirect = texture(uRadiance, uvw).rgb;
-                surfaceColor += indirect * 0.3;
+                surfaceColor += indirect * 1.0;
             }
 
             // Front-to-back blending
@@ -298,8 +299,10 @@ void main() {
     }
     
     // Debug mode 5: step count heatmap (green=few, yellow=moderate, red=many/miss)
+    // Normalize against 32 not uSteps — Cornell Box rays typically hit in <32 steps,
+    // dividing by uSteps(256) would compress everything into pure green.
     if (uRenderMode == 5) {
-        float t5 = clamp(float(stepCount) / float(max(uSteps, 1)), 0.0, 1.0);
+        float t5 = clamp(float(stepCount) / 32.0, 0.0, 1.0);
         // green -> yellow -> red ramp
         vec3 heatColor = (t5 < 0.5)
             ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), t5 * 2.0)

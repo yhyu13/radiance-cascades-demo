@@ -759,10 +759,10 @@ void Demo3D::sdfGenerationPass() {
         // Bind primitive SSBO
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, primitiveSSBO);
         
-        // Bind output texture (GL_TRUE = layered, required for image3D write in compute)
-        glBindImageTexture(0, sdfTexture, 0, GL_TRUE, 0,
-                          GL_WRITE_ONLY, GL_R32F);
-        
+        // Bind output textures (GL_TRUE = layered, required for image3D write in compute)
+        glBindImageTexture(0, sdfTexture,    0, GL_TRUE, 0, GL_WRITE_ONLY, GL_R32F);
+        glBindImageTexture(1, albedoTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA8);
+
         // Dispatch compute shader
         glm::ivec3 workGroups = calculateWorkGroups(
             volumeResolution, volumeResolution, volumeResolution, 8);
@@ -821,6 +821,10 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
     glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_3D, albedoTexture);
+    glUniform1i(glGetUniformLocation(prog, "uAlbedo"), 1);
 
     glBindImageTexture(0, c.probeGridTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 
@@ -949,15 +953,19 @@ void Demo3D::raymarchPass() {
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
     glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
 
-    // Cascade indirect lighting (sampler binding 1)
-    if (useCascadeGI && cascades[0].active && cascades[0].probeGridTexture != 0) {
+    // Cascade indirect lighting (sampler binding 1) — always bind so debug modes work
+    // regardless of the GI checkbox; uUseCascade controls blending in mode 0 only
+    if (cascades[0].active && cascades[0].probeGridTexture != 0) {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_3D, cascades[0].probeGridTexture);
         glUniform1i(glGetUniformLocation(prog, "uRadiance"), 1);
-        glUniform1i(glGetUniformLocation(prog, "uUseCascade"), 1);
-    } else {
-        glUniform1i(glGetUniformLocation(prog, "uUseCascade"), 0);
     }
+    glUniform1i(glGetUniformLocation(prog, "uUseCascade"), useCascadeGI ? 1 : 0);
+
+    // Albedo volume (sampler binding 2) — always bound, needed for direct shading color
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_3D, albedoTexture);
+    glUniform1i(glGetUniformLocation(prog, "uAlbedo"), 2);
 
     // Reuse the existing fullscreen quad VAO
     glBindVertexArray(debugQuadVAO);
@@ -1112,7 +1120,12 @@ void Demo3D::createVolumeBuffers() {
         volumeResolution, volumeResolution, volumeResolution,
         GL_R32F, GL_RED, GL_FLOAT, nullptr
     );
-    
+
+    albedoTexture = gl::createTexture3D(
+        volumeResolution, volumeResolution, volumeResolution,
+        GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr
+    );
+
     directLightingTexture = gl::createTexture3D(
         volumeResolution, volumeResolution, volumeResolution,
         GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr
@@ -1161,6 +1174,7 @@ void Demo3D::destroyVolumeBuffers() {
     
     glDeleteTextures(1, &voxelGridTexture);
     glDeleteTextures(1, &sdfTexture);
+    glDeleteTextures(1, &albedoTexture);
     glDeleteTextures(1, &directLightingTexture);
     glDeleteTextures(1, &prevFrameTexture);
     glDeleteTextures(1, &currentRadianceTexture);
@@ -1173,7 +1187,7 @@ void Demo3D::initCascades() {
     const int probeRes = 32;
     const float cellSz = volumeSize.x / float(probeRes);  // 4.0/32 = 0.125
 
-    cascades[0].initialize(probeRes, cellSz, volumeOrigin, 4);
+    cascades[0].initialize(probeRes, cellSz, volumeOrigin, 8);
 
     std::cout << "[Demo3D] Cascade 0: " << probeRes << "^3 probes, cellSize=" << cellSz
               << ", active=" << cascades[0].active << std::endl;

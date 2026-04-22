@@ -32,6 +32,7 @@ uniform vec3  uLightColor;
 // =============================================================================
 
 uniform sampler3D uSDF;
+uniform sampler3D uAlbedo;
 
 layout(rgba16f) uniform image3D oRadiance;
 
@@ -66,6 +67,19 @@ vec3 getRayDirection(int idx) {
     return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
 }
 
+bool inShadow(vec3 hitPos, vec3 lightPos) {
+    vec3  toLight = lightPos - hitPos;
+    float dist    = length(toLight);
+    vec3  dir     = toLight / dist;
+    float t       = 0.05;  // offset to avoid self-intersection
+    for (int i = 0; i < 32 && t < dist; ++i) {
+        float d = sampleSDF(hitPos + dir * t);
+        if (d < 0.002) return true;
+        t += max(d * 0.9, 0.01);
+    }
+    return false;
+}
+
 vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
     float t = tMin;
     const int MAX_STEPS = 128;
@@ -75,16 +89,21 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
         float dist = sampleSDF(pos);
 
         if (dist < 0.002) {
-            // Surface hit — compute Lambertian shading
+            // Surface hit — compute Lambertian shading with material albedo
             const float e = 0.06;  // ~1 voxel at 64^3 in 4-unit volume
             vec3 n = normalize(vec3(
                 sampleSDF(pos + vec3(e,0,0)) - sampleSDF(pos - vec3(e,0,0)),
                 sampleSDF(pos + vec3(0,e,0)) - sampleSDF(pos - vec3(0,e,0)),
                 sampleSDF(pos + vec3(0,0,e)) - sampleSDF(pos - vec3(0,0,e))
             ));
-            vec3 lightDir = normalize(uLightPos - pos);
-            float diff = max(dot(n, lightDir), 0.0);
-            vec3 color = diff * uLightColor + vec3(0.02);  // diffuse + ambient
+
+            // Sample surface albedo from volume
+            vec3 uvw    = (pos - uGridOrigin) / uGridSize;
+            vec3 albedo = texture(uAlbedo, uvw).rgb;
+
+            vec3  lightDir = normalize(uLightPos - pos);
+            float diff     = inShadow(pos, uLightPos) ? 0.0 : max(dot(n, lightDir), 0.0);
+            vec3  color    = albedo * (diff * uLightColor + vec3(0.02));
             return vec4(color, 1.0);
         }
 
