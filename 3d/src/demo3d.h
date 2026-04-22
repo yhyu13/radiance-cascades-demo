@@ -42,8 +42,8 @@
 /** Maximum number of cascade levels in the hierarchy */
 constexpr int MAX_CASCADES = 6;
 
-/** Default volume resolution (start small for performance) */
-constexpr int DEFAULT_VOLUME_RESOLUTION = 128;
+/** Default volume resolution (64^3 = fast SDF generation, ~6 voxels per wall at 4-unit volume) */
+constexpr int DEFAULT_VOLUME_RESOLUTION = 64;
 
 /** Maximum volume resolution supported */
 constexpr int MAX_VOLUME_RESOLUTION = 512;
@@ -623,6 +623,9 @@ private:
     
     /** Disable cascade merging (debug) */
     bool disableCascadeMerging;
+
+    /** Whether to blend cascade indirect lighting in the final image */
+    bool useCascadeGI;
     
     // =============================================================================
     // Shaders
@@ -698,6 +701,9 @@ private:
     // Debug Options
     // =============================================================================
     
+    /** Render mode sent to raymarch.frag: 0=final, 1=normals, 2=SDF dist, 3=indirect*5 */
+    int raymarchRenderMode;
+
     /** Show debug visualization windows */
     bool showDebugWindows;
     

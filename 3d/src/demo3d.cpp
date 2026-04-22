@@ -17,6 +17,8 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 // =============================================================================
 // VoxelNode Implementation
@@ -52,38 +54,25 @@ RadianceCascade3D::RadianceCascade3D()
 }
 
 void RadianceCascade3D::initialize(int res, float cellSz, const glm::vec3& org, int rays) {
-    /**
-     * @brief Initialize cascade parameters and create OpenGL texture
-     * 
-     * Implementation Steps:
-     * 1. Store configuration parameters
-     * 2. Calculate interval start/end based on cascade index
-     * 3. Create 3D texture with gl::createTexture3D()
-     * 4. Set texture parameters (filtering, wrap mode)
-     * 5. Attach to framebuffer if needed
-     * 
-     * @param res Resolution (e.g., 32, 64, 128)
-     * @param cellSz World space size per voxel
-     * @param org World space origin
-     * @param rays Rays per probe
-     */
-    
-    // TODO: Implement cascade initialization
-    // - Allocate 3D texture for probe grid
-    // - Configure mipmaps if needed
-    // - Set up framebuffer attachment
+    resolution   = res;
+    cellSize     = cellSz;
+    origin       = org;
+    raysPerProbe = rays;
+    active       = false;
+
+    probeGridTexture = gl::createTexture3D(
+        res, res, res,
+        GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr
+    );
+    if (probeGridTexture != 0) active = true;
 }
 
 void RadianceCascade3D::destroy() {
-    /**
-     * @brief Release OpenGL resources
-     * 
-     * Implementation Steps:
-     * 1. Delete probe grid texture with glDeleteTextures()
-     * 2. Reset state to default
-     */
-    
-    // TODO: Implement resource cleanup
+    if (probeGridTexture) {
+        glDeleteTextures(1, &probeGridTexture);
+        probeGridTexture = 0;
+    }
+    active = false;
 }
 
 // =============================================================================
@@ -98,11 +87,12 @@ Demo3D::Demo3D()
     , volumeResolution(DEFAULT_VOLUME_RESOLUTION)
     , volumeOrigin(-2.0f, -2.0f, -2.0f)  // Default volume origin (centered around origin)
     , volumeSize(4.0f, 4.0f, 4.0f)        // Default volume size (4x4x4 world units)
-    , cascadeCount(MAX_CASCADES)
-    , baseInterval(0.5f)
+    , cascadeCount(1)
+    , baseInterval(0.125f)  // 4.0 (volumeSize) / 32 (probeRes) = 0.125
     , cascadeBilinear(true)
     , cascadeDisplayIndex(0)
     , disableCascadeMerging(false)
+    , useCascadeGI(false)
     , activeShader(0)
     , userMode(Mode::VOXELIZE)
     , brushSize(0.5f)
@@ -120,6 +110,7 @@ Demo3D::Demo3D()
     , adaptiveStepSize(true)
     , raymarchSteps(256)
     , rayTerminationThreshold(0.95f)
+    , raymarchRenderMode(0)
     , showDebugWindows(false)
     , showCascadeSlices(false)
     , showVoxelGrid(false)
@@ -143,6 +134,19 @@ Demo3D::Demo3D()
     , sdfSlicePosition(0.5f)    // Default: middle of volume
     , sdfVisualizeMode(0)       // Default: grayscale mode
     , showSDFDebug(false)       // Default: hidden, press 'D' to toggle
+    , showRadianceDebug(false)
+    , radianceSliceAxis(2)
+    , radianceSlicePosition(0.5f)
+    , radianceVisualizeMode(0)
+    , radianceExposure(1.0f)
+    , radianceIntensityScale(1.0f)
+    , showRadianceGrid(false)
+    , showLightingDebug(false)
+    , lightingSliceAxis(2)
+    , lightingSlicePosition(0.5f)
+    , lightingDebugMode(0)
+    , lightingExposure(1.0f)
+    , lightingIntensityScale(1.0f)
 {
     /**
      * @brief Construct 3D demo and initialize all resources
@@ -174,7 +178,7 @@ Demo3D::Demo3D()
     loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization (auto-loads .vert)
     loadShader("radiance_debug.frag"); // Phase 1: Radiance cascade debug (auto-loads .vert)
     loadShader("lighting_debug.frag"); // Phase 1: Lighting debug (auto-loads .vert)
-    // Note: raymarch.frag needs special handling - skip for now
+    loadShader("raymarch.frag");       // Phase 1: Final raymarched image (auto-loads .vert)
     
     // Step 5: Initialize cascades
     initCascades();
@@ -297,20 +301,62 @@ void Demo3D::render() {
      */
     
     // Pass 1: Voxelization (if needed)
+    static bool sdfReady = false;
     if (sceneDirty) {
         voxelizationPass();
+        sdfReady = false;
     }
-    
-    // Pass 2: SDF Generation
-    sdfGenerationPass();
-    
-    // Pass 3: Direct Lighting
-    injectDirectLighting();
-    
-    // Pass 4: Radiance Cascades
-    updateRadianceCascades();
-    
-    // Pass 5: Raymarching
+
+    // Pass 2: SDF Generation (only when scene changed or first run)
+    static bool cascadeReady = false;
+    if (!sdfReady) {
+        sdfGenerationPass();
+        sdfReady    = true;
+        cascadeReady = false;  // SDF changed → cascade stale
+    }
+
+    // Pass 3: Radiance Cascades (only when SDF changes; scene is static)
+    if (!cascadeReady) {
+        updateRadianceCascades();
+        cascadeReady = true;
+    }
+
+    // ONE-TIME diagnostic: read probe texture and print stats (Tool 1)
+    static bool probeDumped = false;
+    if (!probeDumped && cascadeReady && cascades[0].active && cascades[0].probeGridTexture != 0) {
+        probeDumped = true;
+        int res = cascades[0].resolution;
+        int totalPixels = res * res * res;
+        std::vector<float> buf(static_cast<size_t>(totalPixels) * 4);
+        glBindTexture(GL_TEXTURE_3D, cascades[0].probeGridTexture);
+        glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, buf.data());
+        glBindTexture(GL_TEXTURE_3D, 0);
+
+        float maxLum = 0.0f, sumLum = 0.0f;
+        int nonZero = 0;
+        for (int i = 0; i < totalPixels; ++i) {
+            float r = buf[i*4+0], g = buf[i*4+1], b = buf[i*4+2];
+            float lum = (r + g + b) / 3.0f;
+            if (lum > 1e-4f) ++nonZero;
+            sumLum += lum;
+            maxLum = std::max(maxLum, lum);
+        }
+        float meanLum = sumLum / static_cast<float>(totalPixels);
+        std::cout << "[Probe Readback] " << nonZero << "/" << totalPixels
+                  << " non-zero probes, maxLum=" << maxLum
+                  << ", meanLum=" << meanLum << std::endl;
+
+        auto idx = [res](int x, int y, int z){ return (z*res*res + y*res + x)*4; };
+        int cx = res/2, cy = res/2, cz = res/2;
+        std::cout << "[Probe center  (" << cx << "," << cy << "," << cz << ")] "
+                  << "R=" << buf[idx(cx,cy,cz)+0] << " G=" << buf[idx(cx,cy,cz)+1]
+                  << " B=" << buf[idx(cx,cy,cz)+2] << std::endl;
+        std::cout << "[Probe backwall (16,16,1)] "
+                  << "R=" << buf[idx(16,16,1)+0] << " G=" << buf[idx(16,16,1)+1]
+                  << " B=" << buf[idx(16,16,1)+2] << std::endl;
+    }
+
+    // Pass 4: Raymarching
     raymarchPass();
     
     // Pass 6: SDF Debug Visualization (Phase 0)
@@ -364,33 +410,38 @@ void Demo3D::uploadPrimitivesToGPU() {
         glGenBuffers(1, &primitiveSSBO);
     }
     
-    // Calculate buffer size (match shader struct layout)
-    // struct Primitive { int type; vec3 position; vec3 scale; vec3 color; float padding; }
-    // Total: 4 + 12 + 12 + 12 + 4 = 44 bytes, padded to 48 for alignment
-    size_t bufferSize = count * 48;  // 48 bytes per primitive with alignment
-    
-    // Pack data for GPU (interleave properly)
+    // GPU struct layout (std430 with vec4 to avoid vec3 padding ambiguity):
+    // int type + 3 floats padding (16 bytes), then vec4 position (16), scale (16), color (16)
+    // Total: 64 bytes per primitive
     struct GPUPrimitive {
-        int type;
-        float position[3];
-        float scale[3];
-        float color[3];
-        float padding;
+        int   type;
+        float pad[3];        // padding so position starts at offset 16
+        float position[4];   // vec4 (.xyz used)
+        float scale[4];      // vec4 (.xyz used)
+        float color[4];      // vec4 (.xyz used)
     };
-    
+    static_assert(sizeof(GPUPrimitive) == 64, "GPUPrimitive must be 64 bytes");
+
+    size_t bufferSize = count * sizeof(GPUPrimitive);
+
     std::vector<GPUPrimitive> gpuData(count);
     for (size_t i = 0; i < count; ++i) {
-        gpuData[i].type = static_cast<int>(primitives[i].type);
+        gpuData[i].type       = static_cast<int>(primitives[i].type);
+        gpuData[i].pad[0]     = 0.0f;
+        gpuData[i].pad[1]     = 0.0f;
+        gpuData[i].pad[2]     = 0.0f;
         gpuData[i].position[0] = primitives[i].position.x;
         gpuData[i].position[1] = primitives[i].position.y;
         gpuData[i].position[2] = primitives[i].position.z;
-        gpuData[i].scale[0] = primitives[i].scale.x;
-        gpuData[i].scale[1] = primitives[i].scale.y;
-        gpuData[i].scale[2] = primitives[i].scale.z;
-        gpuData[i].color[0] = primitives[i].color.x;
-        gpuData[i].color[1] = primitives[i].color.y;
-        gpuData[i].color[2] = primitives[i].color.z;
-        gpuData[i].padding = 0.0f;
+        gpuData[i].position[3] = 0.0f;
+        gpuData[i].scale[0]   = primitives[i].scale.x;
+        gpuData[i].scale[1]   = primitives[i].scale.y;
+        gpuData[i].scale[2]   = primitives[i].scale.z;
+        gpuData[i].scale[3]   = 0.0f;
+        gpuData[i].color[0]   = primitives[i].color.x;
+        gpuData[i].color[1]   = primitives[i].color.y;
+        gpuData[i].color[2]   = primitives[i].color.z;
+        gpuData[i].color[3]   = 0.0f;
     }
     
     // Upload to GPU
@@ -648,8 +699,8 @@ void Demo3D::sdfGenerationPass() {
         // Bind primitive SSBO
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, primitiveSSBO);
         
-        // Bind output texture
-        glBindImageTexture(0, sdfTexture, 0, GL_FALSE, 0, 
+        // Bind output texture (GL_TRUE = layered, required for image3D write in compute)
+        glBindImageTexture(0, sdfTexture, 0, GL_TRUE, 0,
                           GL_WRITE_ONLY, GL_R32F);
         
         // Dispatch compute shader
@@ -658,8 +709,8 @@ void Demo3D::sdfGenerationPass() {
         glDispatchCompute(workGroups.x, workGroups.y, workGroups.z);
         
         // Ensure writes are visible
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-        
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
         std::cout << "[Demo3D] Analytic SDF generation complete." << std::endl;
     } else {
         std::cout << "[Demo3D] SDF generation skipped (analytic SDF disabled, JFA not implemented)" << std::endl;
@@ -677,8 +728,6 @@ void Demo3D::updateRadianceCascades() {
      * @brief Update all radiance cascade levels
      */
     
-    std::cout << "[Demo3D] Updating radiance cascades (" << cascadeCount << " levels)" << std::endl;
-    
     for (int i = 0; i < cascadeCount; ++i) {
         if (cascades[i].active) {
             updateSingleCascade(i);
@@ -687,33 +736,42 @@ void Demo3D::updateRadianceCascades() {
 }
 
 void Demo3D::updateSingleCascade(int cascadeIndex) {
-    /**
-     * @brief Update single cascade level
-     */
-    
-    if (cascadeIndex >= cascadeCount || !cascades[cascadeIndex].active) {
-        return;
-    }
-    
-    std::cout << "  Cascade " << cascadeIndex << ": resolution=" << cascades[cascadeIndex].resolution 
-              << ", cellSize=" << cascades[cascadeIndex].cellSize << std::endl;
-    
-    // TODO: Implement actual cascade update with compute shader dispatch
-    // For quick start, this is a placeholder
+    if (cascadeIndex >= cascadeCount || !cascades[cascadeIndex].active) return;
+    auto& c = cascades[cascadeIndex];
+    if (c.resolution == 0 || c.probeGridTexture == 0) return;
+
+    auto it = shaders.find("radiance_3d.comp");
+    if (it == shaders.end()) return;
+
+    GLuint prog = it->second;
+    glUseProgram(prog);
+
+    glUniform1i(glGetUniformLocation(prog, "uCascadeIndex"),  cascadeIndex);
+    glUniform1i(glGetUniformLocation(prog, "uCascadeCount"),  cascadeCount);
+    glUniform1f(glGetUniformLocation(prog, "uBaseInterval"),  c.cellSize);
+
+    glm::ivec3 volRes(c.resolution);
+    glUniform3iv(glGetUniformLocation(prog, "uVolumeSize"), 1, glm::value_ptr(volRes));
+    glUniform3fv(glGetUniformLocation(prog, "uGridSize"),   1, glm::value_ptr(volumeSize));
+    glUniform3fv(glGetUniformLocation(prog, "uGridOrigin"), 1, glm::value_ptr(volumeOrigin));
+    glUniform1i(glGetUniformLocation(prog, "uRaysPerProbe"), c.raysPerProbe);
+    glUniform3f(glGetUniformLocation(prog, "uLightPos"),   0.0f, 0.8f, 0.0f);
+    glUniform3f(glGetUniformLocation(prog, "uLightColor"), 1.0f, 0.95f, 0.85f);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_3D, sdfTexture);
+    glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
+
+    glBindImageTexture(0, c.probeGridTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+
+    glm::ivec3 wg = calculateWorkGroups(c.resolution, c.resolution, c.resolution, 4);
+    glDispatchCompute(wg.x, wg.y, wg.z);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 }
 
 void Demo3D::injectDirectLighting() {
-    /**
-     * @brief Inject direct lighting into cascades (Phase 1: Multi-light support)
-     * 
-     * Supports multiple point lights, directional lights, and area lights.
-     * Calculates direct illumination at each probe position and stores in radiance texture.
-     */
-    
-    if (!cascades[0].active || cascades[0].probeGridTexture == 0) {
-        std::cerr << "[WARNING] Cannot inject lighting - cascade not initialized" << std::endl;
-        return;
-    }
+    // Phase 2: inject_radiance.comp is frozen; updateSingleCascade() handles lighting.
+    return;
     
     // Use first cascade level for direct lighting
     GLuint radianceTexture = cascades[0].probeGridTexture;
@@ -786,19 +844,69 @@ void Demo3D::injectDirectLighting() {
 }
 
 void Demo3D::raymarchPass() {
-    /**
-     * @brief Raymarching pass for final visualization
-     * 
-     * Quick start: Just clear to a gradient background since full raymarching needs SDF
-     */
-    
-    // For quick start, we'll just render a simple test pattern
-    // Full implementation would cast rays through the volume
-    
-    glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
-    // TODO: Implement actual volume raymarching when SDF is ready
+    auto it = shaders.find("raymarch.frag");
+    if (it == shaders.end()) {
+        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        return;
+    }
+
+    GLuint prog = it->second;
+    glUseProgram(prog);
+
+    // Build camera matrices
+    glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
+    float aspect = (float)GetScreenWidth() / (float)GetScreenHeight();
+    glm::mat4 proj = glm::perspective(glm::radians(camera.fovy), aspect, 0.01f, 100.0f);
+    glm::mat4 invVP = glm::inverse(proj * view);
+
+    glUniformMatrix4fv(glGetUniformLocation(prog, "uViewMatrix"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(glGetUniformLocation(prog, "uProjMatrix"), 1, GL_FALSE, glm::value_ptr(proj));
+    glUniformMatrix4fv(glGetUniformLocation(prog, "uInvVPMatrix"), 1, GL_FALSE, glm::value_ptr(invVP));
+    glUniform3fv(glGetUniformLocation(prog, "uCameraPos"), 1, glm::value_ptr(camera.position));
+
+    // Volume bounds
+    glm::vec3 volumeMax = volumeOrigin + volumeSize;
+    glUniform3fv(glGetUniformLocation(prog, "uVolumeMin"), 1, glm::value_ptr(volumeOrigin));
+    glUniform3fv(glGetUniformLocation(prog, "uVolumeMax"), 1, glm::value_ptr(volumeMax));
+    glm::ivec3 volRes(volumeResolution);
+    glUniform3iv(glGetUniformLocation(prog, "uVolumeSize"), 1, glm::value_ptr(volRes));
+
+    // Raymarching parameters
+    glUniform1i(glGetUniformLocation(prog, "uSteps"), raymarchSteps);
+    glUniform1f(glGetUniformLocation(prog, "uTerminationThreshold"), rayTerminationThreshold);
+    glUniform1f(glGetUniformLocation(prog, "uTime"), time);
+    glUniform1i(glGetUniformLocation(prog, "uRenderMode"), raymarchRenderMode);
+
+    // Direct light: inside the Cornell box near the ceiling (ceiling inner face at y=1.0)
+    glm::vec3 lightPos(0.0f, 0.8f, 0.0f);
+    glm::vec3 lightColor(1.0f, 0.95f, 0.85f);
+    glUniform3fv(glGetUniformLocation(prog, "uLightPos"), 1, glm::value_ptr(lightPos));
+    glUniform3fv(glGetUniformLocation(prog, "uLightColor"), 1, glm::value_ptr(lightColor));
+
+    // SDF texture (sampler binding 0)
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_3D, sdfTexture);
+    glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
+
+    // Cascade indirect lighting (sampler binding 1)
+    if (useCascadeGI && cascades[0].active && cascades[0].probeGridTexture != 0) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_3D, cascades[0].probeGridTexture);
+        glUniform1i(glGetUniformLocation(prog, "uRadiance"), 1);
+        glUniform1i(glGetUniformLocation(prog, "uUseCascade"), 1);
+    } else {
+        glUniform1i(glGetUniformLocation(prog, "uUseCascade"), 0);
+    }
+
+    // Reuse the existing fullscreen quad VAO
+    glBindVertexArray(debugQuadVAO);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
 }
 
 void Demo3D::renderDebugVisualization() {
@@ -996,41 +1104,16 @@ void Demo3D::destroyVolumeBuffers() {
 }
 
 void Demo3D::initCascades() {
-    /**
-     * @brief Initialize radiance cascade hierarchy
-     * 
-     * Cascade Configuration (default):
-     * - Cascade 0: 32³ probes, 0.1 unit cells, 4 rays
-     * - Cascade 1: 64³ probes, 0.5 unit cells, 4 rays
-     * - Cascade 2: 128³ probes, 2.0 unit cells, 4 rays
-     * - Cascade 3: 64³ probes, 8.0 unit cells, 4 rays
-     * - Cascade 4: 32³ probes, 32.0 unit cells, 4 rays
-     * 
-     * Design Rationale:
-     * - Finer cascades near camera for detail
-     * - Coarser cascades for large-scale lighting
-     * - Exponential cell size increase (×4 each level)
-     */
-    
-    // TODO: Implement cascade initialization
-    int baseRes = 32;
-    float baseCellSize = 0.1f;
-    
-    for (int i = 0; i < cascadeCount; ++i) {
-        int resolution = baseRes * (i % 3 == 0 ? 1 : (i % 3 == 1 ? 2 : 4));
-        float cellSize = baseCellSize * powf(4.0f, i);
-        
-        cascades[i].initialize(
-            resolution,
-            cellSize,
-            glm::vec3(0.0f), // Origin at world center
-            BASE_RAY_COUNT
-        );
-        
-        cascades[i].active = true;
-    }
-    
-    std::cout << "[Demo3D] Initialized " << cascadeCount << " cascade levels" << std::endl;
+    // Phase 2: single 32^3 cascade covering the full volume
+    cascadeCount = 1;
+
+    const int probeRes = 32;
+    const float cellSz = volumeSize.x / float(probeRes);  // 4.0/32 = 0.125
+
+    cascades[0].initialize(probeRes, cellSz, volumeOrigin, 4);
+
+    std::cout << "[Demo3D] Cascade 0: " << probeRes << "^3 probes, cellSize=" << cellSz
+              << ", active=" << cascades[0].active << std::endl;
 }
 
 void Demo3D::destroyCascades() {
@@ -1551,9 +1634,25 @@ void Demo3D::renderSettingsPanel() {
     
     ImGui::Separator();
     
+    ImGui::Separator();
+    ImGui::Text("Cascade GI (Phase 2):");
+    ImGui::Checkbox("Cascade GI", &useCascadeGI);
+    if (cascades[0].active)
+        ImGui::Text("Probe grid: 32^3, rays/probe: %d", cascades[0].raysPerProbe);
+    else
+        ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Cascade not initialized!");
+
+    ImGui::Separator();
+    ImGui::Text("Debug Render Mode:");
+    ImGui::RadioButton("Final (0)",     &raymarchRenderMode, 0); ImGui::SameLine();
+    ImGui::RadioButton("Normals (1)",   &raymarchRenderMode, 1); ImGui::SameLine();
+    ImGui::RadioButton("SDF dist (2)",  &raymarchRenderMode, 2); ImGui::SameLine();
+    ImGui::RadioButton("Indirect*5 (3)", &raymarchRenderMode, 3);
+
+    ImGui::Separator();
     ImGui::Checkbox("Show Performance Metrics", &showPerformanceMetrics);
     ImGui::Checkbox("Show Debug Windows", &showDebugWindows);
-    
+
     ImGui::End();
 }
 
@@ -1690,7 +1789,8 @@ void Demo3D::resetCamera() {
      * @brief Reset camera to default position
      */
     
-    camera.position = glm::vec3(0.0f, 2.0f, 5.0f);
+    // Cornell Box is centered at origin in [-1,1]; camera looks in from +z
+    camera.position = glm::vec3(0.0f, 0.0f, 4.0f);
     camera.target = glm::vec3(0.0f, 0.0f, 0.0f);
     camera.up = glm::vec3(0.0f, 1.0f, 0.0f);
     camera.fovy = 60.0f;
