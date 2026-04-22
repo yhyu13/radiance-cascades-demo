@@ -571,12 +571,13 @@ private:
     bool showRadianceGrid;
 
     // Probe readback stats (populated once per cascade update, shown in Cascades panel)
-    int   probeNonZero;
-    int   probeTotal;
-    float probeMaxLum;
-    float probeMeanLum;
-    glm::vec3 probeCenterSample;
-    glm::vec3 probeBackwallSample;
+    // Per-cascade probe readback stats (indexed 0..cascadeCount-1)
+    int   probeNonZero[MAX_CASCADES];
+    int   probeTotal;               // same for all levels (res^3)
+    float probeMaxLum[MAX_CASCADES];
+    float probeMeanLum[MAX_CASCADES];
+    glm::vec3 probeCenterSample;    // C0 center probe sample
+    glm::vec3 probeBackwallSample;  // C0 backwall probe sample
 
     // ========================================================================
     // Phase 1: Lighting Debug Controls
