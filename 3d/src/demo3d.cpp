@@ -290,13 +290,12 @@ void Demo3D::update() {
     /**
      * @brief Update simulation state
      */
-    
+
     time += GetFrameTime();
-    
-    // Check if scene needs update
-    if (sceneDirty) {
-        voxelizationPass();
-    }
+    // Scene update (voxelization + SDF regen) is handled entirely in render()
+    // so that the sdfReady flag reset is properly chained after voxelizationPass.
+    // Calling voxelizationPass() here would clear sceneDirty before render() sees it,
+    // preventing sdfReady from being reset and leaving the SDF texture stale.
 }
 
 void Demo3D::render() {
