@@ -42,11 +42,18 @@ void main() {
     
     // Visualization modes
     if (visualizeMode < 0.5) {
-        // Mode 0: Grayscale (raw SDF values)
-        // Map SDF range [-2.0, 2.0] to [0.0, 1.0]
-        float normalized = clamp((sdf + 2.0) / 4.0, 0.0, 1.0);
-        fragColor = vec4(vec3(normalized), 1.0);
-        
+        // Mode 0: Colorized SDF — blue=inside solid, white=surface, orange=air interior
+        float clamped = clamp(sdf / 1.5, -1.0, 1.0);
+        vec3 negColor  = vec3(0.1, 0.3, 0.8);  // blue  = inside solid
+        vec3 posColor  = vec3(0.9, 0.6, 0.1);  // orange = air / interior
+        vec3 surfColor = vec3(1.0, 1.0, 1.0);  // white  = surface (sdf=0)
+        vec3 col;
+        if (clamped < 0.0)
+            col = mix(negColor, surfColor, 1.0 + clamped);
+        else
+            col = mix(surfColor, posColor, clamped);
+        fragColor = vec4(col, 1.0);
+
     } else if (visualizeMode < 1.5) {
         // Mode 1: Surface detection (highlight zero-crossings)
         // Surfaces have SDF ≈ 0
