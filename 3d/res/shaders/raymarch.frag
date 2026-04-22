@@ -218,10 +218,12 @@ void main() {
     float accumulatedAlpha = 0.0;
     
     // March through volume
+    int stepCount = 0;
     for (int i = 0; i < uSteps; ++i) {
+        ++stepCount;
         if (accumulatedAlpha >= uTerminationThreshold)
             break; // Early termination
-        
+
         vec3 pos = uCameraPos + rayDir * t;
         
         // Sample SDF for adaptive stepping
@@ -257,7 +259,17 @@ void main() {
                 return;
             }
 
-            // Mode 0: final rendering
+            // Debug mode 4: direct light only (bypass cascade regardless of uUseCascade)
+            if (uRenderMode == 4) {
+                vec3 lightDir4 = normalize(uLightPos - pos);
+                float diff4 = max(dot(normal, lightDir4), 0.0);
+                vec3 direct = diff4 * uLightColor + vec3(0.05);
+                fragColor = vec4(toneMapACES(direct), 1.0);
+                fragColor.rgb = pow(fragColor.rgb, vec3(1.0 / 2.2));
+                return;
+            }
+
+            // Mode 0 / 5 shared direct-light computation
             vec3 lightDir = normalize(uLightPos - pos);
             float diff = max(dot(normal, lightDir), 0.0);
             vec3 surfaceColor = diff * uLightColor + vec3(0.05); // diffuse + ambient
@@ -285,6 +297,17 @@ void main() {
             break;
     }
     
+    // Debug mode 5: step count heatmap (green=few, yellow=moderate, red=many/miss)
+    if (uRenderMode == 5) {
+        float t5 = clamp(float(stepCount) / float(max(uSteps, 1)), 0.0, 1.0);
+        // green -> yellow -> red ramp
+        vec3 heatColor = (t5 < 0.5)
+            ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), t5 * 2.0)
+            : mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (t5 - 0.5) * 2.0);
+        fragColor = vec4(heatColor, 1.0);
+        return;
+    }
+
     // Apply tone mapping
     accumulatedColor = toneMapACES(accumulatedColor);
     

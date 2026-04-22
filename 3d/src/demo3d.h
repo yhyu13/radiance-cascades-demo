@@ -355,14 +355,19 @@ public:
      * Useful for verifying SDF generation correctness.
      */
     void renderSDFDebug();
-    
+
+    /**
+     * @brief Render radiance cascade slice viewer (OpenGL part only)
+     */
+    void renderRadianceDebug();
+
     /**
      * @brief Render SDF debug UI overlay (ImGui part)
-     * 
+     *
      * Must be called between rlImGuiBegin() and rlImGuiEnd().
      */
     void renderSDFDebugUI();
-    
+
     /**
      * @brief Render radiance cascade debug UI overlay (Phase 1)
      */
@@ -561,7 +566,15 @@ private:
     
     /** Show voxel grid overlay on radiance debug */
     bool showRadianceGrid;
-    
+
+    // Probe readback stats (populated once per cascade update, shown in Cascades panel)
+    int   probeNonZero;
+    int   probeTotal;
+    float probeMaxLum;
+    float probeMeanLum;
+    glm::vec3 probeCenterSample;
+    glm::vec3 probeBackwallSample;
+
     // ========================================================================
     // Phase 1: Lighting Debug Controls
     // ========================================================================
