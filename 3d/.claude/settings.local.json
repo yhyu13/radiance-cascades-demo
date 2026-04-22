@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -File build.ps1)",
+      "Bash(cmake .. -G \"Visual Studio 17 2022\" -DCMAKE_TOOLCHAIN_FILE=\"D:/GitRepo-My/vcpkg/scripts/buildsystems/vcpkg.cmake\" -DVCPKG_TARGET_TRIPLET=x64-windows)",
+      "Bash(\"D:/GitRepo-My/vcpkg/vcpkg.exe\" list *)",
+      "Bash(\"D:/GitRepo-My/vcpkg/vcpkg.exe\" install *)",
+      "Bash(cmake .. -G 'Visual Studio 17 2022' -DCMAKE_TOOLCHAIN_FILE=D:/GitRepo-My/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DGLEW_INCLUDE_DIR=D:/GitRepo-My/vcpkg/installed/x64-windows/include -DGLEW_LIBRARY=D:/GitRepo-My/vcpkg/installed/x64-windows/lib/glew32.lib)",
+      "Bash(cmake .. -G 'Visual Studio 17 2022' -DCMAKE_TOOLCHAIN_FILE=D:/GitRepo-My/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DGLEW_INCLUDE_DIR=D:/GitRepo-My/vcpkg/installed/x64-windows/include -DGLEW_SHARED_LIBRARY_RELEASE=D:/GitRepo-My/vcpkg/installed/x64-windows/lib/glew32.lib -DGLEW_SHARED_LIBRARY_DEBUG=D:/GitRepo-My/vcpkg/installed/x64-windows/debug/lib/glew32d.lib)",
+      "Bash(timeout 8 ./RadianceCascades3D.exe)",
+      "Bash(cmake --build . --config Release)",
+      "Bash(timeout 5 ./RadianceCascades3D.exe)",
+      "Bash(cmake --build build --config Release)",
+      "Bash(timeout 5 ./build/RadianceCascades3D.exe)",
+      "Bash(echo \"EXIT_CODE: $?\")",
+      "Bash(timeout 4 ./build/RadianceCascades3D.exe)"
+    ]
+  }
+}

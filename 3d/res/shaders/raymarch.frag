@@ -66,6 +66,12 @@ uniform float uTime;
 /** Rendering mode */
 uniform int uRenderMode; // 0 = final, 1 = sdf viz, 2 = normals, etc.
 
+/** Direct light position in world space */
+uniform vec3 uLightPos;
+
+/** Direct light color */
+uniform vec3 uLightColor;
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
@@ -76,8 +82,8 @@ uniform sampler3D uSDF;
 /** Radiance volume (from cascades) */
 uniform sampler3D uRadiance;
 
-/** Optional: Direct lighting buffer */
-uniform sampler3D uDirectLighting;
+/** Whether to blend in cascade indirect lighting */
+uniform bool uUseCascade;
 
 // =============================================================================
 // Constants
@@ -168,7 +174,7 @@ vec3 sampleRadiance(vec3 worldPos) {
  * @brief Estimate surface normal from SDF gradient
  */
 vec3 estimateNormal(vec3 worldPos) {
-    const float eps = 0.001;
+    const float eps = 0.06;  // ~1 voxel at 64^3 in 4-unit volume (4/64=0.0625)
     
     vec3 dx = vec3(sampleSDF(worldPos + vec3(eps, 0, 0)) - sampleSDF(worldPos - vec3(eps, 0, 0)), 0, 0);
     vec3 dy = vec3(0, sampleSDF(worldPos + vec3(0, eps, 0)) - sampleSDF(worldPos - vec3(0, eps, 0)), 0);
@@ -224,17 +230,49 @@ void main() {
         if (dist < EPSILON) {
             // Hit surface!
             vec3 normal = estimateNormal(pos);
-            vec3 radiance = sampleRadiance(pos);
-            
-            // Simple shading: radiance * normal influence
-            float NdotV = max(dot(normal, -rayDir), 0.0);
-            vec3 surfaceColor = radiance * (0.5 + 0.5 * NdotV);
-            
+
+            // Debug mode 1: normals as RGB
+            if (uRenderMode == 1) {
+                fragColor = vec4(normal * 0.5 + 0.5, 1.0);
+                return;
+            }
+
+            // Debug mode 2: SDF distance grayscale (near-zero at surface = near-black)
+            if (uRenderMode == 2) {
+                float d = abs(sampleSDF(pos));
+                fragColor = vec4(vec3(d * 20.0), 1.0);
+                return;
+            }
+
+            // Debug mode 3: indirect radiance * 5 (magnified for visibility)
+            if (uRenderMode == 3) {
+                if (uUseCascade) {
+                    vec3 uvw = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
+                    vec3 indirect = texture(uRadiance, uvw).rgb;
+                    fragColor = vec4(toneMapACES(indirect * 5.0), 1.0);
+                } else {
+                    fragColor = vec4(0.05, 0.05, 0.05, 1.0);
+                }
+                return;
+            }
+
+            // Mode 0: final rendering
+            vec3 lightDir = normalize(uLightPos - pos);
+            float diff = max(dot(normal, lightDir), 0.0);
+            vec3 surfaceColor = diff * uLightColor + vec3(0.05); // diffuse + ambient
+
+            // Indirect lighting from cascade
+            if (uUseCascade) {
+                vec3 uvw = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
+                vec3 indirect = texture(uRadiance, uvw).rgb;
+                surfaceColor += indirect * 0.3;
+            }
+
             // Front-to-back blending
             float alpha = 1.0;
             accumulatedColor += surfaceColor * alpha * (1.0 - accumulatedAlpha);
             accumulatedAlpha += alpha * (1.0 - accumulatedAlpha);
-            
+
             break;
         }
         

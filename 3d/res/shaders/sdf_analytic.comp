@@ -17,7 +17,7 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
 // Output SDF volume (R32F for single-channel float distances)
-layout(rgba32f, binding = 0) uniform image3D sdfVolume;
+layout(r32f, binding = 0) uniform image3D sdfVolume;
 
 // Uniform parameters
 uniform vec3 volumeOrigin;    // World space origin of volume
@@ -25,12 +25,13 @@ uniform vec3 volumeSize;      // World space dimensions of volume
 uniform int primitiveCount;   // Number of primitives in buffer
 
 // Primitive structure (matches AnalyticSDF::Primitive)
+// Uses vec4 to avoid std430 vec3 alignment ambiguity (vec3 would pad to 16 bytes anyway)
 struct Primitive {
     int type;                 // 0 = box, 1 = sphere
-    vec3 position;            // World space center
-    vec3 scale;               // Box: half-extents, Sphere: radius
-    vec3 color;               // Albedo (not used in SDF pass)
-    float padding;            // Alignment
+    float pad0, pad1, pad2;   // Padding to align position to 16 bytes
+    vec4 position;            // World space center (.xyz used)
+    vec4 scale;               // Box: half-extents, Sphere: radius (.xyz used)
+    vec4 color;               // Albedo (.xyz used, not used in SDF pass)
 };
 
 // Shader Storage Buffer Object containing primitives
@@ -71,12 +72,12 @@ float evaluateSDF(vec3 worldPos) {
         Primitive prim = primitives[i];
         
         // Transform to primitive's local space
-        vec3 localPos = worldPos - prim.position;
-        
+        vec3 localPos = worldPos - prim.position.xyz;
+
         float dist;
         if (prim.type == 0) {
             // Box
-            dist = sdfBox(localPos, prim.scale);
+            dist = sdfBox(localPos, prim.scale.xyz);
         } else {
             // Sphere
             dist = sdfSphere(localPos, prim.scale.x);

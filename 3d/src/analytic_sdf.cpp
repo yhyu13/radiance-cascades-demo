@@ -97,60 +97,45 @@ void AnalyticSDF::getBounds(glm::vec3& min, glm::vec3& max) const {
 void AnalyticSDF::createCornellBox() {
     clear();
 
-    // Cornell Box dimensions (unit cube from 0 to 1)
-    const float boxSize = 1.0f;
-    const float wallThickness = 0.05f;
+    // Room interior: [-1, 1] in all dims. Walls 0.4 thick = ~6 voxels at 64^3 in a 4-unit volume.
+    const float hs = 1.0f;   // interior half-size
+    const float wt = 0.2f;   // wall half-thickness (full thickness = 0.4 = 6+ voxels at 64^3)
+    const float ext = hs + wt; // outer half-size including wall
 
-    // Back wall (white) - at z = 0
-    addBox(
-        glm::vec3(boxSize * 0.5f, boxSize * 0.5f, -wallThickness * 0.5f),
-        glm::vec3(boxSize, boxSize, wallThickness),
-        glm::vec3(0.8f, 0.8f, 0.8f)  // White
-    );
+    // Back wall (white) - inner face at z = -hs, no front wall (camera looks through)
+    addBox(glm::vec3(0.0f, 0.0f, -(hs + wt)),
+           glm::vec3(2.0f * ext, 2.0f * ext, 2.0f * wt),
+           glm::vec3(0.8f, 0.8f, 0.8f));
 
-    // Left wall (red) - at x = 0
-    addBox(
-        glm::vec3(-wallThickness * 0.5f, boxSize * 0.5f, boxSize * 0.5f),
-        glm::vec3(wallThickness, boxSize, boxSize),
-        glm::vec3(0.8f, 0.2f, 0.2f)  // Red
-    );
+    // Floor (white) - inner face at y = -hs
+    addBox(glm::vec3(0.0f, -(hs + wt), 0.0f),
+           glm::vec3(2.0f * ext, 2.0f * wt, 2.0f * ext),
+           glm::vec3(0.8f, 0.8f, 0.8f));
 
-    // Right wall (green) - at x = 1
-    addBox(
-        glm::vec3(boxSize + wallThickness * 0.5f, boxSize * 0.5f, boxSize * 0.5f),
-        glm::vec3(wallThickness, boxSize, boxSize),
-        glm::vec3(0.2f, 0.8f, 0.2f)  // Green
-    );
+    // Ceiling (white) - inner face at y = +hs
+    addBox(glm::vec3(0.0f, hs + wt, 0.0f),
+           glm::vec3(2.0f * ext, 2.0f * wt, 2.0f * ext),
+           glm::vec3(0.8f, 0.8f, 0.8f));
 
-    // Floor (white) - at y = 0
-    addBox(
-        glm::vec3(boxSize * 0.5f, -wallThickness * 0.5f, boxSize * 0.5f),
-        glm::vec3(boxSize, wallThickness, boxSize),
-        glm::vec3(0.8f, 0.8f, 0.8f)  // White
-    );
+    // Left wall (red) - inner face at x = -hs
+    addBox(glm::vec3(-(hs + wt), 0.0f, 0.0f),
+           glm::vec3(2.0f * wt, 2.0f * ext, 2.0f * ext),
+           glm::vec3(0.8f, 0.2f, 0.2f));
 
-    // Ceiling (white) - at y = 1
-    addBox(
-        glm::vec3(boxSize * 0.5f, boxSize + wallThickness * 0.5f, boxSize * 0.5f),
-        glm::vec3(boxSize, wallThickness, boxSize),
-        glm::vec3(0.8f, 0.8f, 0.8f)  // White
-    );
+    // Right wall (green) - inner face at x = +hs
+    addBox(glm::vec3(hs + wt, 0.0f, 0.0f),
+           glm::vec3(2.0f * wt, 2.0f * ext, 2.0f * ext),
+           glm::vec3(0.2f, 0.8f, 0.2f));
 
-    // Front wall removed (camera looks through it)
+    // Tall box (left-center of room)
+    addBox(glm::vec3(-0.35f, -0.5f, -0.1f),
+           glm::vec3(0.5f, 1.0f, 0.5f),
+           glm::vec3(0.8f, 0.8f, 0.8f));
 
-    // Tall box in center-left
-    addBox(
-        glm::vec3(0.35f, 0.2f, 0.5f),
-        glm::vec3(0.3f, 0.4f, 0.3f),
-        glm::vec3(0.8f, 0.8f, 0.8f)  // White
-    );
-
-    // Short box in center-right
-    addBox(
-        glm::vec3(0.65f, 0.1f, 0.4f),
-        glm::vec3(0.3f, 0.2f, 0.3f),
-        glm::vec3(0.8f, 0.8f, 0.8f)  // White
-    );
+    // Short box (right-center of room)
+    addBox(glm::vec3(0.4f, -0.7f, 0.2f),
+           glm::vec3(0.5f, 0.6f, 0.5f),
+           glm::vec3(0.8f, 0.8f, 0.8f));
 }
 
 float AnalyticSDF::sdfBox(const glm::vec3& p, const glm::vec3& b) {

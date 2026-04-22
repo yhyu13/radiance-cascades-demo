@@ -1,24 +1,9 @@
 /**
  * @file radiance_3d.comp
- * @brief Compute shader for 3D Radiance Cascade injection
- * 
- * This shader computes radiance at each probe location in the cascade hierarchy.
- * It casts rays in predefined directions and accumulates lighting from hits.
- * 
- * Algorithm:
- * 1. For each probe in the cascade grid:
- *    a. Calculate world position
- *    b. Cast rays in assigned directions
- *    c. Sample SDF to determine step size
- *    d. Accumulate radiance from surface hits
- *    e. Sample coarser cascades for distant lighting
- * 2. Store radiance in 3D texture for later retrieval
- * 
- * Key Features:
- * - Hierarchical cascade sampling
- * - SDF-guided raymarching
- * - Temporal reprojection support
- * - Bilinear filtering between probes
+ * @brief Compute shader for 3D Radiance Cascade injection (Phase 2)
+ *
+ * Casts rays from each probe, evaluates Lambertian shading at hits,
+ * and stores average radiance in the probe grid texture.
  */
 
 #version 430 core
@@ -29,230 +14,107 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 // Uniforms
 // =============================================================================
 
-/** Current cascade index (0 = finest) */
-uniform int uCascadeIndex;
+uniform int   uCascadeIndex;
+uniform int   uCascadeCount;
+uniform float uBaseInterval;   // cell size passed directly: volumeSize / probeRes
 
-/** Total number of cascades */
-uniform int uCascadeCount;
+uniform ivec3 uVolumeSize;     // probe grid dimensions (e.g. 32^3)
+uniform vec3  uGridSize;       // SDF volume size in world units (e.g. 4,4,4)
+uniform vec3  uGridOrigin;     // SDF volume origin in world units (e.g. -2,-2,-2)
 
-/** Base interval size in voxels */
-uniform float uBaseInterval;
+uniform int   uRaysPerProbe;
 
-/** Volume dimensions */
-uniform ivec3 uVolumeSize;
-
-/** Grid size in world units */
-uniform vec3 uGridSize;
-
-/** Grid origin */
-uniform vec3 uGridOrigin;
-
-/** Camera position for reprojection */
-uniform vec3 uCameraPos;
-
-/** Previous frame view-projection matrix */
-uniform mat4 uPrevVPMatrix;
-
-/** Current frame view-projection matrix */
-uniform mat4 uCurrVPMatrix;
-
-/** Flag indicating if previous frame data is available */
-uniform int uHasPreviousFrame;
+uniform vec3  uLightPos;
+uniform vec3  uLightColor;
 
 // =============================================================================
 // Texture Bindings
 // =============================================================================
 
-/** Signed distance field */
 uniform sampler3D uSDF;
 
-/** Output radiance for this cascade */
 layout(rgba16f) uniform image3D oRadiance;
-
-/** Previous frame radiance (temporal) */
-uniform sampler3D uPrevRadiance;
-
-/** Coarser cascade for mip sampling */
-uniform sampler3D uCoarseCascade;
-
-// =============================================================================
-// Ray Configuration
-// =============================================================================
-
-/** Number of rays per probe */
-uniform int uRaysPerProbe;
-
-/** Ray directions (Hammersley or Fibonacci sphere) */
-const int MAX_RAYS = 64;
-uniform vec3 uRayDirections[MAX_RAYS];
 
 // =============================================================================
 // Constants
 // =============================================================================
 
-const float PI = 3.14159265359;
+const float PI  = 3.14159265359;
 const float INF = 1e10;
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
-/**
- * @brief Convert probe index to world position
- */
 vec3 probeToWorld(ivec3 probePos) {
-    // Calculate cell size for this cascade
-    float cellSize = uBaseInterval * pow(4.0, float(uCascadeIndex));
-    
-    // World position = origin + (probe_index + 0.5) * cell_size
-    return uGridOrigin + (vec3(probePos) + 0.5f) * cellSize;
+    // uBaseInterval is already the correct cell size for this cascade
+    return uGridOrigin + (vec3(probePos) + 0.5) * uBaseInterval;
 }
 
-/**
- * @brief Convert world position to probe index
- */
-ivec3 worldToProbe(vec3 worldPos) {
-    float cellSize = uBaseInterval * pow(4.0, float(uCascadeIndex));
-    return ivec3((worldPos - uGridOrigin) / cellSize);
-}
-
-/**
- * @brief Sample SDF at world position
- */
 float sampleSDF(vec3 worldPos) {
-    ivec3 voxelPos = worldToProbe(worldPos);
-    if (any(lessThan(voxelPos, ivec3(0))) || any(greaterThanEqual(voxelPos, uVolumeSize)))
+    vec3 uvw = (worldPos - uGridOrigin) / uGridSize;
+    if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0))))
         return INF;
-    
-    return texelFetch(uSDF, voxelPos, 0).r;
+    return texture(uSDF, uvw).r;
 }
 
-/**
- * @brief Generate Hammersley points on sphere for ray directions
- */
 vec3 getRayDirection(int idx) {
-    if (idx >= uRaysPerProbe)
-        return vec3(0.0);
-    
-    // Fibonacci sphere algorithm
-    float phi = 2.0 * PI * idx / float(uRaysPerProbe);
+    // Fibonacci sphere for uniform distribution
+    float phi      = 2.0 * PI * float(idx) / float(uRaysPerProbe);
     float cosTheta = 1.0 - (2.0 * float(idx) + 1.0) / float(uRaysPerProbe);
-    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
-    
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
     return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
 }
 
-/**
- * @brief SDF-guided raymarching
- * 
- * Uses SDF to take optimal step sizes - larger steps in empty space,
- * smaller steps near surfaces.
- */
 vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
-    vec4 accumulatedColor = vec4(0.0);
     float t = tMin;
-    
-    while (t < tMax) {
+    const int MAX_STEPS = 128;
+
+    for (int i = 0; i < MAX_STEPS && t < tMax; ++i) {
         vec3 pos = origin + direction * t;
-        
-        // Sample SDF
         float dist = sampleSDF(pos);
-        
-        if (dist < 0.001) {
-            // Hit surface!
-            // In a full implementation, you would:
-            // 1. Calculate surface normal from SDF gradient
-            // 2. Evaluate BRDF
-            // 3. Accumulate emissive term
-            // For now, return white hit
-            return vec4(1.0, 1.0, 1.0, 1.0);
+
+        if (dist < 0.002) {
+            // Surface hit — compute Lambertian shading
+            const float e = 0.06;  // ~1 voxel at 64^3 in 4-unit volume
+            vec3 n = normalize(vec3(
+                sampleSDF(pos + vec3(e,0,0)) - sampleSDF(pos - vec3(e,0,0)),
+                sampleSDF(pos + vec3(0,e,0)) - sampleSDF(pos - vec3(0,e,0)),
+                sampleSDF(pos + vec3(0,0,e)) - sampleSDF(pos - vec3(0,0,e))
+            ));
+            vec3 lightDir = normalize(uLightPos - pos);
+            float diff = max(dot(n, lightDir), 0.0);
+            vec3 color = diff * uLightColor + vec3(0.02);  // diffuse + ambient
+            return vec4(color, 1.0);
         }
-        
-        // Advance by SDF distance (with safety factor)
+
         t += max(dist * 0.9, 0.01);
     }
-    
-    // No hit - return black
-    return vec4(0.0);
-}
 
-/**
- * @brief Reproject previous frame's radiance
- * 
- * Uses camera motion to find corresponding pixel in previous frame.
- */
-vec4 temporalReproject(ivec3 probePos, vec3 worldPos) {
-    // Check if we have valid previous frame data
-    if (uCascadeIndex > 0 && uHasPreviousFrame > 0) {
-        // Transform world position to previous frame's clip space
-        vec4 prevClip = uPrevVPMatrix * vec4(worldPos, 1.0);
-        vec3 prevUV = prevClip.xyz / prevClip.w;
-        
-        // Sample previous radiance
-        // Note: This requires converting UV back to probe coordinates
-        // Simplified here - full implementation needs proper UV mapping
-        return texelFetch(uPrevRadiance, probePos, 0);
-    }
-    
     return vec4(0.0);
 }
 
 // =============================================================================
-// Main Compute Shader
+// Main
 // =============================================================================
 
 void main() {
     ivec3 probePos = ivec3(gl_GlobalInvocationID);
-    
-    // Bounds check
-    if (any(greaterThanEqual(probePos, uVolumeSize)))
-        return;
-    
-    // Get probe world position
-    vec3 worldPos = probeToWorld(probePos);
-    
-    // Initialize radiance accumulator
-    vec4 totalRadiance = vec4(0.0);
-    float totalWeight = 0.0;
-    
-    // Cast rays in all directions
+    if (any(greaterThanEqual(probePos, uVolumeSize))) return;
+
+    vec3 worldPos      = probeToWorld(probePos);
+    vec3 totalRadiance = vec3(0.0);
+
+    // Ray interval covers the full volume diagonal so center probes reach walls
+    float intervalEnd = length(uGridSize);
+
     for (int i = 0; i < uRaysPerProbe; ++i) {
         vec3 rayDir = getRayDirection(i);
-        
-        // Determine ray interval based on cascade
-        float intervalStart = uBaseInterval * pow(4.0, float(uCascadeIndex));
-        float intervalEnd = intervalStart * 4.0; // Next cascade starts where this ends
-        
-        // Raymarch in assigned interval
-        vec4 hitColor = raymarchSDF(worldPos, rayDir, intervalStart, intervalEnd);
-        
-        if (hitColor.a > 0.0) {
-            // Hit something - accumulate radiance
-            totalRadiance += hitColor;
-            totalWeight += 1.0;
-        } else if (uCascadeIndex < uCascadeCount - 1) {
-            // No hit - sample coarser cascade for distant lighting
-            // This provides environment lighting from far-away surfaces
-            vec3 coarseSample = texture(uCoarseCascade, worldPos / uGridSize).rgb;
-            totalRadiance.rgb += coarseSample;
-            totalWeight += 1.0;
-        }
+        vec4 hit    = raymarchSDF(worldPos, rayDir, 0.05, intervalEnd);
+        if (hit.a > 0.0)
+            totalRadiance += hit.rgb;
     }
-    
-    // Average the radiance
-    if (totalWeight > 0.0) {
-        totalRadiance /= totalWeight;
-    }
-    
-    // Temporal reprojection (blend with previous frame)
-    if (uCascadeIndex == 0) { // Only finest cascade uses temporal
-        vec4 prevRadiance = temporalReproject(probePos, worldPos);
-        if (prevRadiance.a > 0.0) {
-            // Blend: 10% new, 90% old for stability
-            totalRadiance = mix(prevRadiance, totalRadiance, 0.1);
-        }
-    }
-    
-    // Write final radiance
-    imageStore(oRadiance, probePos, totalRadiance);
+
+    totalRadiance /= float(uRaysPerProbe);
+    imageStore(oRadiance, probePos, vec4(totalRadiance, 1.0));
 }
