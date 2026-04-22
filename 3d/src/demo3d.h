@@ -500,7 +500,10 @@ private:
     
     /** Signed distance field (R32F) */
     GLuint sdfTexture;
-    
+
+    /** Albedo/material color volume (RGBA8) — written alongside SDF by sdf_analytic.comp */
+    GLuint albedoTexture;
+
     // =============================================================================
     // Analytic SDF (Phase 0 - Quick Validation)
     // =============================================================================

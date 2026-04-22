@@ -19,6 +19,9 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 // Output SDF volume (R32F for single-channel float distances)
 layout(r32f, binding = 0) uniform image3D sdfVolume;
 
+// Output albedo volume (RGBA8) — color of the nearest primitive at each voxel
+layout(rgba8, binding = 1) uniform image3D albedoVolume;
+
 // Uniform parameters
 uniform vec3 volumeOrigin;    // World space origin of volume
 uniform vec3 volumeSize;      // World space dimensions of volume
@@ -60,55 +63,33 @@ float sdfSphere(vec3 p, float r) {
     return length(p) - r;
 }
 
-/**
- * @brief Evaluate SDF at world space position
- * @param worldPos World space point to evaluate
- * @return Minimum signed distance across all primitives
- */
-float evaluateSDF(vec3 worldPos) {
-    float minDist = 1e10;  // Large initial value
-    
+void main() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    ivec3 size  = imageSize(sdfVolume);
+    if (any(greaterThanEqual(coord, size))) return;
+
+    vec3 uvw      = (vec3(coord) + 0.5) / vec3(size);
+    vec3 worldPos = volumeOrigin + uvw * volumeSize;
+
+    float minDist      = 1e10;
+    vec3  closestColor = vec3(0.5);  // fallback gray if no primitives
+
     for (int i = 0; i < primitiveCount; ++i) {
         Primitive prim = primitives[i];
-        
-        // Transform to primitive's local space
-        vec3 localPos = worldPos - prim.position.xyz;
+        vec3 localPos  = worldPos - prim.position.xyz;
 
         float dist;
-        if (prim.type == 0) {
-            // Box
+        if (prim.type == 0)
             dist = sdfBox(localPos, prim.scale.xyz);
-        } else {
-            // Sphere
+        else
             dist = sdfSphere(localPos, prim.scale.x);
-        }
-        
-        // Union operation: take minimum distance
-        minDist = min(minDist, dist);
-    }
-    
-    return minDist;
-}
 
-void main() {
-    // Get voxel coordinates
-    ivec3 coord = ivec3(gl_GlobalInvocationID);
-    ivec3 size = imageSize(sdfVolume);
-    
-    // Bounds check
-    if (any(greaterThanEqual(coord, size))) {
-        return;
+        if (dist < minDist) {
+            minDist      = dist;
+            closestColor = prim.color.rgb;
+        }
     }
-    
-    // Calculate normalized UVW coordinates (0 to 1)
-    vec3 uvw = (vec3(coord) + 0.5) / vec3(size);
-    
-    // Convert to world space position
-    vec3 worldPos = volumeOrigin + uvw * volumeSize;
-    
-    // Evaluate SDF
-    float sdf = evaluateSDF(worldPos);
-    
-    // Store in volume (R channel = distance, others unused)
-    imageStore(sdfVolume, coord, vec4(sdf, 0.0, 0.0, 0.0));
+
+    imageStore(sdfVolume,    coord, vec4(minDist, 0.0, 0.0, 0.0));
+    imageStore(albedoVolume, coord, vec4(closestColor, 1.0));
 }
