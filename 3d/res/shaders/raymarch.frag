@@ -261,6 +261,16 @@ void main() {
             vec3 uvw    = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
             vec3 albedo = texture(uAlbedo, uvw).rgb;
 
+            // Debug mode 6: GI-only — raw linear indirect, no tone map, no gamma.
+            // Intentionally different from mode 0: shows the cascade contribution in
+            // linear space so subtle color bleed (red/green wall tint) is preserved
+            // and not compressed away by ACES. Sky pixels stay black (no GI there).
+            if (uRenderMode == 6) {
+                vec3 indirect6 = texture(uRadiance, uvw).rgb;
+                fragColor = vec4(clamp(indirect6 * 2.0, 0.0, 1.0), 1.0);
+                return;
+            }
+
             // Debug mode 4: direct light only (bypass cascade regardless of uUseCascade)
             if (uRenderMode == 4) {
                 vec3 lightDir4 = normalize(uLightPos - pos);

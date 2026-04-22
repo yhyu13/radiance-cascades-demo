@@ -33,6 +33,8 @@ uniform vec3  uLightColor;
 
 uniform sampler3D uSDF;
 uniform sampler3D uAlbedo;
+uniform sampler3D uUpperCascade;  // next coarser level, bound when uHasUpperCascade=1
+uniform int       uHasUpperCascade;
 
 layout(rgba16f) uniform image3D oRadiance;
 
@@ -137,11 +139,18 @@ void main() {
         tMax = f * 4.0 * d;
     }
 
+    vec3 uvwProbe = (worldPos - uGridOrigin) / uGridSize;
+
     for (int i = 0; i < uRaysPerProbe; ++i) {
         vec3 rayDir = getRayDirection(i);
         vec4 hit    = raymarchSDF(worldPos, rayDir, tMin, tMax);
-        if (hit.a > 0.0)
+        if (hit.a > 0.0) {
             totalRadiance += hit.rgb;
+        } else if (uHasUpperCascade != 0) {
+            // Ray missed this interval — pull far-field from the coarser cascade
+            // at the same probe position (isotropic average; no per-direction storage)
+            totalRadiance += texture(uUpperCascade, uvwProbe).rgb;
+        }
     }
 
     totalRadiance /= float(uRaysPerProbe);
