@@ -237,10 +237,10 @@ void main() {
                 return;
             }
 
-            // Debug mode 2: SDF distance grayscale (near-zero at surface = near-black)
+            // Debug mode 2: depth map (distance ray travelled to reach surface)
             if (uRenderMode == 2) {
-                float d = abs(sampleSDF(pos));
-                fragColor = vec4(vec3(d * 20.0), 1.0);
+                float depth = (t - tNear) / max(tFar - tNear, 0.001);
+                fragColor = vec4(vec3(1.0 - depth), 1.0); // near=white, far=dark
                 return;
             }
 
@@ -251,7 +251,8 @@ void main() {
                     vec3 indirect = texture(uRadiance, uvw).rgb;
                     fragColor = vec4(toneMapACES(indirect * 5.0), 1.0);
                 } else {
-                    fragColor = vec4(0.05, 0.05, 0.05, 1.0);
+                    // Cascade disabled: show normal map as fallback so mode looks active
+                    fragColor = vec4(normal * 0.5 + 0.5, 1.0);
                 }
                 return;
             }

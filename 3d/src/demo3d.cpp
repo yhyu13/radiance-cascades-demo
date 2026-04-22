@@ -132,7 +132,7 @@ Demo3D::Demo3D()
     , debugQuadVBO(0)
     , sdfSliceAxis(2)           // Default: Z-axis slice (XY plane)
     , sdfSlicePosition(0.5f)    // Default: middle of volume
-    , sdfVisualizeMode(0)       // Default: grayscale mode
+    , sdfVisualizeMode(1)       // Default: surface-detection mode (more informative than grayscale)
     , showSDFDebug(false)       // Default: hidden, press 'D' to toggle
     , showRadianceDebug(false)
     , radianceSliceAxis(2)
@@ -147,6 +147,10 @@ Demo3D::Demo3D()
     , lightingDebugMode(0)
     , lightingExposure(1.0f)
     , lightingIntensityScale(1.0f)
+    , voxelizationTimeQuery(0)
+    , sdfTimeQuery(0)
+    , cascadeTimeQuery(0)
+    , raymarchTimeQuery(0)
 {
     /**
      * @brief Construct 3D demo and initialize all resources
@@ -303,22 +307,28 @@ void Demo3D::render() {
     // Pass 1: Voxelization (if needed)
     static bool sdfReady = false;
     if (sceneDirty) {
+        double t0 = GetTime();
         voxelizationPass();
+        voxelizationTimeMs = (GetTime() - t0) * 1000.0;
         sdfReady = false;
     }
 
     // Pass 2: SDF Generation (only when scene changed or first run)
     static bool cascadeReady = false;
     if (!sdfReady) {
+        double t0 = GetTime();
         sdfGenerationPass();
-        sdfReady    = true;
+        sdfTimeMs    = (GetTime() - t0) * 1000.0;
+        sdfReady     = true;
         cascadeReady = false;  // SDF changed → cascade stale
     }
 
     // Pass 3: Radiance Cascades (only when SDF changes; scene is static)
     if (!cascadeReady) {
+        double t0 = GetTime();
         updateRadianceCascades();
-        cascadeReady = true;
+        cascadeTimeMs = (GetTime() - t0) * 1000.0;
+        cascadeReady  = true;
     }
 
     // ONE-TIME diagnostic: read probe texture and print stats (Tool 1)
@@ -357,12 +367,15 @@ void Demo3D::render() {
     }
 
     // Pass 4: Raymarching
-    raymarchPass();
-    
-    // Pass 6: SDF Debug Visualization (Phase 0)
+    {
+        double t0 = GetTime();
+        raymarchPass();
+        raymarchTimeMs = (GetTime() - t0) * 1000.0;
+    }
+
+    // Pass 5: SDF Debug Visualization (Phase 0)
     renderSDFDebug();
-    
-    // Calculate frame time
+
     frameTimeMs = GetFrameTime() * 1000.0;
 }
 
@@ -1008,11 +1021,14 @@ void Demo3D::reloadShaders() {
     
     loadShader("voxelize.comp");
     loadShader("sdf_3d.comp");
-    loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
+    loadShader("sdf_analytic.comp");
     loadShader("radiance_3d.comp");
     loadShader("inject_radiance.comp");
-    loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization (auto-loads .vert)
-    
+    loadShader("sdf_debug.frag");
+    loadShader("radiance_debug.frag");
+    loadShader("lighting_debug.frag");
+    loadShader("raymarch.frag");
+
     std::cout << "[Demo3D] Shaders reloaded" << std::endl;
 }
 
@@ -1158,9 +1174,21 @@ void Demo3D::setScene(int sceneType) {
                 std::cout << "[Demo3D] Cleared scene (analytic SDF)" << std::endl;
                 break;
                 
-            case 0:
+            case 0: {
+                // Empty room: same walls as Cornell Box but all-gray, no interior objects
+                std::cout << "[Demo3D] Loading: Empty Room (analytic SDF)" << std::endl;
+                const float hs = 1.0f, wt = 0.2f, ext = hs + wt;
+                const glm::vec3 gray(0.7f, 0.7f, 0.7f);
+                analyticSDF.addBox(glm::vec3(0.0f, 0.0f, -(hs+wt)), glm::vec3(2*ext, 2*ext, 2*wt), gray);
+                analyticSDF.addBox(glm::vec3(0.0f, -(hs+wt), 0.0f), glm::vec3(2*ext, 2*wt, 2*ext), gray);
+                analyticSDF.addBox(glm::vec3(0.0f,  hs+wt,   0.0f), glm::vec3(2*ext, 2*wt, 2*ext), gray);
+                analyticSDF.addBox(glm::vec3(-(hs+wt), 0.0f, 0.0f), glm::vec3(2*wt, 2*ext, 2*ext), gray);
+                analyticSDF.addBox(glm::vec3( hs+wt,   0.0f, 0.0f), glm::vec3(2*wt, 2*ext, 2*ext), gray);
+                break;
+            }
+
             case 1: {
-                // Cornell Box using analytic primitives
+                // Cornell Box using analytic primitives (red/green walls + two boxes)
                 std::cout << "[Demo3D] Loading: Cornell Box (analytic SDF)" << std::endl;
                 analyticSDF.createCornellBox();
                 break;
@@ -1651,6 +1679,17 @@ void Demo3D::renderSettingsPanel() {
 
     ImGui::Separator();
     ImGui::Checkbox("Show Performance Metrics", &showPerformanceMetrics);
+    if (showPerformanceMetrics) {
+        ImGui::Indent();
+        ImGui::Text("Pass times (CPU-side, last run):");
+        ImGui::Text("  Voxelize  %.2f ms", voxelizationTimeMs);
+        ImGui::Text("  SDF       %.2f ms", sdfTimeMs);
+        ImGui::Text("  Cascade   %.2f ms", cascadeTimeMs);
+        ImGui::Text("  Raymarch  %.2f ms", raymarchTimeMs);
+        ImGui::Separator();
+        ImGui::Text("  Frame     %.2f ms", frameTimeMs);
+        ImGui::Unindent();
+    }
     ImGui::Checkbox("Show Debug Windows", &showDebugWindows);
 
     ImGui::End();
@@ -1714,22 +1753,22 @@ void Demo3D::renderTutorialPanel() {
         setScene(2);
         std::cout << "[Demo3D] Switched to: Simplified Sponza" << std::endl;
     }
-    
-    ImGui::Separator();
-    ImGui::Text("Advanced Scenes:");
-    
-    if (ImGui::Button(useOBJMesh ? "[ACTIVE] Cornell Box OBJ" : "Load Cornell Box OBJ")) {
+
+    if (ImGui::Button(useOBJMesh ? "[ACTIVE] Cornell Box (OBJ)" : "Cornell Box (OBJ)")) {
         if (loadOBJMesh("res/scene/cornell_box.obj")) {
             std::cout << "[Demo3D] Loaded real Cornell Box mesh from OBJ!" << std::endl;
         } else {
             std::cerr << "[ERROR] Failed to load Cornell Box OBJ!" << std::endl;
         }
     }
-    
+
     ImGui::NewLine();
-    ImGui::Text("Current Scene: %d", currentScene);
-    if (useOBJMesh) {
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Mode: OBJ Mesh");
+    {
+        const char* names[] = { "Empty Room", "Cornell Box", "Simplified Sponza" };
+        if (useOBJMesh)
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Active: Cornell Box (OBJ)");
+        else if (currentScene >= 0 && currentScene < 3)
+            ImGui::Text("Active: %s", names[currentScene]);
     }
     
     ImGui::NewLine();
