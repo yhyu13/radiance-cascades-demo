@@ -27,6 +27,10 @@ uniform int   uRaysPerProbe;
 uniform vec3  uLightPos;
 uniform vec3  uLightColor;
 
+// 4a: environment fill toggle
+uniform int   uUseEnvFill;   // 0 = honest miss (default), 1 = fill with sky
+uniform vec3  uSkyColor;     // sky color when uUseEnvFill is on
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
@@ -82,6 +86,10 @@ bool inShadow(vec3 hitPos, vec3 lightPos) {
     return false;
 }
 
+// Return conventions:
+//   vec4(color, 1.0)  — surface hit
+//   vec4(sky,  -1.0)  — exited simulation volume and uUseEnvFill is on
+//   vec4(0.0)         — in-volume miss (or volume exit with fill OFF)
 vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
     float t = tMin;
     const int MAX_STEPS = 128;
@@ -89,6 +97,14 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
     for (int i = 0; i < MAX_STEPS && t < tMax; ++i) {
         vec3 pos = origin + direction * t;
         float dist = sampleSDF(pos);
+
+        if (dist >= INF * 0.5) {
+            // Exited simulation volume — either fill with sky or honest miss
+            if (uUseEnvFill != 0)
+                return vec4(uSkyColor, -1.0);
+            else
+                return vec4(0.0);
+        }
 
         if (dist < 0.002) {
             // Surface hit — compute Lambertian shading with material albedo
@@ -141,18 +157,25 @@ void main() {
 
     vec3 uvwProbe = (worldPos - uGridOrigin) / uGridSize;
 
+    int surfaceHits = 0;
     for (int i = 0; i < uRaysPerProbe; ++i) {
         vec3 rayDir = getRayDirection(i);
         vec4 hit    = raymarchSDF(worldPos, rayDir, tMin, tMax);
-        if (hit.a > 0.0) {
+        if (hit.a < 0.0) {
+            // Sky sentinel — exited simulation volume, env fill is ON
             totalRadiance += hit.rgb;
+        } else if (hit.a > 0.0) {
+            // Direct surface hit in this cascade's interval
+            totalRadiance += hit.rgb;
+            ++surfaceHits;
         } else if (uHasUpperCascade != 0) {
-            // Ray missed this interval — pull far-field from the coarser cascade
-            // at the same probe position (isotropic average; no per-direction storage)
+            // In-volume miss — pull far-field from coarser cascade
             totalRadiance += texture(uUpperCascade, uvwProbe).rgb;
         }
     }
 
     totalRadiance /= float(uRaysPerProbe);
-    imageStore(oRadiance, probePos, vec4(totalRadiance, 1.0));
+    // Alpha = fraction of rays that were direct surface hits (debug stat; not used by merge)
+    float surfaceFrac = float(surfaceHits) / float(uRaysPerProbe);
+    imageStore(oRadiance, probePos, vec4(totalRadiance, surfaceFrac));
 }
