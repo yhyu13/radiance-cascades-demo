@@ -635,9 +635,6 @@ private:
     /** Whether to use bilinear filtering for cascades */
     bool cascadeBilinear;
     
-    /** Which cascade to visualize (debug) */
-    int cascadeDisplayIndex;
-    
     /** Disable cascade merging (debug) */
     bool disableCascadeMerging;
 

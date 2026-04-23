@@ -90,7 +90,6 @@ Demo3D::Demo3D()
     , cascadeCount(1)
     , baseInterval(0.125f)  // 4.0 (volumeSize) / 32 (probeRes) = 0.125
     , cascadeBilinear(true)
-    , cascadeDisplayIndex(0)
     , disableCascadeMerging(false)
     , useCascadeGI(false)
     , selectedCascadeForRender(0)
@@ -336,7 +335,9 @@ void Demo3D::render() {
     }
 
     // Pass 3: Radiance Cascades (only when SDF or merge flag changes)
+    static bool probeDumped = false;
     if (!cascadeReady) {
+        probeDumped = false;   // ensure readback triggers after this update
         double t0 = GetTime();
         updateRadianceCascades();
         cascadeTimeMs = (GetTime() - t0) * 1000.0;
@@ -344,7 +345,6 @@ void Demo3D::render() {
     }
 
     // Probe readback: once per cascade update, sample all active levels
-    static bool probeDumped = false;
     if (!probeDumped && cascadeReady) {
         probeDumped = true;
         int res = cascades[0].resolution;
@@ -380,9 +380,6 @@ void Demo3D::render() {
         probeCenterSample   = glm::vec3(buf[idx(cx,cy,cz)+0], buf[idx(cx,cy,cz)+1], buf[idx(cx,cy,cz)+2]);
         probeBackwallSample = glm::vec3(buf[idx(16,16,1)+0],  buf[idx(16,16,1)+1],  buf[idx(16,16,1)+2]);
     }
-
-    // Allow re-readback on next cascade update
-    if (!cascadeReady) probeDumped = false;
 
     // Pass 4: Raymarching
     {
@@ -576,7 +573,9 @@ void Demo3D::renderSDFDebug() {
 
 void Demo3D::renderRadianceDebug() {
     if (!showRadianceDebug) return;
-    if (!cascades[0].active || cascades[0].probeGridTexture == 0) return;
+
+    int selC = std::max(0, std::min(selectedCascadeForRender, cascadeCount - 1));
+    if (!cascades[selC].active || cascades[selC].probeGridTexture == 0) return;
 
     auto it = shaders.find("radiance_debug.frag");
     if (it == shaders.end()) return;
@@ -594,10 +593,10 @@ void Demo3D::renderRadianceDebug() {
     glUseProgram(it->second);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_3D, cascades[0].probeGridTexture);
+    glBindTexture(GL_TEXTURE_3D, cascades[selC].probeGridTexture);
     glUniform1i(glGetUniformLocation(it->second, "uRadianceTexture"), 0);
 
-    int res = cascades[0].resolution;
+    int res = cascades[selC].resolution;
     glUniform3i(glGetUniformLocation(it->second, "uVolumeSize"), res, res, res);
     glUniform1i(glGetUniformLocation(it->second, "uSliceAxis"),       radianceSliceAxis);
     glUniform1f(glGetUniformLocation(it->second, "uSlicePosition"),   radianceSlicePosition);
@@ -972,7 +971,7 @@ void Demo3D::raymarchPass() {
     glUniform1f(glGetUniformLocation(prog, "uTime"), time);
     glUniform1i(glGetUniformLocation(prog, "uRenderMode"), raymarchRenderMode);
 
-    // Direct light: inside the Cornell box near the ceiling (ceiling inner face at y=1.0)
+    // Direct light: near the ceiling (Cornell Box inner room spans y=[-1,1], ceiling at y=1.0)
     glm::vec3 lightPos(0.0f, 0.8f, 0.0f);
     glm::vec3 lightColor(1.0f, 0.95f, 0.85f);
     glUniform3fv(glGetUniformLocation(prog, "uLightPos"), 1, glm::value_ptr(lightPos));
@@ -1946,12 +1945,13 @@ void Demo3D::renderTutorialPanel() {
     
     ImGui::NewLine();
     
-    ImGui::Text("Current Features:");
-    ImGui::BulletText("✓ Basic voxelization");
-    ImGui::BulletText("✓ Volume textures created");
-    ImGui::BulletText("✓ Shader loading");
-    ImGui::BulletText("✗ SDF generation (placeholder)");
-    ImGui::BulletText("✗ Full raymarching (placeholder)");
+    ImGui::Text("Phase 3 Status:");
+    ImGui::BulletText("OK Analytic SDF + albedo volume (64^3)");
+    ImGui::BulletText("OK SDF-guided primary raymarching");
+    ImGui::BulletText("OK 4-level radiance cascade (C0-C3)");
+    ImGui::BulletText("OK Cascade merge (C3->C2->C1->C0)");
+    ImGui::BulletText("OK Merge toggle + per-level probe stats");
+    ImGui::BulletText("OK 7 render modes (0-6) incl. GI-only");
     
     ImGui::End();
 }
