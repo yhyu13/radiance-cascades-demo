@@ -93,6 +93,8 @@ Demo3D::Demo3D()
     , disableCascadeMerging(false)
     , useCascadeGI(false)
     , selectedCascadeForRender(0)
+    , useEnvFill(false)
+    , skyColor(0.02f, 0.03f, 0.05f)
     , activeShader(0)
     , userMode(Mode::VOXELIZE)
     , brushSize(0.5f)
@@ -159,9 +161,10 @@ Demo3D::Demo3D()
      * @brief Construct 3D demo and initialize all resources
      */
     
-    std::memset(probeNonZero, 0, sizeof(probeNonZero));
-    std::memset(probeMaxLum,  0, sizeof(probeMaxLum));
-    std::memset(probeMeanLum, 0, sizeof(probeMeanLum));
+    std::memset(probeNonZero,    0, sizeof(probeNonZero));
+    std::memset(probeSurfaceHit, 0, sizeof(probeSurfaceHit));
+    std::memset(probeMaxLum,     0, sizeof(probeMaxLum));
+    std::memset(probeMeanLum,    0, sizeof(probeMeanLum));
 
     std::cout << "========================================" << std::endl;
     std::cout << "[Demo3D] Initializing 3D Radiance Cascades" << std::endl;
@@ -333,6 +336,14 @@ void Demo3D::render() {
         lastMergeFlag = disableCascadeMerging;
         cascadeReady  = false;  // merge toggle changed → recompute all levels
     }
+    static bool      lastEnvFill  = false;
+    static glm::vec3 lastSkyColor(-1.0f);
+    if (useEnvFill != lastEnvFill ||
+        (useEnvFill && skyColor != lastSkyColor)) {
+        lastEnvFill  = useEnvFill;
+        lastSkyColor = skyColor;
+        cascadeReady = false;
+    }
 
     // Pass 3: Radiance Cascades (only when SDF or merge flag changes)
     static bool probeDumped = false;
@@ -358,17 +369,20 @@ void Demo3D::render() {
             glBindTexture(GL_TEXTURE_3D, 0);
 
             float maxLum = 0.0f, sumLum = 0.0f;
-            int nonZero = 0;
+            int nonZero = 0, surfHit = 0;
             for (int i = 0; i < probeTotal; ++i) {
                 float r = buf[i*4+0], g = buf[i*4+1], b = buf[i*4+2];
+                float surfFrac = buf[i*4+3];  // surface-hit fraction stored in alpha
                 float lum = (r + g + b) / 3.0f;
-                if (lum > 1e-4f) ++nonZero;
+                if (lum > 1e-4f)    ++nonZero;
+                if (surfFrac > 0.01f) ++surfHit;  // at least ~1/100 rays hit a surface
                 sumLum += lum;
                 maxLum = std::max(maxLum, lum);
             }
-            probeNonZero[ci] = nonZero;
-            probeMaxLum[ci]  = maxLum;
-            probeMeanLum[ci] = sumLum / static_cast<float>(probeTotal);
+            probeNonZero[ci]    = nonZero;
+            probeSurfaceHit[ci] = surfHit;
+            probeMaxLum[ci]     = maxLum;
+            probeMeanLum[ci]    = sumLum / static_cast<float>(probeTotal);
         }
 
         // Center and backwall spot-samples taken from C0
@@ -832,6 +846,8 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glUniform1i(glGetUniformLocation(prog, "uRaysPerProbe"), c.raysPerProbe);
     glUniform3f(glGetUniformLocation(prog, "uLightPos"),   0.0f, 0.8f, 0.0f);
     glUniform3f(glGetUniformLocation(prog, "uLightColor"), 1.0f, 0.95f, 0.85f);
+    glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
+    glUniform3fv(glGetUniformLocation(prog, "uSkyColor"),  1, glm::value_ptr(skyColor));
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -1824,6 +1840,21 @@ void Demo3D::renderCascadePanel() {
     ImGui::SameLine();
     ImGui::TextDisabled(disableCascadeMerging ? "(each level independent)" : "(C3->C2->C1->C0)");
 
+    // 4a: Environment fill toggle
+    ImGui::Separator();
+    ImGui::Checkbox("Env fill (out-of-volume)", &useEnvFill);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(
+            "When ON: rays that exit the SDF volume return a sky color.\n"
+            "Sky propagates through the merge chain, raising all levels to ~100%% any.\n"
+            "surf%% = direct surface hits only (stable regardless of fill).\n"
+            "sky*%% = any%% - surf%% (exact for C3; includes cascade for C0-C2).");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useEnvFill ? "(sky ambient ON)" : "(honest transport)");
+    if (useEnvFill) {
+        ImGui::ColorEdit3("Sky color", &skyColor[0], ImGuiColorEditFlags_Float);
+    }
+
     ImGui::Separator();
 
     // Cascade selector for indirect lighting / debug views
@@ -1840,18 +1871,23 @@ void Demo3D::renderCascadePanel() {
         ImGui::Text("Probe Readback (all levels):");
 
         // Per-cascade stats table
+        // sky* = any - surf; exact for C3 (no upper cascade), approximate for C0-C2
         const float d = (cascadeCount > 0) ? cascades[0].cellSize : 0.125f;
         for (int ci = 0; ci < cascadeCount; ++ci) {
-            float pct = 100.0f * probeNonZero[ci] / float(probeTotal);
-            // Colour-code: <10% red, 10-50% yellow, >50% green
+            float pct  = 100.0f * probeNonZero[ci]    / float(probeTotal);
+            float surf = 100.0f * probeSurfaceHit[ci] / float(probeTotal);
+            float sky  = pct - surf;
+            // Colour-code by any%: <10% red, 10-50% yellow, >50% green
             ImVec4 col = (pct < 10.0f) ? ImVec4(1,0.3f,0.3f,1)
                        : (pct < 50.0f) ? ImVec4(1,1,0.3f,1)
                                        : ImVec4(0.3f,1,0.3f,1);
             float tMin = (ci == 0) ? 0.02f : d * std::pow(4.0f, float(ci - 1));
             float tMax = d * std::pow(4.0f, float(ci));
-            ImGui::TextColored(col, "  C%d [%.2f,%.2f]: %5.1f%%  max=%.3f  mean=%.4f",
-                ci, tMin, tMax, pct, probeMaxLum[ci], probeMeanLum[ci]);
+            ImGui::TextColored(col,
+                "  C%d [%.2f,%.2f]: any=%5.1f%%  surf=%5.1f%%  sky*=%5.1f%%  max=%.3f  mean=%.4f",
+                ci, tMin, tMax, pct, surf, sky, probeMaxLum[ci], probeMeanLum[ci]);
         }
+        ImGui::TextDisabled("  sky* exact for C3; includes merge propagation for C0-C2");
 
         ImGui::Separator();
         ImGui::Text("C0 spot samples:");
@@ -1945,14 +1981,27 @@ void Demo3D::renderTutorialPanel() {
     
     ImGui::NewLine();
     
-    ImGui::Text("Phase 3 Status:");
-    ImGui::BulletText("OK Analytic SDF + albedo volume (64^3)");
-    ImGui::BulletText("OK SDF-guided primary raymarching");
-    ImGui::BulletText("OK 4-level radiance cascade (C0-C3)");
-    ImGui::BulletText("OK Cascade merge (C3->C2->C1->C0)");
-    ImGui::BulletText("OK Merge toggle + per-level probe stats");
-    ImGui::BulletText("OK 7 render modes (0-6) incl. GI-only");
-    
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "Phase 3 (complete):");
+    ImGui::BulletText("Analytic SDF + albedo volume (64^3)");
+    ImGui::BulletText("SDF-guided primary raymarching");
+    ImGui::BulletText("4-level radiance cascade (C0-C3)");
+    ImGui::BulletText("Cascade merge (C3->C2->C1->C0)");
+    ImGui::BulletText("Merge toggle + per-level probe stats");
+    ImGui::BulletText("7 render modes (0-6) incl. GI-only");
+
+    ImGui::NewLine();
+
+    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "Phase 4 (in progress):");
+    // 4a
+    {
+        bool on = useEnvFill;
+        ImVec4 c = on ? ImVec4(0.3f,1,0.3f,1) : ImVec4(0.7f,0.7f,0.7f,1);
+        ImGui::TextColored(c, "  [4a] Env fill toggle  %s", on ? "(ON)" : "(OFF)");
+    }
+    ImGui::BulletText("4b: per-cascade ray scaling (pending)");
+    ImGui::BulletText("4c: continuous distance-blend merge (pending)");
+    ImGui::BulletText("4d: filter verification (pending)");
+
     ImGui::End();
 }
 

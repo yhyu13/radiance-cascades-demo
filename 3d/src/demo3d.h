@@ -572,7 +572,8 @@ private:
 
     // Probe readback stats (populated once per cascade update, shown in Cascades panel)
     // Per-cascade probe readback stats (indexed 0..cascadeCount-1)
-    int   probeNonZero[MAX_CASCADES];
+    int   probeNonZero[MAX_CASCADES];    // any contribution > 1e-4 (includes sky propagation)
+    int   probeSurfaceHit[MAX_CASCADES]; // probes with at least one direct surface hit
     int   probeTotal;               // same for all levels (res^3)
     float probeMaxLum[MAX_CASCADES];
     float probeMeanLum[MAX_CASCADES];
@@ -643,6 +644,12 @@ private:
 
     /** Which cascade level to use for indirect lighting in the raymarch pass */
     int selectedCascadeForRender;
+
+    /** 4a: Out-of-volume rays return skyColor instead of vec3(0). Default OFF. */
+    bool useEnvFill;
+
+    /** 4a: Sky color used when useEnvFill is true (very dim by default). */
+    glm::vec3 skyColor;
     
     // =============================================================================
     // Shaders
