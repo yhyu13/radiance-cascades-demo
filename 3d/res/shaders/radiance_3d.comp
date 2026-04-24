@@ -39,6 +39,7 @@ uniform sampler3D uSDF;
 uniform sampler3D uAlbedo;
 uniform sampler3D uUpperCascade;  // next coarser level, bound when uHasUpperCascade=1
 uniform int       uHasUpperCascade;
+uniform float     uBlendFraction;  // 0.0 = binary (Phase 3), default 0.5
 
 layout(rgba16f) uniform image3D oRadiance;
 
@@ -122,7 +123,7 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
             vec3  lightDir = normalize(uLightPos - pos);
             float diff     = inShadow(pos, uLightPos) ? 0.0 : max(dot(n, lightDir), 0.0);
             vec3  color    = albedo * (diff * uLightColor + vec3(0.05));
-            return vec4(color, 1.0);
+            return vec4(color, t);
         }
 
         t += max(dist * 0.9, 0.01);
@@ -156,26 +157,37 @@ void main() {
     }
 
     vec3 uvwProbe = (worldPos - uGridOrigin) / uGridSize;
+    vec3 upperSample = (uHasUpperCascade != 0)
+                       ? texture(uUpperCascade, uvwProbe).rgb
+                       : vec3(0.0);
+    float blendWidth = (tMax - tMin) * uBlendFraction;
 
     int surfaceHits = 0;
+    int skyHits     = 0;
     for (int i = 0; i < uRaysPerProbe; ++i) {
         vec3 rayDir = getRayDirection(i);
         vec4 hit    = raymarchSDF(worldPos, rayDir, tMin, tMax);
         if (hit.a < 0.0) {
             // Sky sentinel — exited simulation volume, env fill is ON
             totalRadiance += hit.rgb;
+            ++skyHits;
         } else if (hit.a > 0.0) {
-            // Direct surface hit in this cascade's interval
-            totalRadiance += hit.rgb;
+            // Surface hit — blend toward upper cascade near tMax,
+            // guarded: no blend for C3 (no upper cascade to hand off to)
+            float l = (uHasUpperCascade != 0 && blendWidth > 0.0)
+                ? 1.0 - clamp((hit.a - (tMax - blendWidth)) / blendWidth, 0.0, 1.0)
+                : 1.0;
+            totalRadiance += hit.rgb * l + upperSample * (1.0 - l);
             ++surfaceHits;
-        } else if (uHasUpperCascade != 0) {
-            // In-volume miss — pull far-field from coarser cascade
-            totalRadiance += texture(uUpperCascade, uvwProbe).rgb;
+        } else {
+            // In-volume miss — pull far-field from coarser cascade (zero for C3)
+            totalRadiance += upperSample;
         }
     }
 
     totalRadiance /= float(uRaysPerProbe);
-    // Alpha = fraction of rays that were direct surface hits (debug stat; not used by merge)
-    float surfaceFrac = float(surfaceHits) / float(uRaysPerProbe);
-    imageStore(oRadiance, probePos, vec4(totalRadiance, surfaceFrac));
+    // Pack surf and sky hit counts into alpha (debug stat; merge path reads .rgb only).
+    // Encoding: surfHits + skyHits * 255.0 — exact in RGBA16F for N <= 256.
+    float packedHits = float(surfaceHits) + float(skyHits) * 255.0;
+    imageStore(oRadiance, probePos, vec4(totalRadiance, packedHits));
 }

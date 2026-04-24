@@ -1,8 +1,8 @@
 # Claude Plan: 3D Radiance Cascades Demo
 
-**Updated:** 2026-04-22  
+**Updated:** 2026-04-24  
 **Branch:** 3d  
-**Goal:** Visible Cornell-box raymarched image with one working radiance cascade
+**Goal:** Visible Cornell-box raymarched image with a working multi-cascade radiance hierarchy
 
 ---
 
@@ -12,8 +12,10 @@
 |-------|------|--------|
 | 0 | Analytic SDF generation, window, camera | ✅ Done |
 | 1 | Cornell box visible, direct Lambertian shading | ✅ Done (see `phase1_revision.md`) |
-| 2 | Single 32³ cascade, indirect GI toggle | ✅ Implemented — pending visual smoke test |
-| 3 | Second cascade (optional) | 🔲 Blocked on Phase 2 visual confirmation |
+| 2 | Single 32³ cascade, indirect GI toggle | ✅ Done |
+| 3 | 4-level cascade (C0–C3), merge chain, debug modes | ✅ Done (see `phase2_debug_learnings.md`) |
+| 4 | Cascade quality: env fill, ray scaling, distance blend, filter verify, debug polish | ✅ Done (see `phase4a`–`phase4e` docs) |
+| 5 | Directional-correct merge (per-direction upperSample) | 🔲 Next |
 
 ---
 
@@ -98,18 +100,43 @@ Ray interval           = length(uGridSize) ≈ 6.93  // full volume diagonal
 
 ---
 
-## Phase 3 — Next (optional)
+## Phase 3 — What Was Done
 
-**Goal:** A second cascade (64³) merging into cascade 0 for longer-range indirect.  
-**Prerequisite:** Phase 2 visual smoke test confirms toggle changes image.  
-**Status:** Blocked.
+**Goal achieved:** Full 4-level cascade hierarchy (C0–C3, each 32³) with per-level ray intervals, merge chain (C3→C2→C1→C0), 7 render modes (0–6 incl. GI-only mode 6), per-cascade probe stats, and cascade panel with debug visualizations.
+
+See `phase2_debug_learnings.md` and `shadertoy_gap_analysis.md` for details.
+
+---
+
+## Phase 4 — What Was Done (2026-04-24)
+
+Five sub-phases, all complete. Root docs in `doc/cluade_plan/phase4[a-e]_*.md`.
+
+| Sub-phase | Description | Key files |
+|---|---|---|
+| 4a | Env fill: out-of-volume rays return sky color; propagates down merge chain | `radiance_3d.comp`, `demo3d.cpp` |
+| 4b | Per-cascade ray scaling: `Ci = base × 2^i`; default C0=8 C1=16 C2=32 C3=64 | `demo3d.cpp`, `radiance_debug.frag` |
+| 4c | Distance-blend merge: lerp surface hits toward upper cascade near tMax; C3 guarded | `radiance_3d.comp` |
+| 4d | Filter verification: WRAP_R, GL_LINEAR, UVW normalization — all correct, no-op | (read-only) |
+| 4e | Packed-decode fix (integer arithmetic); blend-zone table; coverage bars; mean-lum chart | `demo3d.cpp` |
+
+**4c A/B result:** No visible difference, mean-lum unchanged. Banding driven by directional mismatch, not the binary boundary switch. 4c is forward-compatible — becomes effective when Phase 5 provides per-direction `upperSample`.
+
+**Known limitation (deferred):** RGBA16F packed hit-count encoding loses precision for mixed surf/sky probes at C3 once `skyH ≥ 9`. Stats are exact when env fill is OFF. Fix requires a separate `GL_RG32UI` buffer.
+
+---
+
+## Phase 5 — Next
+
+**Goal:** Directional-correct merge. Replace the isotropic `upperSample` (cascade average) with per-direction radiance lookup so that the merge blends toward the actual far-field radiance for each specific ray direction.
+
+**Why:** The 4c A/B confirmed that all remaining GI banding is directional mismatch. No further cleanup within the isotropic model will fix it.
+
+**Prerequisite:** Phase 4 complete. ✅
 
 ---
 
 ## Definition of Done
 
-**Phase 2 done when:**  
-ImGui "Cascade GI" toggle changes the image visibly (brightness shift or color tint from red/green wall bounce).
-
-**Project done when Phase 2 is confirmed.**  
-Phase 3 is optional polish.
+**Phase 4 done:** All 4a–4e sub-phases implemented, A/B result documented. ✅  
+**Phase 5 done when:** GI banding at cascade interval boundaries is visibly reduced with per-direction merge active.
