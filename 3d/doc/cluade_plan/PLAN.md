@@ -128,15 +128,17 @@ Five sub-phases, all complete. Root docs in `doc/cluade_plan/phase4[a-e]_*.md`.
 
 ## Phase 5 — Next
 
-**Goal:** Directional-correct merge. Replace the isotropic `upperSample` (cascade average) with per-direction radiance lookup so that the merge blends toward the actual far-field radiance for each specific ray direction.
+**Goal:** Directional-correct merge. Replace the isotropic `upperSample` with per-direction radiance lookup so that the merge blends toward the actual far-field radiance for each specific ray direction.
 
 **Why:** The 4c A/B confirmed that all remaining GI banding is directional mismatch. No further cleanup within the isotropic model will fix it.
 
 **Prerequisite:** Phase 4 complete. ✅
+
+See `phase5_plan.md` for full sub-phase breakdown (5a–5d), shader code, texture layout, and validation plan.
 
 ---
 
 ## Definition of Done
 
 **Phase 4 done:** All 4a–4e sub-phases implemented, A/B result documented. ✅  
-**Phase 5 done when:** GI banding at cascade interval boundaries is visibly reduced with per-direction merge active.
+**Phase 5 done when:** GI banding at cascade interval boundaries is visibly reduced with per-direction merge active vs Phase 4 baseline. Red wall and green wall show distinct directional color separation in probe atlas debug mode.

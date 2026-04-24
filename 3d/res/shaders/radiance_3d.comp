@@ -22,8 +22,6 @@ uniform ivec3 uVolumeSize;     // probe grid dimensions (e.g. 32^3)
 uniform vec3  uGridSize;       // SDF volume size in world units (e.g. 4,4,4)
 uniform vec3  uGridOrigin;     // SDF volume origin in world units (e.g. -2,-2,-2)
 
-uniform int   uRaysPerProbe;
-
 uniform vec3  uLightPos;
 uniform vec3  uLightColor;
 
@@ -40,6 +38,7 @@ uniform sampler3D uAlbedo;
 uniform sampler3D uUpperCascade;  // next coarser level, bound when uHasUpperCascade=1
 uniform int       uHasUpperCascade;
 uniform float     uBlendFraction;  // 0.0 = binary (Phase 3), default 0.5
+uniform int       uDirRes;         // Phase 5a: octahedral bin resolution (D); D^2 rays per probe
 
 layout(rgba16f) uniform image3D oRadiance;
 
@@ -66,12 +65,33 @@ float sampleSDF(vec3 worldPos) {
     return texture(uSDF, uvw).r;
 }
 
-vec3 getRayDirection(int idx) {
-    // Fibonacci sphere for uniform distribution
-    float phi      = 2.0 * PI * float(idx) / float(uRaysPerProbe);
-    float cosTheta = 1.0 - (2.0 * float(idx) + 1.0) / float(uRaysPerProbe);
-    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-    return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+// Phase 5a: Octahedral direction encoding — full sphere ↔ [0,1]² ↔ D×D bin grid.
+// Bins are analytically invertible, enabling per-direction atlas read/write.
+
+vec2 dirToOct(vec3 dir) {
+    dir /= (abs(dir.x) + abs(dir.y) + abs(dir.z));
+    if (dir.z < 0.0) {
+        vec2 s = sign(dir.xy) * (1.0 - abs(dir.yx));
+        dir.xy = s;
+    }
+    return dir.xy * 0.5 + 0.5;
+}
+
+vec3 octToDir(vec2 uv) {
+    uv = uv * 2.0 - 1.0;
+    vec3 d = vec3(uv, 1.0 - abs(uv.x) - abs(uv.y));
+    if (d.z < 0.0) d.xy = (1.0 - abs(d.yx)) * sign(d.xy);
+    return normalize(d);
+}
+
+ivec2 dirToBin(vec3 dir, int D) {
+    vec2 oct = dirToOct(dir);
+    return clamp(ivec2(floor(oct * float(D))), ivec2(0), ivec2(D - 1));
+}
+
+vec3 binToDir(ivec2 bin, int D) {
+    vec2 oct = (vec2(bin) + 0.5) / float(D);
+    return octToDir(oct);
 }
 
 bool inShadow(vec3 hitPos, vec3 lightPos) {
@@ -164,28 +184,31 @@ void main() {
 
     int surfaceHits = 0;
     int skyHits     = 0;
-    for (int i = 0; i < uRaysPerProbe; ++i) {
-        vec3 rayDir = getRayDirection(i);
-        vec4 hit    = raymarchSDF(worldPos, rayDir, tMin, tMax);
-        if (hit.a < 0.0) {
-            // Sky sentinel — exited simulation volume, env fill is ON
-            totalRadiance += hit.rgb;
-            ++skyHits;
-        } else if (hit.a > 0.0) {
-            // Surface hit — blend toward upper cascade near tMax,
-            // guarded: no blend for C3 (no upper cascade to hand off to)
-            float l = (uHasUpperCascade != 0 && blendWidth > 0.0)
-                ? 1.0 - clamp((hit.a - (tMax - blendWidth)) / blendWidth, 0.0, 1.0)
-                : 1.0;
-            totalRadiance += hit.rgb * l + upperSample * (1.0 - l);
-            ++surfaceHits;
-        } else {
-            // In-volume miss — pull far-field from coarser cascade (zero for C3)
-            totalRadiance += upperSample;
+    // Phase 5a: iterate over D×D octahedral direction bins instead of Fibonacci indices
+    for (int dy = 0; dy < uDirRes; ++dy) {
+        for (int dx = 0; dx < uDirRes; ++dx) {
+            vec3 rayDir = binToDir(ivec2(dx, dy), uDirRes);
+            vec4 hit    = raymarchSDF(worldPos, rayDir, tMin, tMax);
+            if (hit.a < 0.0) {
+                // Sky sentinel — exited simulation volume, env fill is ON
+                totalRadiance += hit.rgb;
+                ++skyHits;
+            } else if (hit.a > 0.0) {
+                // Surface hit — blend toward upper cascade near tMax,
+                // guarded: no blend for C3 (no upper cascade to hand off to)
+                float l = (uHasUpperCascade != 0 && blendWidth > 0.0)
+                    ? 1.0 - clamp((hit.a - (tMax - blendWidth)) / blendWidth, 0.0, 1.0)
+                    : 1.0;
+                totalRadiance += hit.rgb * l + upperSample * (1.0 - l);
+                ++surfaceHits;
+            } else {
+                // In-volume miss — pull far-field from coarser cascade (zero for C3)
+                totalRadiance += upperSample;
+            }
         }
     }
 
-    totalRadiance /= float(uRaysPerProbe);
+    totalRadiance /= float(uDirRes * uDirRes);
     // Pack surf and sky hit counts into alpha (debug stat; merge path reads .rgb only).
     // Encoding: surfHits + skyHits * 255.0 — exact in RGBA16F for N <= 256.
     float packedHits = float(surfaceHits) + float(skyHits) * 255.0;
