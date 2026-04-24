@@ -658,6 +658,9 @@ private:
     /** 4c: Blend zone as fraction of interval width. 0=binary (Phase 3), default 0.5. */
     float blendFraction;
 
+    /** 5a: Octahedral direction bin resolution. D^2 rays per probe. Default 4 (16 bins). */
+    int dirRes;
+
     // =============================================================================
     // Shaders
     // =============================================================================

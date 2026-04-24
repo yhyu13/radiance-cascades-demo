@@ -98,6 +98,7 @@ Demo3D::Demo3D()
     , skyColor(0.02f, 0.03f, 0.05f)
     , baseRaysPerProbe(8)
     , blendFraction(0.5f)
+    , dirRes(4)
     , activeShader(0)
     , userMode(Mode::VOXELIZE)
     , brushSize(0.5f)
@@ -919,7 +920,7 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glUniform3iv(glGetUniformLocation(prog, "uVolumeSize"), 1, glm::value_ptr(volRes));
     glUniform3fv(glGetUniformLocation(prog, "uGridSize"),   1, glm::value_ptr(volumeSize));
     glUniform3fv(glGetUniformLocation(prog, "uGridOrigin"), 1, glm::value_ptr(volumeOrigin));
-    glUniform1i(glGetUniformLocation(prog, "uRaysPerProbe"), c.raysPerProbe);
+    glUniform1i(glGetUniformLocation(prog, "uDirRes"), dirRes);  // Phase 5a: D^2 octahedral bins
     glUniform3f(glGetUniformLocation(prog, "uLightPos"),   0.0f, 0.8f, 0.0f);
     glUniform3f(glGetUniformLocation(prog, "uLightColor"), 1.0f, 0.95f, 0.85f);
     glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
