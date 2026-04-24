@@ -48,8 +48,6 @@ constexpr int DEFAULT_VOLUME_RESOLUTION = 64;
 /** Maximum volume resolution supported */
 constexpr int MAX_VOLUME_RESOLUTION = 512;
 
-/** Number of rays per cascade probe (base count, increases per cascade) */
-constexpr int BASE_RAY_COUNT = 4;
 
 /** Enable/disable sparse voxel optimization */
 constexpr bool USE_SPARSE_VOXELS_DEFAULT = true;
@@ -574,9 +572,12 @@ private:
     // Per-cascade probe readback stats (indexed 0..cascadeCount-1)
     int   probeNonZero[MAX_CASCADES];    // any contribution > 1e-4 (includes sky propagation)
     int   probeSurfaceHit[MAX_CASCADES]; // probes with at least one direct surface hit
+    int   probeSkyHit[MAX_CASCADES];     // probes with at least one direct sky exit
     int   probeTotal;               // same for all levels (res^3)
     float probeMaxLum[MAX_CASCADES];
     float probeMeanLum[MAX_CASCADES];
+    float probeVariance[MAX_CASCADES];   // luma variance across all probes (noise indicator)
+    float probeHistogram[MAX_CASCADES][16]; // normalized 16-bin luma histogram (max bin = 1.0)
     glm::vec3 probeCenterSample;    // C0 center probe sample
     glm::vec3 probeBackwallSample;  // C0 backwall probe sample
 
@@ -650,7 +651,13 @@ private:
 
     /** 4a: Sky color used when useEnvFill is true (very dim by default). */
     glm::vec3 skyColor;
-    
+
+    /** 4b: Base ray count for C0; Ci fires baseRaysPerProbe * 2^i rays. Default 8. */
+    int baseRaysPerProbe;
+
+    /** 4c: Blend zone as fraction of interval width. 0=binary (Phase 3), default 0.5. */
+    float blendFraction;
+
     // =============================================================================
     // Shaders
     // =============================================================================

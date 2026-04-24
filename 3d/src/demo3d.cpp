@@ -15,6 +15,7 @@
 
 #include "demo3d.h"
 #include <iostream>
+#include <iomanip>
 #include <algorithm>
 #include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
@@ -95,6 +96,8 @@ Demo3D::Demo3D()
     , selectedCascadeForRender(0)
     , useEnvFill(false)
     , skyColor(0.02f, 0.03f, 0.05f)
+    , baseRaysPerProbe(8)
+    , blendFraction(0.5f)
     , activeShader(0)
     , userMode(Mode::VOXELIZE)
     , brushSize(0.5f)
@@ -163,8 +166,11 @@ Demo3D::Demo3D()
     
     std::memset(probeNonZero,    0, sizeof(probeNonZero));
     std::memset(probeSurfaceHit, 0, sizeof(probeSurfaceHit));
+    std::memset(probeSkyHit,     0, sizeof(probeSkyHit));
     std::memset(probeMaxLum,     0, sizeof(probeMaxLum));
     std::memset(probeMeanLum,    0, sizeof(probeMeanLum));
+    std::memset(probeVariance,   0, sizeof(probeVariance));
+    std::memset(probeHistogram,  0, sizeof(probeHistogram));
 
     std::cout << "========================================" << std::endl;
     std::cout << "[Demo3D] Initializing 3D Radiance Cascades" << std::endl;
@@ -292,6 +298,13 @@ void Demo3D::processInput() {
         }
     }
     
+    // Phase 1: Radiance Debug Controls
+    if (IsKeyPressed(KEY_F)) {
+        radianceVisualizeMode = (radianceVisualizeMode + 1) % 5;
+        const char* radModes[] = { "Slice", "Max Projection", "Average", "Direct", "HitType" };
+        std::cout << "[Demo3D] Radiance Debug Mode: " << radModes[radianceVisualizeMode] << std::endl;
+    }
+
     // Basic camera controls would go here
     // For quick start, rely on Raylib's built-in camera handling in main3d.cpp
 }
@@ -344,6 +357,27 @@ void Demo3D::render() {
         lastSkyColor = skyColor;
         cascadeReady = false;
     }
+    static int lastBaseRays = -1;
+    if (baseRaysPerProbe != lastBaseRays) {
+        lastBaseRays = baseRaysPerProbe;
+        for (int i = 0; i < cascadeCount; ++i)
+            cascades[i].raysPerProbe = baseRaysPerProbe * (1 << i);
+        cascadeReady = false;
+        std::cout << "[4b] baseRaysPerProbe=" << baseRaysPerProbe
+                  << "  C0=" << baseRaysPerProbe
+                  << "  C1=" << baseRaysPerProbe * 2
+                  << "  C2=" << baseRaysPerProbe * 4
+                  << "  C3=" << baseRaysPerProbe * 8
+                  << "  total=" << baseRaysPerProbe * 15
+                  << std::endl;
+    }
+    static float lastBlendFrac = -1.0f;
+    if (blendFraction != lastBlendFrac) {
+        std::cout << "[4c] blendFraction " << lastBlendFrac << " -> " << blendFraction
+                  << (blendFraction < 0.01f ? "  (binary — Phase 3 mode)" : "  (blended)") << std::endl;
+        lastBlendFrac = blendFraction;
+        cascadeReady  = false;
+    }
 
     // Pass 3: Radiance Cascades (only when SDF or merge flag changes)
     static bool probeDumped = false;
@@ -368,21 +402,52 @@ void Demo3D::render() {
             glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, buf.data());
             glBindTexture(GL_TEXTURE_3D, 0);
 
-            float maxLum = 0.0f, sumLum = 0.0f;
-            int nonZero = 0, surfHit = 0;
+            float maxLum = 0.0f, sumLum = 0.0f, sumLum2 = 0.0f;
+            int nonZero = 0, surfHit = 0, skyHit = 0;
             for (int i = 0; i < probeTotal; ++i) {
                 float r = buf[i*4+0], g = buf[i*4+1], b = buf[i*4+2];
-                float surfFrac = buf[i*4+3];  // surface-hit fraction stored in alpha
+                float packed = buf[i*4+3];  // packed: surfHits + skyHits * 255.0
                 float lum = (r + g + b) / 3.0f;
-                if (lum > 1e-4f)    ++nonZero;
-                if (surfFrac > 0.01f) ++surfHit;  // at least ~1/100 rays hit a surface
-                sumLum += lum;
+                if (lum > 1e-4f) ++nonZero;
+                // Exact integer decode: avoids float-rounding on top of RGBA16F quantization.
+                // Note: RGBA16F storage is still the precision limit for large packed values.
+                int packed_int = static_cast<int>(packed + 0.5f);
+                int skyH  = packed_int / 255;
+                int surfH = packed_int % 255;
+                if (surfH > 0) ++surfHit;
+                if (skyH  > 0) ++skyHit;
+                sumLum  += lum;
+                sumLum2 += lum * lum;
                 maxLum = std::max(maxLum, lum);
             }
             probeNonZero[ci]    = nonZero;
             probeSurfaceHit[ci] = surfHit;
+            probeSkyHit[ci]     = skyHit;
             probeMaxLum[ci]     = maxLum;
-            probeMeanLum[ci]    = sumLum / static_cast<float>(probeTotal);
+            float mean = sumLum / static_cast<float>(probeTotal);
+            probeMeanLum[ci]    = mean;
+            // Cascade-wide luminance distribution variance: E[X^2] - E[X]^2 over all res^3 probes.
+            // This is NOT per-probe Monte Carlo variance — it captures scene spatial structure
+            // (light gradients, wall colours) as well as sampling noise. Use as a heuristic only.
+            probeVariance[ci]   = sumLum2 / static_cast<float>(probeTotal) - mean * mean;
+
+            // 16-bin probe-luminance distribution — spatial histogram across all res^3 probes.
+            {
+                constexpr int BINS = 16;
+                float histMax = std::min(mean * 4.0f, maxLum);
+                if (histMax < 1e-6f) histMax = 1e-6f;
+                int rawBins[BINS] = {};
+                for (int i = 0; i < probeTotal; ++i) {
+                    float lum = (buf[i*4+0] + buf[i*4+1] + buf[i*4+2]) / 3.0f;
+                    int bin = static_cast<int>(lum / histMax * BINS);
+                    bin = std::max(0, std::min(BINS - 1, bin));
+                    ++rawBins[bin];
+                }
+                float binMax = 1.0f;
+                for (int b = 0; b < BINS; ++b) binMax = std::max(binMax, static_cast<float>(rawBins[b]));
+                for (int b = 0; b < BINS; ++b)
+                    probeHistogram[ci][b] = static_cast<float>(rawBins[b]) / binMax;
+            }
         }
 
         // Center and backwall spot-samples taken from C0
@@ -393,6 +458,13 @@ void Demo3D::render() {
         glBindTexture(GL_TEXTURE_3D, 0);
         probeCenterSample   = glm::vec3(buf[idx(cx,cy,cz)+0], buf[idx(cx,cy,cz)+1], buf[idx(cx,cy,cz)+2]);
         probeBackwallSample = glm::vec3(buf[idx(16,16,1)+0],  buf[idx(16,16,1)+1],  buf[idx(16,16,1)+2]);
+
+        // A/B log: mean lum per cascade after every bake — compare at blendFraction=0.0 vs 0.5
+        std::cout << "[4c A/B] blend=" << blendFraction
+                  << (blendFraction < 0.01f ? " (binary)" : " (blended)") << "  meanLum:";
+        for (int ci = 0; ci < cascadeCount; ++ci)
+            std::cout << "  C" << ci << "=" << std::fixed << std::setprecision(5) << probeMeanLum[ci];
+        std::cout << std::defaultfloat << std::endl;
     }
 
     // Pass 4: Raymarching
@@ -618,6 +690,7 @@ void Demo3D::renderRadianceDebug() {
     glUniform1f(glGetUniformLocation(it->second, "uExposure"),        radianceExposure);
     glUniform1i(glGetUniformLocation(it->second, "uShowGrid"),        showRadianceGrid ? 1 : 0);
     glUniform1f(glGetUniformLocation(it->second, "uIntensityScale"),  radianceIntensityScale);
+    glUniform1i(glGetUniformLocation(it->second, "uRaysPerProbe"),    cascades[selC].raysPerProbe);
 
     glBindVertexArray(debugQuadVAO);
     glDisable(GL_DEPTH_TEST);
@@ -696,8 +769,11 @@ void Demo3D::renderRadianceDebugUI() {
     ImGui::Text("Slice Axis: %s", (radianceSliceAxis == 0) ? "X" : 
                                 (radianceSliceAxis == 1) ? "Y" : "Z");
     ImGui::Text("Slice Position: %.2f", radianceSlicePosition);
-    ImGui::Text("Mode: %s", (radianceVisualizeMode == 0) ? "Slice" : 
-                             (radianceVisualizeMode == 1) ? "Max Projection" : "Average");
+    const char* radModeNames[] = { "Slice", "Max Projection", "Average", "Direct", "HitType" };
+    int modeIdx = std::max(0, std::min(radianceVisualizeMode, 4));
+    ImGui::Text("Mode: %s", radModeNames[modeIdx]);
+    if (radianceVisualizeMode == 4)
+        ImGui::TextColored(ImVec4(0.5f,1,0.5f,1), "  R=miss  G=surf  B=sky");
     ImGui::Text("Exposure: %.2f", radianceExposure);
     ImGui::Text("Intensity Scale: %.2f", radianceIntensityScale);
     ImGui::Text("Controls:");
@@ -848,6 +924,7 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glUniform3f(glGetUniformLocation(prog, "uLightColor"), 1.0f, 0.95f, 0.85f);
     glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
     glUniform3fv(glGetUniformLocation(prog, "uSkyColor"),  1, glm::value_ptr(skyColor));
+    glUniform1f(glGetUniformLocation(prog, "uBlendFraction"), blendFraction);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -1240,9 +1317,10 @@ void Demo3D::initCascades() {
     const float cellSz   = volumeSize.x / float(probeRes);  // 0.125
 
     for (int i = 0; i < cascadeCount; ++i) {
-        cascades[i].initialize(probeRes, cellSz, volumeOrigin, 8);
+        cascades[i].initialize(probeRes, cellSz, volumeOrigin, baseRaysPerProbe * (1 << i));
         std::cout << "[Demo3D] Cascade " << i << ": " << probeRes
                   << "^3 probes, cellSize=" << cellSz
+                  << ", raysPerProbe=" << cascades[i].raysPerProbe
                   << ", active=" << cascades[i].active << std::endl;
     }
 }
@@ -1781,7 +1859,10 @@ void Demo3D::renderSettingsPanel() {
     ImGui::Text("Cascade GI (Phase 2):");
     ImGui::Checkbox("Cascade GI", &useCascadeGI);
     if (cascades[0].active)
-        ImGui::Text("Probe grid: 32^3, rays/probe: %d", cascades[0].raysPerProbe);
+        ImGui::Text("Probe grid: 32^3  base=%d rays  (C0=%d C1=%d C2=%d C3=%d)",
+            baseRaysPerProbe,
+            cascades[0].raysPerProbe, cascades[1].raysPerProbe,
+            cascades[2].raysPerProbe, cascades[3].raysPerProbe);
     else
         ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Cascade not initialized!");
 
@@ -1814,51 +1895,129 @@ void Demo3D::renderSettingsPanel() {
 }
 
 void Demo3D::renderCascadePanel() {
-    /**
-     * @brief Render cascade visualization panel
-     */
-    
-    ImGui::Begin("Cascades");
-    
-    ImGui::Text("Cascade Count: %d", cascadeCount);
+    // Reusable helper: grey "(?) " that shows a tooltip on hover.
+    auto HelpMarker = [](const char* desc) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("%s", desc);
+    };
 
-    // Per-level interval table
+    ImGui::Begin("Cascades");
+
+    // ── Cascade hierarchy ────────────────────────────────────────────────────
+    ImGui::Text("Cascade Count: %d", cascadeCount);
+    HelpMarker(
+        "4-level hierarchical probe grid (C0–C3), all 32^3.\n"
+        "Each level samples a distinct distance band via ray marching:\n"
+        "  C0  [~0,   0.125m]  near-field / direct contact\n"
+        "  C1  [0.125, 0.5m]  short-range bounce\n"
+        "  C2  [0.5,   2.0m]  mid-range\n"
+        "  C3  [2.0,   8.0m]  far-field / ceiling / sky\n"
+        "Merge pass feeds C3 data into C2, C2 into C1, C1 into C0\n"
+        "so each level inherits far-field radiance from above.");
     {
         const float d = (cascadeCount > 0) ? cascades[0].cellSize : 0.125f;
         for (int i = 0; i < cascadeCount; ++i) {
             if (!cascades[i].active) continue;
             float tMin = (i == 0) ? 0.02f : d * std::pow(4.0f, float(i - 1));
             float tMax = d * std::pow(4.0f, float(i));
-            ImGui::Text("  C%d: %d^3  [%.3f, %.3f]", i, cascades[i].resolution, tMin, tMax);
+            ImGui::Text("  C%d: %d^3  [%.3f, %.3f]m  r=%d rays",
+                i, cascades[i].resolution, tMin, tMax, cascades[i].raysPerProbe);
         }
     }
 
     ImGui::Separator();
 
-    // Merge toggle — triggers full cascade recompute when changed
+    // ── Merge toggle ─────────────────────────────────────────────────────────
     ImGui::Checkbox("Disable Merge (raw per-level)", &disableCascadeMerging);
+    HelpMarker(
+        "Merge ON (default): each cascade's miss rays pull radiance from\n"
+        "the next coarser level (C3->C2->C1->C0).\n"
+        "Current model: ISOTROPIC approximation — the upper cascade\n"
+        "contributes its probe average, not a per-direction sample.\n"
+        "Per-direction merge (Phase 5) is needed for full ShaderToy parity.\n\n"
+        "Merge OFF (debug): every cascade solved independently with no\n"
+        "upper-cascade fallback. Useful to isolate a single level's\n"
+        "direct contribution without any inter-level blending.");
     ImGui::SameLine();
     ImGui::TextDisabled(disableCascadeMerging ? "(each level independent)" : "(C3->C2->C1->C0)");
 
-    // 4a: Environment fill toggle
+    // ── Environment fill (4a) ────────────────────────────────────────────────
     ImGui::Separator();
+    ImGui::Text("Environment Fill (4a):");
+    HelpMarker(
+        "Controls what happens when a ray exits the SDF volume boundary\n"
+        "without hitting any geometry.\n\n"
+        "OFF (honest transport): out-of-volume rays return black. Probes\n"
+        "near the volume boundary see zero far-field contribution.\n\n"
+        "ON (sky fill): out-of-volume rays return the sky color. Sky\n"
+        "propagates down the merge chain, raising all levels to ~100%% any%%.\n"
+        "Use for open scenes or to simulate an environment map.");
     ImGui::Checkbox("Env fill (out-of-volume)", &useEnvFill);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip(
             "When ON: rays that exit the SDF volume return a sky color.\n"
             "Sky propagates through the merge chain, raising all levels to ~100%% any.\n"
-            "surf%% = direct surface hits only (stable regardless of fill).\n"
-            "sky*%% = any%% - surf%% (exact for C3; includes cascade for C0-C2).");
+            "surf%% = probes with >= 1 direct surface hit (stable regardless of fill).\n"
+            "sky%%  = probes with >= 1 direct sky exit (true count, not derived).");
     ImGui::SameLine();
     ImGui::TextDisabled(useEnvFill ? "(sky ambient ON)" : "(honest transport)");
-    if (useEnvFill) {
+    if (useEnvFill)
         ImGui::ColorEdit3("Sky color", &skyColor[0], ImGuiColorEditFlags_Float);
-    }
+
+    // ── Ray count scaling (4b) ───────────────────────────────────────────────
+    ImGui::Separator();
+    ImGui::Text("Ray Count Scaling (4b):");
+    HelpMarker(
+        "Upper cascades cover a larger solid-angle budget per probe and\n"
+        "need more samples to converge. This slider sets the base count\n"
+        "for C0; each higher level doubles it: Ci = base * 2^i.\n\n"
+        "Default base=8: C0=8  C1=16  C2=32  C3=64  (120 total)\n"
+        "Changing the slider invalidates the cascade and triggers a rebake.\n"
+        "No texture reallocation occurs — only the uniform changes.\n\n"
+        "Ceiling stays at 8: the limit is RGBA16F storage precision, not the\n"
+        "CPU decode. packed = surfH + skyH*255 exceeds half-float's exact\n"
+        "integer range (2048) once skyH >= 9 (9*255=2295). Stats are exact\n"
+        "when env fill is OFF (skyH=0). A separate integer buffer is needed\n"
+        "to raise this safely — deferred to a cleanup pass.");
+    ImGui::SliderInt("Base rays/probe", &baseRaysPerProbe, 4, 8);
+    ImGui::SameLine();
+    ImGui::TextDisabled("C0=%d  C1=%d  C2=%d  C3=%d",
+        baseRaysPerProbe,     baseRaysPerProbe * 2,
+        baseRaysPerProbe * 4, baseRaysPerProbe * 8);
+    ImGui::TextDisabled("  Total rays dispatched: %d  (flat-8 baseline: 32)",
+        baseRaysPerProbe * 15);
+
+    // ── Interval blend (4c) ──────────────────────────────────────────────────
+    ImGui::Separator();
+    ImGui::Text("Interval Blend (4c):");
+    HelpMarker(
+        "Controls how sharply the cascade hands off at its interval boundary (tMax).\n\n"
+        "0.0 = binary (Phase 3 behaviour): surface hit uses local data only;\n"
+        "      miss jumps immediately to upper cascade.\n\n"
+        "0.5 = default: blend zone covers the outer 50%% of the interval.\n"
+        "      A hit at tMax-epsilon lerps smoothly toward the upper cascade.\n\n"
+        "C3 (top cascade) is never blended regardless of this value — there\n"
+        "is no upper cascade to hand off to, so local data is always used.\n\n"
+        "If changing this has no visible effect, the banding is driven by\n"
+        "directional mismatch (Phase 5 fix), not the binary switch.");
+    ImGui::SliderFloat("Blend fraction", &blendFraction, 0.0f, 1.0f);
+    ImGui::SameLine();
+    ImGui::TextDisabled(blendFraction < 0.01f ? "(binary — Phase 3)" : "(blended)");
 
     ImGui::Separator();
 
-    // Cascade selector for indirect lighting / debug views
+    // ── Cascade selector ─────────────────────────────────────────────────────
     ImGui::Text("Render using cascade:");
+    HelpMarker(
+        "Selects which cascade level feeds the indirect lighting in the\n"
+        "final raymarch pass (render modes 3 and 6).\n\n"
+        "C0 — near-field only; fast, no far-field bounce\n"
+        "C1 — short-range bounce included\n"
+        "C2 — mid-range; usually best visual balance\n"
+        "C3 — full far-field; includes ceiling/sky contribution\n\n"
+        "Also selects the level shown in the Radiance Debug viewer.");
     for (int i = 0; i < cascadeCount; ++i) {
         if (i > 0) ImGui::SameLine();
         char label[16];
@@ -1866,31 +2025,150 @@ void Demo3D::renderCascadePanel() {
         ImGui::RadioButton(label, &selectedCascadeForRender, i);
     }
 
-    if (probeTotal > 0) {
-        ImGui::Separator();
-        ImGui::Text("Probe Readback (all levels):");
+    // ── Radiance debug viewer mode ───────────────────────────────────────────
+    if (showRadianceDebug) {
+        ImGui::Text("Radiance debug mode ([F] to cycle):");
+        HelpMarker(
+            "Controls what the top-right 400x400 radiance debug viewer shows\n"
+            "for the selected cascade level.\n\n"
+            "Slice    — 2D cross-section at the chosen axis/position\n"
+            "MaxProj  — maximum intensity projection along the axis\n"
+            "Avg      — average radiance along the axis\n"
+            "Direct   — direct lighting component only\n"
+            "HitType  — per-probe hit fractions from packed alpha:\n"
+            "           G=surface hit  B=sky exit  R=miss (no direct hit)\n"
+            "           Use to verify ray scaling coverage spatially.");
+        ImGui::RadioButton("Slice##rad",    &radianceVisualizeMode, 0); ImGui::SameLine();
+        ImGui::RadioButton("MaxProj##rad",  &radianceVisualizeMode, 1); ImGui::SameLine();
+        ImGui::RadioButton("Avg##rad",      &radianceVisualizeMode, 2); ImGui::SameLine();
+        ImGui::RadioButton("Direct##rad",   &radianceVisualizeMode, 3); ImGui::SameLine();
+        ImGui::RadioButton("HitType##rad",  &radianceVisualizeMode, 4);
+        if (radianceVisualizeMode == 4)
+            ImGui::TextColored(ImVec4(0.5f,1,0.5f,1), "  G=surf hit  B=sky exit  R=miss");
+    }
 
-        // Per-cascade stats table
-        // sky* = any - surf; exact for C3 (no upper cascade), approximate for C0-C2
+    if (probeTotal > 0) {
+        // ── Probe fill rate ──────────────────────────────────────────────────
+        ImGui::Separator();
+        ImGui::Text("Probe Fill Rate:");
+        HelpMarker(
+            "GPU readback taken once per cascade update (not every frame).\n"
+            "Shows what fraction of the 32^3 = 32768 probes have data.\n\n"
+            "any%%   — probes with any luminance > 1e-4\n"
+            "          (includes sky propagated via the merge chain)\n"
+            "surf%%  — probes with >= 1 direct surface hit in their interval\n"
+            "          (stable; unaffected by env fill)\n"
+            "sky%%   — probes with >= 1 direct sky exit\n"
+            "          (only non-zero when env fill is ON)\n\n"
+            "Colour: red < 10%%  yellow 10-50%%  green > 50%%\n"
+            "r=N shows actual raysPerProbe for that cascade level.");
         const float d = (cascadeCount > 0) ? cascades[0].cellSize : 0.125f;
         for (int ci = 0; ci < cascadeCount; ++ci) {
             float pct  = 100.0f * probeNonZero[ci]    / float(probeTotal);
             float surf = 100.0f * probeSurfaceHit[ci] / float(probeTotal);
-            float sky  = pct - surf;
-            // Colour-code by any%: <10% red, 10-50% yellow, >50% green
+            float sky  = 100.0f * probeSkyHit[ci]     / float(probeTotal);
             ImVec4 col = (pct < 10.0f) ? ImVec4(1,0.3f,0.3f,1)
                        : (pct < 50.0f) ? ImVec4(1,1,0.3f,1)
                                        : ImVec4(0.3f,1,0.3f,1);
             float tMin = (ci == 0) ? 0.02f : d * std::pow(4.0f, float(ci - 1));
             float tMax = d * std::pow(4.0f, float(ci));
             ImGui::TextColored(col,
-                "  C%d [%.2f,%.2f]: any=%5.1f%%  surf=%5.1f%%  sky*=%5.1f%%  max=%.3f  mean=%.4f",
-                ci, tMin, tMax, pct, surf, sky, probeMaxLum[ci], probeMeanLum[ci]);
-        }
-        ImGui::TextDisabled("  sky* exact for C3; includes merge propagation for C0-C2");
+                "  C%d [%.2f,%.2f] r=%2d: any=%5.1f%%  surf=%5.1f%%  sky=%5.1f%%  max=%.3f  mean=%.4f  dist_var=%.5f",
+                ci, tMin, tMax, cascades[ci].raysPerProbe,
+                pct, surf, sky, probeMaxLum[ci], probeMeanLum[ci], probeVariance[ci]);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "dist_var = cascade-wide luminance distribution variance (E[X^2]-E[X]^2)\n"
+                    "Measures spread of probe luminances across the full cascade grid.\n"
+                    "Includes scene spatial structure (gradients, wall colours) — NOT\n"
+                    "a direct per-probe Monte Carlo noise estimate.");
 
+            // Blend zone annotation (4c)
+            if (ci == 3) {
+                ImGui::TextDisabled("    blend: GUARDED (no upper cascade — C3 always uses full local data)");
+            } else if (blendFraction < 0.01f) {
+                ImGui::TextDisabled("    blend: OFF (binary mode — set Blend fraction > 0 to enable)");
+            } else {
+                float bw     = blendFraction * (tMax - tMin);
+                float bStart = tMax - bw;
+                ImGui::TextDisabled("    blend zone: [%.3f, %.3f]m  (outer %.0f%% of interval)",
+                    bStart, tMax, blendFraction * 100.0f);
+            }
+
+            // Probe-coverage bars (4e): surf-cov and sky-cov are overlapping any-hit fractions
+            {
+                float probeF = float(probeTotal);
+                float surfF  = float(probeSurfaceHit[ci]) / probeF;
+                float skyF   = float(probeSkyHit[ci])     / probeF;
+                ImGui::Text("    ");
+                ImGui::SameLine(0, 0);
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.9f, 0.2f, 1.0f));
+                ImGui::ProgressBar(surfF, ImVec2(80, 6), "");
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0, 4);
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.3f, 0.5f, 1.0f, 1.0f));
+                ImGui::ProgressBar(skyF, ImVec2(80, 6), "");
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+                ImGui::TextDisabled("surf-cov  sky-cov  (probe any-hit; may overlap)");
+            }
+        }
+
+        // ── Mean luminance cross-cascade chart (4e) ──────────────────────────
+        {
+            float lumCeil = 1e-4f;
+            for (int i = 0; i < cascadeCount; ++i)
+                lumCeil = std::max(lumCeil, probeMeanLum[i]);
+            lumCeil *= 1.5f;
+            float meanLums[MAX_CASCADES] = {};
+            for (int i = 0; i < cascadeCount; ++i)
+                meanLums[i] = probeMeanLum[i];
+            ImGui::Text("  Mean lum:");
+            HelpMarker(
+                "Average probe luminance per cascade after the last bake.\n"
+                "Bars should be roughly similar — large divergence between\n"
+                "levels may indicate a GI discontinuity across cascade bands.\n"
+                "Range scales to the brightest cascade x1.5.");
+            ImGui::SameLine();
+            ImGui::PlotHistogram("##meanlum", meanLums, cascadeCount, 0,
+                                 nullptr, 0.0f, lumCeil, ImVec2(120, 30));
+            ImGui::SameLine();
+            for (int i = 0; i < cascadeCount; ++i)
+                ImGui::TextDisabled("C%d=%.4f  ", i, probeMeanLum[i]);
+        }
+
+        // ── Probe-luminance distribution ─────────────────────────────────────
         ImGui::Separator();
-        ImGui::Text("C0 spot samples:");
+        ImGui::Text("Probe-Luminance Distribution:");
+        HelpMarker(
+            "16-bin histogram of probe luminance values across the full\n"
+            "cascade grid, range [0, mean*4] (adaptive).\n\n"
+            "This is a SPATIAL distribution metric, not a per-probe noise\n"
+            "estimate. A wide spread can come from real scene structure\n"
+            "(bright ceiling vs dark floor, coloured walls) rather than\n"
+            "Monte Carlo variance.\n\n"
+            "Useful heuristic: comparing the same scene at base=4 vs base=8\n"
+            "cancels scene structure — distribution tightening is then\n"
+            "consistent with reduced sampling noise, but not proof of it.");
+        for (int ci = 0; ci < cascadeCount; ++ci) {
+            char label[32];
+            std::snprintf(label, sizeof(label), "C%d r=%d", ci, cascades[ci].raysPerProbe);
+            ImGui::PlotHistogram(label, probeHistogram[ci], 16, 0, nullptr, 0.0f, 1.0f,
+                                 ImVec2(200, 40));
+            if (ci + 1 < cascadeCount) ImGui::SameLine();
+        }
+
+        // ── Spot samples ─────────────────────────────────────────────────────
+        ImGui::Separator();
+        ImGui::Text("C0 Spot Samples:");
+        HelpMarker(
+            "RGB radiance read from two fixed probe positions in C0\n"
+            "after each cascade update. Used to sanity-check the GI output\n"
+            "at known scene locations without opening the debug viewer.\n\n"
+            "Center  — probe at (16,16,16), the room centre\n"
+            "Backwall— probe at (16,16,1),  near the back wall\n\n"
+            "Both should be non-zero when the cascade has converged.\n"
+            "Backwall typically shows stronger colour bleed from the walls.");
         ImGui::Text("  Center:  (%.3f, %.3f, %.3f)",
                     probeCenterSample.r, probeCenterSample.g, probeCenterSample.b);
         ImGui::Text("  Backwall:(%.3f, %.3f, %.3f)",
@@ -1991,16 +2269,38 @@ void Demo3D::renderTutorialPanel() {
 
     ImGui::NewLine();
 
-    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "Phase 4 (in progress):");
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Phase 4 (complete):");
     // 4a
     {
         bool on = useEnvFill;
         ImVec4 c = on ? ImVec4(0.3f,1,0.3f,1) : ImVec4(0.7f,0.7f,0.7f,1);
         ImGui::TextColored(c, "  [4a] Env fill toggle  %s", on ? "(ON)" : "(OFF)");
     }
-    ImGui::BulletText("4b: per-cascade ray scaling (pending)");
-    ImGui::BulletText("4c: continuous distance-blend merge (pending)");
-    ImGui::BulletText("4d: filter verification (pending)");
+    // 4b
+    {
+        ImVec4 c = ImVec4(0.3f, 1, 0.3f, 1);
+        ImGui::TextColored(c, "  [4b] Per-cascade ray scaling  base=%d (C0=%d C1=%d C2=%d C3=%d)",
+            baseRaysPerProbe,
+            baseRaysPerProbe, baseRaysPerProbe * 2,
+            baseRaysPerProbe * 4, baseRaysPerProbe * 8);
+    }
+    // 4c
+    {
+        ImVec4 c = ImVec4(0.3f, 1, 0.3f, 1);
+        ImGui::TextColored(c, "  [4c] Interval blend  blend=%.2f  %s",
+            blendFraction,
+            blendFraction < 0.01f ? "(binary — Phase 3)" : "(blended)");
+    }
+    // 4d
+    {
+        ImVec4 c = ImVec4(0.3f, 1, 0.3f, 1);
+        ImGui::TextColored(c, "  [4d] Filter verification  (no-op — WRAP_R/LINEAR confirmed)");
+    }
+    // 4e
+    {
+        ImVec4 c = ImVec4(0.3f, 1, 0.3f, 1);
+        ImGui::TextColored(c, "  [4e] Packed-decode fix + blend-zone + coverage bars + mean-lum chart");
+    }
 
     ImGui::End();
 }

@@ -14,4 +14,10 @@ Bottom line:
 Read order:
 1. `01_findings.md`
 2. `02_recommendation.md`
-
+3. `03_phase4a_implementation_review.md`
+4. `04_phase4b_plan_review.md`
+5. `05_phase4b_impl_learnings_review.md`
+6. `06_phase4c_plan_review.md`
+7. `07_phase4d_plan_review.md`
+8. `08_phase4e_plan_review.md`
+9. `09_phase4_codebase_vs_goal_review.md`

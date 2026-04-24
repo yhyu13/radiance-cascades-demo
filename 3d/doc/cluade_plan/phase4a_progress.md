@@ -152,16 +152,25 @@ No rendering bug. Alpha repurposing is safe.
 
 | Test | Expected | Status |
 |---|---|---|
-| `useEnvFill = false` | C3 any% ~3%, surf% ~3% — baseline unchanged | Not yet verified at runtime |
-| `useEnvFill = true` | C3 any% ~100%, sky*% ~97% — expected by construction | Not yet verified at runtime |
+| `useEnvFill = false` | C3 any% ~3%, surf% ~3%, sky% ~0% — baseline unchanged | Not yet verified at runtime |
+| `useEnvFill = true` | C3 any% ~100%, sky% ~97%, surf% unchanged | Not yet verified at runtime |
 | Mode 6 with env fill ON | Visibly brighter indirect in dark areas | Not yet verified at runtime |
 | Color picker change with fill OFF | No cascade rebuild triggered | Fixed (Bug 1) |
-| All levels any% ~100% with fill ON | Expected; surf% stays stable | Explained (Bug 2) |
+| All levels any% ~100% with fill ON | Expected; surf% and sky% stay accurate | Explained (Bug 2) |
 
 ---
 
 ## Relation to Remaining Phase 4 Tasks
 
-- **4b (per-cascade ray scaling):** The `.a = surfaceFrac` return convention in `raymarchSDF` is already in place. 4b has no shader impact — it only changes `raysPerProbe` uniforms and the `initCascades()` call.
-- **4c (continuous blend):** Will add `hit.a = t` for surface hits (replacing `1.0`). The sky sentinel uses `-1.0` which is unambiguous. No conflict.
-- **4a → 4c interaction:** The `hit.a < 0` sky branch in `main()` is already wired. When 4c lands, the `hit.a > 0` branch gets the blend logic. Sky branch is untouched.
+- **4b (per-cascade ray scaling):** 4b has no shader impact — it only changes `raysPerProbe` uniforms and the `initCascades()` call. The probe alpha packing is unaffected.
+- **4c (continuous blend):** Will change `raymarchSDF()` surface-hit return from `vec4(color, 1.0)` to `vec4(color, t)` where `t` is actual hit distance. Note: this changes the **function's return sentinel** only — the stored probe alpha (packed surfHits + skyHits * 255) is written by `imageStore` and is a separate, unrelated channel.
+- **4a → 4c interaction:** The `hit.a < 0` sky branch in `main()` is already wired. When 4c lands, the `hit.a > 0` branch gains blend logic. Sky branch is untouched.
+
+### Clarification: two distinct uses of alpha
+
+`raymarchSDF()` uses `.a` in its **return value** as a hit/sky/miss sentinel:
+- `1.0` → surface hit (4c will replace this with actual hit distance `t`)
+- `-1.0` → sky exit
+- `0.0` → in-volume miss
+
+The **stored probe texture** alpha is a completely separate channel written by `imageStore`. It holds packed debug counts (`surfHits + skyHits * 255.0`) and has no relation to the function's return sentinel. Phase 4c changing the return sentinel does not affect the stored probe alpha.
