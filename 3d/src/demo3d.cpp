@@ -691,7 +691,7 @@ void Demo3D::renderRadianceDebug() {
     glUniform1f(glGetUniformLocation(it->second, "uExposure"),        radianceExposure);
     glUniform1i(glGetUniformLocation(it->second, "uShowGrid"),        showRadianceGrid ? 1 : 0);
     glUniform1f(glGetUniformLocation(it->second, "uIntensityScale"),  radianceIntensityScale);
-    glUniform1i(glGetUniformLocation(it->second, "uRaysPerProbe"),    cascades[selC].raysPerProbe);
+    glUniform1i(glGetUniformLocation(it->second, "uRaysPerProbe"),    dirRes * dirRes);  // Phase 5a: D^2 bins
 
     glBindVertexArray(debugQuadVAO);
     glDisable(GL_DEPTH_TEST);
@@ -1967,28 +1967,29 @@ void Demo3D::renderCascadePanel() {
     if (useEnvFill)
         ImGui::ColorEdit3("Sky color", &skyColor[0], ImGuiColorEditFlags_Float);
 
-    // ── Ray count scaling (4b) ───────────────────────────────────────────────
+    // ── Ray count scaling (4b / 5a) ──────────────────────────────────────────
     ImGui::Separator();
-    ImGui::Text("Ray Count Scaling (4b):");
-    HelpMarker(
-        "Upper cascades cover a larger solid-angle budget per probe and\n"
-        "need more samples to converge. This slider sets the base count\n"
-        "for C0; each higher level doubles it: Ci = base * 2^i.\n\n"
-        "Default base=8: C0=8  C1=16  C2=32  C3=64  (120 total)\n"
-        "Changing the slider invalidates the cascade and triggers a rebake.\n"
-        "No texture reallocation occurs — only the uniform changes.\n\n"
-        "Ceiling stays at 8: the limit is RGBA16F storage precision, not the\n"
-        "CPU decode. packed = surfH + skyH*255 exceeds half-float's exact\n"
-        "integer range (2048) once skyH >= 9 (9*255=2295). Stats are exact\n"
-        "when env fill is OFF (skyH=0). A separate integer buffer is needed\n"
-        "to raise this safely — deferred to a cleanup pass.");
-    ImGui::SliderInt("Base rays/probe", &baseRaysPerProbe, 4, 8);
+    ImGui::Text("Ray Count Scaling (4b / 5a):");
+    {
+        char raysHelpText[512];
+        snprintf(raysHelpText, sizeof(raysHelpText),
+            "Phase 5a: direction scheme changed to D*D octahedral bins.\n"
+            "All cascades fire D*D = %d rays per probe (D=%d, fixed).\n\n"
+            "The per-cascade scaling slider (Phase 4b) is RETIRED --\n"
+            "the base count no longer controls actual dispatch.\n"
+            "Per-cascade D scaling is evaluated in Phase 5e A/B after\n"
+            "directional merge (5c) is working.\n\n"
+            "Phase 4b note (historical): RGBA16F precision limits the\n"
+            "ray ceiling to 8; a separate integer buffer is needed to\n"
+            "raise it safely -- deferred to a cleanup pass.",
+            dirRes * dirRes, dirRes);
+        HelpMarker(raysHelpText);
+    }
+    ImGui::BeginDisabled();
+    ImGui::SliderInt("Base rays/probe (retired)", &baseRaysPerProbe, 4, 8);
+    ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::TextDisabled("C0=%d  C1=%d  C2=%d  C3=%d",
-        baseRaysPerProbe,     baseRaysPerProbe * 2,
-        baseRaysPerProbe * 4, baseRaysPerProbe * 8);
-    ImGui::TextDisabled("  Total rays dispatched: %d  (flat-8 baseline: 32)",
-        baseRaysPerProbe * 15);
+    ImGui::TextDisabled("actual: D*D=%d rays/probe (all cascades)", dirRes * dirRes);
 
     // ── Interval blend (4c) ──────────────────────────────────────────────────
     ImGui::Separator();
@@ -2075,7 +2076,7 @@ void Demo3D::renderCascadePanel() {
             float tMax = d * std::pow(4.0f, float(ci));
             ImGui::TextColored(col,
                 "  C%d [%.2f,%.2f] r=%2d: any=%5.1f%%  surf=%5.1f%%  sky=%5.1f%%  max=%.3f  mean=%.4f  dist_var=%.5f",
-                ci, tMin, tMax, cascades[ci].raysPerProbe,
+                ci, tMin, tMax, dirRes * dirRes,
                 pct, surf, sky, probeMaxLum[ci], probeMeanLum[ci], probeVariance[ci]);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
