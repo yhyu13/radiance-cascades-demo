@@ -1,6 +1,6 @@
 # Claude Plan: 3D Radiance Cascades Demo
 
-**Updated:** 2026-04-24  
+**Updated:** 2026-04-26  
 **Branch:** 3d  
 **Goal:** Visible Cornell-box raymarched image with a working multi-cascade radiance hierarchy
 
@@ -15,7 +15,7 @@
 | 2 | Single 32³ cascade, indirect GI toggle | ✅ Done |
 | 3 | 4-level cascade (C0–C3), merge chain, debug modes | ✅ Done (see `phase2_debug_learnings.md`) |
 | 4 | Cascade quality: env fill, ray scaling, distance blend, filter verify, debug polish | ✅ Done (see `phase4a`–`phase4e` docs) |
-| 5 | Directional-correct merge (per-direction upperSample) | 🔲 Next |
+| 5 | Directional-correct merge (per-direction upperSample) | 🔶 In Progress (5a done — see `phase5a_impl_learnings.md`) |
 
 ---
 
