@@ -105,6 +105,7 @@ Demo3D::Demo3D()
     , blendFraction(0.5f)
     , dirRes(4)
     , useDirectionalMerge(true)
+    , useColocatedCascades(true)
     , atlasBinDx(0)
     , atlasBinDy(0)
     , activeShader(0)
@@ -173,6 +174,7 @@ Demo3D::Demo3D()
      * @brief Construct 3D demo and initialize all resources
      */
     
+    std::memset(probeTotalPerCascade, 0, sizeof(probeTotalPerCascade));
     std::memset(probeNonZero,    0, sizeof(probeNonZero));
     std::memset(probeSurfaceHit, 0, sizeof(probeSurfaceHit));
     std::memset(probeSkyHit,     0, sizeof(probeSkyHit));
@@ -373,6 +375,17 @@ void Demo3D::render() {
         lastDirectionalMerge = useDirectionalMerge;
         cascadeReady = false;  // directional/isotropic toggle → recompute all cascades
     }
+    // Phase 5d: co-located toggle changes texture dimensions -- must destroy+rebuild
+    static bool lastColocated = true;
+    if (useColocatedCascades != lastColocated) {
+        lastColocated = useColocatedCascades;
+        destroyCascades();
+        initCascades();
+        cascadeReady = false;  // this triggers probeDumped=false in the Pass 3 block below
+        std::cout << "[5d] cascade layout: "
+                  << (useColocatedCascades ? "co-located (all 32^3)" : "non-co-located (32/16/8/4)")
+                  << std::endl;
+    }
     static float lastBlendFrac = -1.0f;
     if (blendFraction != lastBlendFrac) {
         std::cout << "[4c] blendFraction " << lastBlendFrac << " -> " << blendFraction
@@ -394,21 +407,23 @@ void Demo3D::render() {
     // Probe readback: once per cascade update, sample all active levels
     if (!probeDumped && cascadeReady) {
         probeDumped = true;
-        int res = cascades[0].resolution;
-        probeTotal  = res * res * res;
-        std::vector<float> buf(static_cast<size_t>(probeTotal) * 4);
-
-        // Phase 5b-1: atlas alpha readback buffer — surf/sky per bin across (res*D)^2 x res
-        int D = dirRes;
-        int atlasWH = res * D;
-        std::vector<float> atlasBuf(static_cast<size_t>(atlasWH) * atlasWH * res * 4);
+        int resC0 = cascades[0].resolution;   // always 32
+        probeTotal  = resC0 * resC0 * resC0;  // C0 total; kept for spot-sample and UI guards
 
         for (int ci = 0; ci < cascadeCount; ++ci) {
             if (!cascades[ci].active || cascades[ci].probeGridTexture == 0) continue;
 
+            // Phase 5d: per-cascade resolution (32 when co-located; 32>>ci when non-co-located)
+            int res     = cascades[ci].resolution;
+            int ciTotal = res * res * res;
+            int D       = dirRes;
+            int atlasWH = res * D;
+            probeTotalPerCascade[ci] = ciTotal;
+
             // RGB luminance stats from probeGridTexture (isotropic average, correct)
+            std::vector<float> ciBuf(static_cast<size_t>(ciTotal) * 4);
             glBindTexture(GL_TEXTURE_3D, cascades[ci].probeGridTexture);
-            glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, buf.data());
+            glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, ciBuf.data());
             glBindTexture(GL_TEXTURE_3D, 0);
 
             // Surf/sky hit classification from probeAtlasTexture alpha.
@@ -416,6 +431,7 @@ void Demo3D::render() {
             // Atlas stores hit.a per bin: >0 = surface, <0 = sky, =0 = miss.
             int surfHit = 0, skyHit = 0;
             if (cascades[ci].probeAtlasTexture != 0) {
+                std::vector<float> atlasBuf(static_cast<size_t>(atlasWH) * atlasWH * res * 4);
                 glBindTexture(GL_TEXTURE_3D, cascades[ci].probeAtlasTexture);
                 glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, atlasBuf.data());
                 glBindTexture(GL_TEXTURE_3D, 0);
@@ -437,8 +453,8 @@ void Demo3D::render() {
 
             float maxLum = 0.0f, sumLum = 0.0f, sumLum2 = 0.0f;
             int nonZero = 0;
-            for (int i = 0; i < probeTotal; ++i) {
-                float r = buf[i*4+0], g = buf[i*4+1], b = buf[i*4+2];
+            for (int i = 0; i < ciTotal; ++i) {
+                float r = ciBuf[i*4+0], g = ciBuf[i*4+1], b = ciBuf[i*4+2];
                 float lum = (r + g + b) / 3.0f;
                 if (lum > 1e-4f) ++nonZero;
                 sumLum  += lum;
@@ -449,21 +465,21 @@ void Demo3D::render() {
             probeSurfaceHit[ci] = surfHit;
             probeSkyHit[ci]     = skyHit;
             probeMaxLum[ci]     = maxLum;
-            float mean = sumLum / static_cast<float>(probeTotal);
+            float mean = sumLum / static_cast<float>(ciTotal);
             probeMeanLum[ci]    = mean;
             // Cascade-wide luminance distribution variance: E[X^2] - E[X]^2 over all res^3 probes.
             // This is NOT per-probe Monte Carlo variance — it captures scene spatial structure
             // (light gradients, wall colours) as well as sampling noise. Use as a heuristic only.
-            probeVariance[ci]   = sumLum2 / static_cast<float>(probeTotal) - mean * mean;
+            probeVariance[ci]   = sumLum2 / static_cast<float>(ciTotal) - mean * mean;
 
-            // 16-bin probe-luminance distribution — spatial histogram across all res^3 probes.
+            // 16-bin probe-luminance distribution -- spatial histogram across all res^3 probes.
             {
                 constexpr int BINS = 16;
                 float histMax = std::min(mean * 4.0f, maxLum);
                 if (histMax < 1e-6f) histMax = 1e-6f;
                 int rawBins[BINS] = {};
-                for (int i = 0; i < probeTotal; ++i) {
-                    float lum = (buf[i*4+0] + buf[i*4+1] + buf[i*4+2]) / 3.0f;
+                for (int i = 0; i < ciTotal; ++i) {
+                    float lum = (ciBuf[i*4+0] + ciBuf[i*4+1] + ciBuf[i*4+2]) / 3.0f;
                     int bin = static_cast<int>(lum / histMax * BINS);
                     bin = std::max(0, std::min(BINS - 1, bin));
                     ++rawBins[bin];
@@ -475,9 +491,10 @@ void Demo3D::render() {
             }
         }
 
-        // Center and backwall spot-samples taken from C0
-        auto idx = [res](int x, int y, int z){ return (z*res*res + y*res + x)*4; };
-        int cx = res/2, cy = res/2, cz = res/2;
+        // Center and backwall spot-samples taken from C0 (always 32^3)
+        std::vector<float> buf(static_cast<size_t>(probeTotal) * 4);
+        auto idx = [resC0](int x, int y, int z){ return (z*resC0*resC0 + y*resC0 + x)*4; };
+        int cx = resC0/2, cy = resC0/2, cz = resC0/2;
         glBindTexture(GL_TEXTURE_3D, cascades[0].probeGridTexture);
         glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, buf.data());
         glBindTexture(GL_TEXTURE_3D, 0);
@@ -945,7 +962,21 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
 
     glUniform1i(glGetUniformLocation(prog, "uCascadeIndex"),  cascadeIndex);
     glUniform1i(glGetUniformLocation(prog, "uCascadeCount"),  cascadeCount);
-    glUniform1f(glGetUniformLocation(prog, "uBaseInterval"),  c.cellSize);
+    // Phase 5d: split uBaseInterval (always C0's cellSize for tMin/tMax formula)
+    // from uProbeCellSize (per-cascade, for probeToWorld()).
+    // In co-located mode both are 0.125; in non-co-located they diverge.
+    glUniform1f(glGetUniformLocation(prog, "uBaseInterval"),  cascades[0].cellSize);  // always 0.125
+    glUniform1f(glGetUniformLocation(prog, "uProbeCellSize"), c.cellSize);             // per-cascade
+
+    // Phase 5d: upper-cascade scale factor for upperProbePos = probePos / scale.
+    // 0 = no upper cascade; 1 = co-located (same index); 2 = non-co-located (halved index).
+    int upperIdx5d = cascadeIndex + 1;
+    bool hasUpper5d = (!disableCascadeMerging && upperIdx5d < cascadeCount &&
+                       cascades[upperIdx5d].active && cascades[upperIdx5d].probeAtlasTexture != 0);
+    int  upperToCurrentScale = hasUpper5d ? (useColocatedCascades ? 1 : 2) : 0;
+    glUniform1i(glGetUniformLocation(prog, "uUpperToCurrentScale"), upperToCurrentScale);
+    float upperProbeCellSz = hasUpper5d ? cascades[upperIdx5d].cellSize : 0.0f;
+    glUniform1f(glGetUniformLocation(prog, "uUpperProbeCellSize"), upperProbeCellSz);
 
     glm::ivec3 volRes(c.resolution);
     glUniform3iv(glGetUniformLocation(prog, "uVolumeSize"), 1, glm::value_ptr(volRes));
@@ -1371,13 +1402,17 @@ void Demo3D::initCascades() {
     //   Cascade 3: [16d,      64d ]  = [2.0,   8.0]  (beyond volume diagonal)
     cascadeCount = 4;
 
-    const int   probeRes = 32;
-    const float cellSz   = volumeSize.x / float(probeRes);  // 0.125
+    const int   baseRes    = 32;
+    const float baseCellSz = volumeSize.x / float(baseRes);  // 0.125
 
     for (int i = 0; i < cascadeCount; ++i) {
+        // Phase 5d: co-located = all 32^3; non-co-located = 32>>i (32,16,8,4)
+        int   probeRes = useColocatedCascades ? baseRes    : (baseRes >> i);
+        float cellSz   = useColocatedCascades ? baseCellSz : volumeSize.x / float(probeRes);
+
         cascades[i].initialize(probeRes, cellSz, volumeOrigin, baseRaysPerProbe * (1 << i));
 
-        // Phase 5b: per-direction atlas — (res*D)×(res*D)×res RGBA16F, must be GL_NEAREST
+        // Phase 5b: per-direction atlas — (res*D)x(res*D)x res RGBA16F, must be GL_NEAREST
         int atlasXY = probeRes * dirRes;
         cascades[i].probeAtlasTexture = gl::createTexture3D(
             atlasXY, atlasXY, probeRes,
@@ -1979,24 +2014,29 @@ void Demo3D::renderCascadePanel() {
     ImGui::Begin("Cascades");
 
     // ── Cascade hierarchy ────────────────────────────────────────────────────
-    ImGui::Text("Cascade Count: %d", cascadeCount);
+    ImGui::Text("Cascade Count: %d  [%s]", cascadeCount,
+        useColocatedCascades ? "co-located, all 32^3" : "non-co-located, 32/16/8/4");
     HelpMarker(
-        "4-level hierarchical probe grid (C0–C3), all 32^3.\n"
+        "4-level hierarchical probe grid (C0-C3).\n"
+        "Co-located mode: all cascades share the same 32^3 world-space grid.\n"
+        "Non-co-located (ShaderToy): C0=32^3 C1=16^3 C2=8^3 C3=4^3.\n\n"
         "Each level samples a distinct distance band via ray marching:\n"
         "  C0  [~0,   0.125m]  near-field / direct contact\n"
         "  C1  [0.125, 0.5m]  short-range bounce\n"
         "  C2  [0.5,   2.0m]  mid-range\n"
         "  C3  [2.0,   8.0m]  far-field / ceiling / sky\n"
         "Merge pass feeds C3 data into C2, C2 into C1, C1 into C0\n"
-        "so each level inherits far-field radiance from above.");
+        "so each level inherits far-field radiance from above.\n\n"
+        "Toggle 'Co-located cascades' checkbox below to switch modes.\n"
+        "Non-co-located mode rebuilds all cascade textures on toggle.");
     {
         const float d = (cascadeCount > 0) ? cascades[0].cellSize : 0.125f;
         for (int i = 0; i < cascadeCount; ++i) {
             if (!cascades[i].active) continue;
             float tMin = (i == 0) ? 0.02f : d * std::pow(4.0f, float(i - 1));
             float tMax = d * std::pow(4.0f, float(i));
-            ImGui::Text("  C%d: %d^3  [%.3f, %.3f]m  r=%d rays",
-                i, cascades[i].resolution, tMin, tMax, cascades[i].raysPerProbe);
+            ImGui::Text("  C%d: %d^3  cell=%.4fm  [%.3f, %.3f]m  D^2=%d rays",
+                i, cascades[i].resolution, cascades[i].cellSize, tMin, tMax, dirRes * dirRes);
         }
     }
 
@@ -2020,11 +2060,28 @@ void Demo3D::renderCascadePanel() {
         "     Each ray's miss pulls the upper cascade value for THAT exact\n"
         "     direction bin, not the probe average.\n\n"
         "OFF (Phase 4 fallback): isotropic texture() from upper cascade's\n"
-        "     probeGridTexture — same averaged value for all directions.\n\n"
+        "     probeGridTexture -- same averaged value for all directions.\n\n"
         "Toggle to A/B compare. Expect: ON reduces banding at cascade\n"
         "boundaries; red/green walls show distinct directional color.");
     ImGui::SameLine();
     ImGui::TextDisabled(useDirectionalMerge ? "(directional)" : "(isotropic fallback)");
+
+    // ── Phase 5d: co-located vs ShaderToy-style probe layout ─────────────────
+    ImGui::Separator();
+    ImGui::Text("Cascade Probe Layout (Phase 5d):");
+    ImGui::Checkbox("Co-located cascades (all 32^3)", &useColocatedCascades);
+    HelpMarker(
+        "ON (default): all 4 cascades share the same 32^3 probe grid.\n"
+        "Upper probe for any cascade is at the same world position,\n"
+        "so the directional merge reads the identical atlas texel.\n"
+        "Phase 5d probe visibility check is a no-op (dist=0).\n\n"
+        "OFF (ShaderToy-style): C0=32^3  C1=16^3  C2=8^3  C3=4^3.\n"
+        "Same world volume; upper probes are 0.125-0.5m away.\n"
+        "Phase 5d probe visibility check is meaningful: upper probes\n"
+        "behind a wall zero their contribution.\n"
+        "Toggling destroys and rebuilds all cascade textures.");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useColocatedCascades ? "(all 32^3)" : "(32/16/8/4)");
 
     // ── Environment fill (4a) ────────────────────────────────────────────────
     ImGui::Separator();
@@ -2149,28 +2206,31 @@ void Demo3D::renderCascadePanel() {
         ImGui::Text("Probe Fill Rate:");
         HelpMarker(
             "GPU readback taken once per cascade update (not every frame).\n"
-            "Shows what fraction of the 32^3 = 32768 probes have data.\n\n"
-            "any%%   — probes with any luminance > 1e-4\n"
+            "Denominator is per-cascade probe count (32^3 co-located;\n"
+            "32^3/16^3/8^3/4^3 non-co-located).\n\n"
+            "any%%   -- probes with any luminance > 1e-4\n"
             "          (includes sky propagated via the merge chain)\n"
-            "surf%%  — probes with >= 1 direct surface hit in their interval\n"
+            "surf%%  -- probes with >= 1 direct surface hit in their interval\n"
             "          (stable; unaffected by env fill)\n"
-            "sky%%   — probes with >= 1 direct sky exit\n"
+            "sky%%   -- probes with >= 1 direct sky exit\n"
             "          (only non-zero when env fill is ON)\n\n"
-            "Colour: red < 10%%  yellow 10-50%%  green > 50%%\n"
-            "r=N shows actual raysPerProbe for that cascade level.");
+            "Colour: red < 10%%  yellow 10-50%%  green > 50%%");
         const float d = (cascadeCount > 0) ? cascades[0].cellSize : 0.125f;
         for (int ci = 0; ci < cascadeCount; ++ci) {
-            float pct  = 100.0f * probeNonZero[ci]    / float(probeTotal);
-            float surf = 100.0f * probeSurfaceHit[ci] / float(probeTotal);
-            float sky  = 100.0f * probeSkyHit[ci]     / float(probeTotal);
+            // Phase 5d: per-cascade probe count for fill-rate denominator
+            float ciProbeTot = (probeTotalPerCascade[ci] > 0)
+                ? float(probeTotalPerCascade[ci]) : float(probeTotal);
+            float pct  = 100.0f * probeNonZero[ci]    / ciProbeTot;
+            float surf = 100.0f * probeSurfaceHit[ci] / ciProbeTot;
+            float sky  = 100.0f * probeSkyHit[ci]     / ciProbeTot;
             ImVec4 col = (pct < 10.0f) ? ImVec4(1,0.3f,0.3f,1)
                        : (pct < 50.0f) ? ImVec4(1,1,0.3f,1)
                                        : ImVec4(0.3f,1,0.3f,1);
             float tMin = (ci == 0) ? 0.02f : d * std::pow(4.0f, float(ci - 1));
             float tMax = d * std::pow(4.0f, float(ci));
             ImGui::TextColored(col,
-                "  C%d [%.2f,%.2f] r=%2d: any=%5.1f%%  surf=%5.1f%%  sky=%5.1f%%  max=%.3f  mean=%.4f  dist_var=%.5f",
-                ci, tMin, tMax, dirRes * dirRes,
+                "  C%d [%.2f,%.2f] n=%d: any=%5.1f%%  surf=%5.1f%%  sky=%5.1f%%  max=%.3f  mean=%.4f  dist_var=%.5f",
+                ci, tMin, tMax, (int)ciProbeTot,
                 pct, surf, sky, probeMaxLum[ci], probeMeanLum[ci], probeVariance[ci]);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
@@ -2193,7 +2253,7 @@ void Demo3D::renderCascadePanel() {
 
             // Probe-coverage bars (4e): surf-cov and sky-cov are overlapping any-hit fractions
             {
-                float probeF = float(probeTotal);
+                float probeF = ciProbeTot;  // Phase 5d: per-cascade denominator
                 float surfF  = float(probeSurfaceHit[ci]) / probeF;
                 float skyF   = float(probeSkyHit[ci])     / probeF;
                 ImGui::Text("    ");

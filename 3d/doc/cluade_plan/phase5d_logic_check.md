@@ -104,7 +104,7 @@ Upper cascade probes are at different world positions from lower cascade probes.
 - Merge quality at cascade boundaries
 - Phase 5d visibility weighting (active only in non-co-located mode)
 
-See `phase5d_noncolocated_plan.md` for the implementation plan.
+See `phase5d_impl_learnings.md` for the implementation details.
 
 ---
 
