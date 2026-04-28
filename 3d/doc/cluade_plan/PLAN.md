@@ -1,6 +1,6 @@
 # Claude Plan: 3D Radiance Cascades Demo
 
-**Updated:** 2026-04-26  
+**Updated:** 2026-04-28  
 **Branch:** 3d  
 **Goal:** Visible Cornell-box raymarched image with a working multi-cascade radiance hierarchy
 
@@ -15,7 +15,7 @@
 | 2 | Single 32³ cascade, indirect GI toggle | ✅ Done |
 | 3 | 4-level cascade (C0–C3), merge chain, debug modes | ✅ Done (see `phase2_debug_learnings.md`) |
 | 4 | Cascade quality: env fill, ray scaling, distance blend, filter verify, debug polish | ✅ Done (see `phase4a`–`phase4e` docs) |
-| 5 | Directional-correct merge (per-direction upperSample) | 🔶 In Progress (5a done — see `phase5a_impl_learnings.md`) |
+| 5 | Directional-correct merge (per-direction upperSample) | 🔶 In Progress (5a–5c implemented, runtime validation pending — see `phase5bc_impl_learnings.md`) |
 
 ---
 
@@ -126,7 +126,7 @@ Five sub-phases, all complete. Root docs in `doc/cluade_plan/phase4[a-e]_*.md`.
 
 ---
 
-## Phase 5 — Next
+## Phase 5 — In Progress
 
 **Goal:** Directional-correct merge. Replace the isotropic `upperSample` with per-direction radiance lookup so that the merge blends toward the actual far-field radiance for each specific ray direction.
 
@@ -134,7 +134,20 @@ Five sub-phases, all complete. Root docs in `doc/cluade_plan/phase4[a-e]_*.md`.
 
 **Prerequisite:** Phase 4 complete. ✅
 
-See `phase5_plan.md` for full sub-phase breakdown (5a–5d), shader code, texture layout, and validation plan.
+See `phase5_plan.md` for full sub-phase breakdown (5a–5e), shader code, texture layout, and validation plan.
+
+| Sub-phase | Description | Status |
+|---|---|---|
+| 5a | Octahedral direction encoding — retire Fibonacci; D×D bin grid | ✅ Implemented, compile-verified |
+| 5b | Per-direction atlas texture — `(32·D)²×32` RGBA16F, GL_NEAREST | ✅ Implemented, compile-verified |
+| 5b-1 | Atlas reduction pass — averages D² bins → probeGridTexture (keeps raymarch.frag valid) | ✅ Implemented, compile-verified |
+| 5c | Directional upper cascade merge — `texelFetch` at exact direction bin + isotropic A/B toggle | ✅ Implemented, compile-verified |
+| Debug | 6-mode atlas vis, HitType fix, Bin viewer, probe fill rate readback fix | ✅ Implemented |
+| 5e | Per-cascade D scaling A/B — after 5c visual validation | ⬜ Pending |
+
+**Runtime validation status:** All 5a–5c changes compile clean. Visual A/B (directional vs isotropic merge toggle) has not yet been run. The Bin viewer (mode 5) near a red wall should show directional color separation as the key confirmation.
+
+See `phase5bc_impl_learnings.md` and `phase5_debug_impl_learnings.md` for implementation details and known gotchas.
 
 ---
 

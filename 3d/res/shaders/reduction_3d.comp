@@ -1,0 +1,38 @@
+/**
+ * @file reduction_3d.comp
+ * @brief Atlas reduction pass — averages D² directional bins per probe (Phase 5b-1)
+ *
+ * Reads the per-direction atlas written by radiance_3d.comp and computes the
+ * isotropic (direction-averaged) radiance per probe, writing it back to
+ * probeGridTexture so that raymarch.frag's display path remains unchanged.
+ *
+ * One thread per probe. Dispatch with the same (res/4)³ work groups as the
+ * atlas bake pass. Must run after radiance_3d.comp + memory barrier.
+ */
+
+#version 430 core
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+uniform sampler3D uAtlas;      // per-direction atlas from radiance_3d.comp
+uniform int       uDirRes;     // D — atlas tile side length; D² bins per probe
+uniform ivec3     uVolumeSize; // probe grid dimensions (e.g. ivec3(32))
+
+layout(rgba16f) uniform image3D oRadiance; // isotropic probeGridTexture
+
+void main() {
+    ivec3 probePos = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(probePos, uVolumeSize))) return;
+
+    vec3 avg = vec3(0.0);
+    for (int dy = 0; dy < uDirRes; ++dy)
+        for (int dx = 0; dx < uDirRes; ++dx)
+            avg += texelFetch(uAtlas,
+                ivec3(probePos.x * uDirRes + dx,
+                      probePos.y * uDirRes + dy,
+                      probePos.z), 0).rgb;
+    avg /= float(uDirRes * uDirRes);
+
+    // Alpha 0.0: packed hit stats no longer written here (atlas alpha holds per-bin hit.a).
+    imageStore(oRadiance, probePos, vec4(avg, 0.0));
+}

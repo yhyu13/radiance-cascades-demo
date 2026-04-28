@@ -1,18 +1,5 @@
 #version 450 core
 
-/**
- * @file radiance_debug.frag
- * @brief Fragment shader for radiance cascade debug visualization (Phase 1)
- * 
- * Visualizes 3D radiance cascade textures with multiple display modes:
- * - Slice view: Cross-section through the volume
- * - Max projection: Maximum intensity projection
- * - Average: Average radiance along axis
- * - Direct lighting: Shows only direct illumination component
- * 
- * Phase 1 Focus: Validate multi-light injection and color bleeding
- */
-
 in vec2 vTexCoords;
 out vec4 fragColor;
 
@@ -20,34 +7,47 @@ out vec4 fragColor;
 // Uniforms
 // =============================================================================
 
-/** Radiance cascade texture to visualize */
+/** Isotropic probe grid (probeGridTexture) — modes 0, 1, 2 */
 uniform sampler3D uRadianceTexture;
 
-/** Volume dimensions */
+/** Per-direction atlas (probeAtlasTexture) — modes 3, 4, 5 */
+uniform sampler3D uAtlasTexture;
+
+/** D: atlas tile side length (D^2 bins per probe) */
+uniform int uAtlasDirRes;
+
+/** Selected direction bin for mode 5 Bin viewer */
+uniform ivec2 uAtlasBin;
+
+/** Volume dimensions (probe grid, e.g. ivec3(32)) */
 uniform ivec3 uVolumeSize;
 
 /** Slice parameters */
-uniform int uSliceAxis;          // 0=X, 1=Y, 2=Z
-uniform float uSlicePosition;    // 0.0 to 1.0
+uniform int   uSliceAxis;       // 0=X, 1=Y, 2=Z
+uniform float uSlicePosition;   // 0.0 to 1.0
 
-/** Visualization mode */
-uniform int uVisualizeMode;      // 0=Slice, 1=MaxProj, 2=Average, 3=DirectLighting, 4=HitType
+/** Visualization mode:
+ *  0 = Slice (isotropic grid)
+ *  1 = MaxProj (isotropic grid)
+ *  2 = Average (isotropic grid)
+ *  3 = Atlas raw — D×D tile per probe, shows full directional layout
+ *  4 = HitType heatmap — surf/sky/miss fractions from atlas alpha
+ *  5 = Bin viewer — single direction bin (uAtlasBin) across all probes
+ */
+uniform int uVisualizeMode;
 
-/** Rays per probe for this cascade (used by mode 4 to normalize hit fractions) */
+/** Rays per probe (D^2) — kept for API compat but no longer used for normalization */
 uniform int uRaysPerProbe;
 
 /** Display options */
-uniform float uExposure;         // HDR exposure adjustment
-uniform bool uShowGrid;          // Show voxel grid overlay
-uniform float uIntensityScale;   // Manual intensity scaling
+uniform float uExposure;
+uniform bool  uShowGrid;
+uniform float uIntensityScale;
 
 // =============================================================================
-// Helper Functions
+// Helpers
 // =============================================================================
 
-/**
- * @brief Convert linear RGB to sRGB for proper display
- */
 vec3 linearToSRGB(vec3 linear) {
     return mix(
         pow(linear, vec3(1.0 / 2.2)) * 1.055 - vec3(0.055),
@@ -56,100 +56,63 @@ vec3 linearToSRGB(vec3 linear) {
     );
 }
 
-/**
- * @brief Tone mapping (Reinhard operator)
- */
 vec3 reinhardToneMap(vec3 hdr, float exposure) {
     vec3 exposed = hdr * exposure;
     return exposed / (exposed + vec3(1.0));
 }
 
-/**
- * @brief Sample radiance at specific slice position
- */
-vec4 sampleSlice(vec2 uv) {
-    vec3 texCoord;
-    
-    if (uSliceAxis == 0) {
-        // X-axis slice (YZ plane)
-        texCoord = vec3(uSlicePosition, uv.x, uv.y);
-    } else if (uSliceAxis == 1) {
-        // Y-axis slice (XZ plane)
-        texCoord = vec3(uv.x, uSlicePosition, uv.y);
-    } else {
-        // Z-axis slice (XY plane)
-        texCoord = vec3(uv.x, uv.y, uSlicePosition);
-    }
-    
-    return texture(uRadianceTexture, texCoord);
+/** Build a 3D texture coord from 2D UV + slice axis/position. */
+vec3 sliceTexCoord(vec2 uv) {
+    if (uSliceAxis == 0) return vec3(uSlicePosition, uv.x, uv.y);
+    if (uSliceAxis == 1) return vec3(uv.x, uSlicePosition, uv.y);
+    return vec3(uv.x, uv.y, uSlicePosition);
 }
 
-/**
- * @brief Maximum intensity projection along axis
- */
+vec4 sampleSlice(vec2 uv) {
+    return texture(uRadianceTexture, sliceTexCoord(uv));
+}
+
 vec4 maxProjection(vec2 uv) {
     vec4 maxValue = vec4(0.0);
     int samples = uVolumeSize[uSliceAxis];
-    
     for (int i = 0; i < samples; ++i) {
         float t = (float(i) + 0.5) / float(samples);
-        vec3 texCoord;
-        
-        if (uSliceAxis == 0) {
-            texCoord = vec3(t, uv.x, uv.y);
-        } else if (uSliceAxis == 1) {
-            texCoord = vec3(uv.x, t, uv.y);
-        } else {
-            texCoord = vec3(uv.x, uv.y, t);
-        }
-        
-        vec4 radianceSample = texture(uRadianceTexture, texCoord);
-        maxValue = max(maxValue, radianceSample);
+        vec3 tc;
+        if      (uSliceAxis == 0) tc = vec3(t, uv.x, uv.y);
+        else if (uSliceAxis == 1) tc = vec3(uv.x, t, uv.y);
+        else                      tc = vec3(uv.x, uv.y, t);
+        maxValue = max(maxValue, texture(uRadianceTexture, tc));
     }
-    
     return maxValue;
 }
 
-/**
- * @brief Average projection along axis
- */
 vec4 averageProjection(vec2 uv) {
     vec4 sum = vec4(0.0);
-    int samples = min(uVolumeSize[uSliceAxis], 64); // Limit for performance
-    
+    int samples = min(uVolumeSize[uSliceAxis], 64);
     for (int i = 0; i < samples; ++i) {
         float t = (float(i) + 0.5) / float(samples);
-        vec3 texCoord;
-        
-        if (uSliceAxis == 0) {
-            texCoord = vec3(t, uv.x, uv.y);
-        } else if (uSliceAxis == 1) {
-            texCoord = vec3(uv.x, t, uv.y);
-        } else {
-            texCoord = vec3(uv.x, uv.y, t);
-        }
-        
-        sum += texture(uRadianceTexture, texCoord);
+        vec3 tc;
+        if      (uSliceAxis == 0) tc = vec3(t, uv.x, uv.y);
+        else if (uSliceAxis == 1) tc = vec3(uv.x, t, uv.y);
+        else                      tc = vec3(uv.x, uv.y, t);
+        sum += texture(uRadianceTexture, tc);
     }
-    
     return sum / float(samples);
 }
 
-/**
- * @brief Draw grid overlay
- */
+/** Convert UV + slice position → integer probe coordinate in [0, uVolumeSize). */
+ivec3 probeFromUV(vec2 uv) {
+    vec3 uvw = sliceTexCoord(uv);
+    return clamp(ivec3(uvw * vec3(uVolumeSize)), ivec3(0), uVolumeSize - ivec3(1));
+}
+
 vec3 drawGrid(vec2 uv, vec3 color) {
-    if (!uShowGrid)
-        return color;
-    
-    float gridSize = 0.1; // Grid cell size in UV space
+    if (!uShowGrid) return color;
+    float gridSize = 0.1;
     vec2 grid = fract(uv / gridSize);
-    
-    // Draw grid lines
     float lineThickness = 0.02;
     vec2 gridLine = smoothstep(vec2(0.0), vec2(lineThickness), grid) *
                     smoothstep(vec2(1.0), vec2(1.0 - lineThickness), grid);
-    
     float gridFactor = 1.0 - (gridLine.x * gridLine.y);
     return mix(color * 0.3, color, gridFactor);
 }
@@ -160,52 +123,69 @@ vec3 drawGrid(vec2 uv, vec3 color) {
 
 void main() {
     vec4 radiance;
-    
-    // Sample based on visualization mode
+
     if (uVisualizeMode == 0) {
-        // Slice view
+        // Isotropic probe grid — 2D slice
         radiance = sampleSlice(vTexCoords);
+
     } else if (uVisualizeMode == 1) {
-        // Maximum intensity projection
+        // Isotropic probe grid — max intensity projection
         radiance = maxProjection(vTexCoords);
+
     } else if (uVisualizeMode == 2) {
-        // Average projection
+        // Isotropic probe grid — average projection
         radiance = averageProjection(vTexCoords);
+
     } else if (uVisualizeMode == 3) {
-        // Direct lighting only (use RGB, ignore alpha)
-        radiance = sampleSlice(vTexCoords);
-    } else {
-        // Mode 4: Hit-type heatmap — decode packed alpha into surf/sky/miss fractions
-        // Probe alpha encodes: packed = surfHits + skyHits * 255.0
-        // R = surf fraction (green), G = sky fraction (blue), B = miss fraction (dark red)
-        radiance = sampleSlice(vTexCoords);
-        float packed = radiance.a;
-        float N = float(max(uRaysPerProbe, 1));
-        float skyF  = floor(packed / 255.0 + 0.5) / N;
-        float surfF = mod(packed + 0.5, 255.0) / N;
+        // Atlas raw — shows the raw D×D tile layout of the per-direction atlas.
+        // Each (1/32 × 1/32) block of the display is one probe; within each block,
+        // the D×D sub-pixels are that probe's directional bins.
+        // With D=4 the atlas is 128×128×32; GL_NEAREST keeps tile boundaries sharp.
+        radiance = texture(uAtlasTexture, sliceTexCoord(vTexCoords));
+
+    } else if (uVisualizeMode == 4) {
+        // HitType heatmap — reads atlas alpha to classify each bin, averages over D^2.
+        // Fixed for Phase 5b-1: probeGridTexture alpha is now 0.0 (written by reduction).
+        // R=miss  G=surface  B=sky
+        ivec3 probeCoord = probeFromUV(vTexCoords);
+        int surfCount = 0, skyCount = 0;
+        int D = uAtlasDirRes;
+        for (int dy2 = 0; dy2 < D; ++dy2)
+            for (int dx2 = 0; dx2 < D; ++dx2) {
+                float a = texelFetch(uAtlasTexture,
+                    ivec3(probeCoord.x * D + dx2,
+                          probeCoord.y * D + dy2,
+                          probeCoord.z), 0).a;
+                if      (a > 0.0) ++surfCount;
+                else if (a < 0.0) ++skyCount;
+            }
+        float N     = float(D * D);
+        float surfF = float(surfCount) / N;
+        float skyF  = float(skyCount)  / N;
         float missF = max(0.0, 1.0 - surfF - skyF);
-        // Color: surface=green, sky=blue, miss=red
         fragColor = vec4(missF, surfF, skyF, 1.0);
         return;
+
+    } else {
+        // Mode 5: Bin viewer — shows a single direction bin (uAtlasBin.x, uAtlasBin.y)
+        // across all probes in the slice. Each pixel = one probe.
+        // Validation: near red wall, bins pointing toward red wall should show red;
+        // opposite bins should show green/blue from the far wall.
+        ivec3 probeCoord = probeFromUV(vTexCoords);
+        ivec3 atlasTxl = ivec3(probeCoord.x * uAtlasDirRes + uAtlasBin.x,
+                               probeCoord.y * uAtlasDirRes + uAtlasBin.y,
+                               probeCoord.z);
+        radiance = texelFetch(uAtlasTexture, atlasTxl, 0);
     }
 
-    // Apply intensity scaling
+    // Shared tone-map + sRGB path (modes 0, 1, 2, 3, 5)
     vec3 color = radiance.rgb * uIntensityScale;
-
-    // Tone mapping
     color = reinhardToneMap(color, uExposure);
-
-    // Convert to sRGB for display
     color = linearToSRGB(color);
-
-    // Draw grid overlay
     color = drawGrid(vTexCoords, color);
 
-    // Background for empty regions
-    float alpha = length(radiance.rgb);
-    if (alpha < 0.01) {
-        color = vec3(0.05); // Dark background
-    }
+    if (length(radiance.rgb) < 0.01)
+        color = vec3(0.05);
 
     fragColor = vec4(color, 1.0);
 }

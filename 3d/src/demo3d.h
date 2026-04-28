@@ -92,8 +92,11 @@ struct VoxelNode {
  * Finer cascades near camera, coarser cascades for far field.
  */
 struct RadianceCascade3D {
-    /** OpenGL texture ID for 3D probe grid */
+    /** OpenGL texture ID for 3D probe grid (isotropic average, written by reduction pass) */
     GLuint probeGridTexture;
+
+    /** Phase 5b: per-direction D×D tile atlas — (res*D)×(res*D)×res RGBA16F */
+    GLuint probeAtlasTexture;
     
     /** Resolution of probe grid (e.g., 32, 64, 128) */
     int resolution;
@@ -556,8 +559,12 @@ private:
     /** Radiance slice position (0.0-1.0) */
     float radianceSlicePosition;
     
-    /** Radiance visualization mode (0=Slice, 1=MaxProj, 2=Average, 3=Direct) */
+    /** Radiance visualization mode (0=Slice 1=MaxProj 2=Avg 3=Atlas 4=HitType 5=Bin) */
     int radianceVisualizeMode;
+
+    /** Phase 5b: direction bin (dx, dy) selected for mode 5 Bin viewer */
+    int atlasBinDx;
+    int atlasBinDy;
     
     /** Radiance exposure for tone mapping */
     float radianceExposure;
@@ -660,6 +667,9 @@ private:
 
     /** 5a: Octahedral direction bin resolution. D^2 rays per probe. Default 4 (16 bins). */
     int dirRes;
+
+    /** 5c: Use per-direction texelFetch merge (true) or isotropic texture() fallback (false). */
+    bool useDirectionalMerge;
 
     // =============================================================================
     // Shaders

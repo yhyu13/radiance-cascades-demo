@@ -44,6 +44,7 @@ VoxelNode::VoxelNode()
 
 RadianceCascade3D::RadianceCascade3D()
     : probeGridTexture(0)
+    , probeAtlasTexture(0)
     , resolution(0)
     , cellSize(1.0f)
     , origin(0.0f)
@@ -73,6 +74,10 @@ void RadianceCascade3D::destroy() {
         glDeleteTextures(1, &probeGridTexture);
         probeGridTexture = 0;
     }
+    if (probeAtlasTexture) {
+        glDeleteTextures(1, &probeAtlasTexture);
+        probeAtlasTexture = 0;
+    }
     active = false;
 }
 
@@ -99,6 +104,9 @@ Demo3D::Demo3D()
     , baseRaysPerProbe(8)
     , blendFraction(0.5f)
     , dirRes(4)
+    , useDirectionalMerge(true)
+    , atlasBinDx(0)
+    , atlasBinDy(0)
     , activeShader(0)
     , userMode(Mode::VOXELIZE)
     , brushSize(0.5f)
@@ -195,6 +203,7 @@ Demo3D::Demo3D()
     loadShader("sdf_3d.comp");
     loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
     loadShader("radiance_3d.comp");
+    loadShader("reduction_3d.comp");  // Phase 5b-1: atlas → isotropic reduction
     loadShader("inject_radiance.comp");
     loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization (auto-loads .vert)
     loadShader("radiance_debug.frag"); // Phase 1: Radiance cascade debug (auto-loads .vert)
@@ -301,8 +310,8 @@ void Demo3D::processInput() {
     
     // Phase 1: Radiance Debug Controls
     if (IsKeyPressed(KEY_F)) {
-        radianceVisualizeMode = (radianceVisualizeMode + 1) % 5;
-        const char* radModes[] = { "Slice", "Max Projection", "Average", "Direct", "HitType" };
+        radianceVisualizeMode = (radianceVisualizeMode + 1) % 6;
+        const char* radModes[] = { "Slice", "MaxProj", "Avg", "Atlas", "HitType", "Bin" };
         std::cout << "[Demo3D] Radiance Debug Mode: " << radModes[radianceVisualizeMode] << std::endl;
     }
 
@@ -358,19 +367,11 @@ void Demo3D::render() {
         lastSkyColor = skyColor;
         cascadeReady = false;
     }
-    static int lastBaseRays = -1;
-    if (baseRaysPerProbe != lastBaseRays) {
-        lastBaseRays = baseRaysPerProbe;
-        for (int i = 0; i < cascadeCount; ++i)
-            cascades[i].raysPerProbe = baseRaysPerProbe * (1 << i);
-        cascadeReady = false;
-        std::cout << "[4b] baseRaysPerProbe=" << baseRaysPerProbe
-                  << "  C0=" << baseRaysPerProbe
-                  << "  C1=" << baseRaysPerProbe * 2
-                  << "  C2=" << baseRaysPerProbe * 4
-                  << "  C3=" << baseRaysPerProbe * 8
-                  << "  total=" << baseRaysPerProbe * 15
-                  << std::endl;
+    // Phase 5a: baseRaysPerProbe slider is retired -- D^2 fixed dispatch, slider is disabled in UI.
+    static bool lastDirectionalMerge = true;
+    if (useDirectionalMerge != lastDirectionalMerge) {
+        lastDirectionalMerge = useDirectionalMerge;
+        cascadeReady = false;  // directional/isotropic toggle → recompute all cascades
     }
     static float lastBlendFrac = -1.0f;
     if (blendFraction != lastBlendFrac) {
@@ -397,26 +398,49 @@ void Demo3D::render() {
         probeTotal  = res * res * res;
         std::vector<float> buf(static_cast<size_t>(probeTotal) * 4);
 
+        // Phase 5b-1: atlas alpha readback buffer — surf/sky per bin across (res*D)^2 x res
+        int D = dirRes;
+        int atlasWH = res * D;
+        std::vector<float> atlasBuf(static_cast<size_t>(atlasWH) * atlasWH * res * 4);
+
         for (int ci = 0; ci < cascadeCount; ++ci) {
             if (!cascades[ci].active || cascades[ci].probeGridTexture == 0) continue;
+
+            // RGB luminance stats from probeGridTexture (isotropic average, correct)
             glBindTexture(GL_TEXTURE_3D, cascades[ci].probeGridTexture);
             glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, buf.data());
             glBindTexture(GL_TEXTURE_3D, 0);
 
+            // Surf/sky hit classification from probeAtlasTexture alpha.
+            // Phase 5b-1 zeroes probeGridTexture.a, so packed-hit decode no longer works there.
+            // Atlas stores hit.a per bin: >0 = surface, <0 = sky, =0 = miss.
+            int surfHit = 0, skyHit = 0;
+            if (cascades[ci].probeAtlasTexture != 0) {
+                glBindTexture(GL_TEXTURE_3D, cascades[ci].probeAtlasTexture);
+                glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, atlasBuf.data());
+                glBindTexture(GL_TEXTURE_3D, 0);
+                for (int pz = 0; pz < res; ++pz)
+                for (int py = 0; py < res; ++py)
+                for (int px = 0; px < res; ++px) {
+                    bool hasSurf = false, hasSky = false;
+                    for (int dy = 0; dy < D; ++dy)
+                    for (int dx = 0; dx < D; ++dx) {
+                        int ax = px * D + dx, ay = py * D + dy;
+                        float a = atlasBuf[((pz * atlasWH + ay) * atlasWH + ax) * 4 + 3];
+                        if (a > 0.0f) hasSurf = true;
+                        if (a < 0.0f) hasSky  = true;
+                    }
+                    if (hasSurf) ++surfHit;
+                    if (hasSky)  ++skyHit;
+                }
+            }
+
             float maxLum = 0.0f, sumLum = 0.0f, sumLum2 = 0.0f;
-            int nonZero = 0, surfHit = 0, skyHit = 0;
+            int nonZero = 0;
             for (int i = 0; i < probeTotal; ++i) {
                 float r = buf[i*4+0], g = buf[i*4+1], b = buf[i*4+2];
-                float packed = buf[i*4+3];  // packed: surfHits + skyHits * 255.0
                 float lum = (r + g + b) / 3.0f;
                 if (lum > 1e-4f) ++nonZero;
-                // Exact integer decode: avoids float-rounding on top of RGBA16F quantization.
-                // Note: RGBA16F storage is still the precision limit for large packed values.
-                int packed_int = static_cast<int>(packed + 0.5f);
-                int skyH  = packed_int / 255;
-                int surfH = packed_int % 255;
-                if (surfH > 0) ++surfHit;
-                if (skyH  > 0) ++skyHit;
                 sumLum  += lum;
                 sumLum2 += lum * lum;
                 maxLum = std::max(maxLum, lum);
@@ -650,7 +674,7 @@ void Demo3D::renderSDFDebug() {
     // Render quad
     glBindVertexArray(debugQuadVAO);
     glDisable(GL_DEPTH_TEST);  // Disable depth test for overlay
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glEnable(GL_DEPTH_TEST);   // Re-enable for rest of rendering
     glBindVertexArray(0);
     
@@ -683,6 +707,13 @@ void Demo3D::renderRadianceDebug() {
     glBindTexture(GL_TEXTURE_3D, cascades[selC].probeGridTexture);
     glUniform1i(glGetUniformLocation(it->second, "uRadianceTexture"), 0);
 
+    // Phase 5b: atlas for modes 3 (raw), 4 (HitType), 5 (Bin viewer)
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_3D, cascades[selC].probeAtlasTexture);
+    glUniform1i(glGetUniformLocation(it->second, "uAtlasTexture"), 1);
+    glUniform1i(glGetUniformLocation(it->second, "uAtlasDirRes"),  dirRes);
+    glUniform2i(glGetUniformLocation(it->second, "uAtlasBin"),     atlasBinDx, atlasBinDy);
+
     int res = cascades[selC].resolution;
     glUniform3i(glGetUniformLocation(it->second, "uVolumeSize"), res, res, res);
     glUniform1i(glGetUniformLocation(it->second, "uSliceAxis"),       radianceSliceAxis);
@@ -691,11 +722,11 @@ void Demo3D::renderRadianceDebug() {
     glUniform1f(glGetUniformLocation(it->second, "uExposure"),        radianceExposure);
     glUniform1i(glGetUniformLocation(it->second, "uShowGrid"),        showRadianceGrid ? 1 : 0);
     glUniform1f(glGetUniformLocation(it->second, "uIntensityScale"),  radianceIntensityScale);
-    glUniform1i(glGetUniformLocation(it->second, "uRaysPerProbe"),    dirRes * dirRes);  // Phase 5a: D^2 bins
+    glUniform1i(glGetUniformLocation(it->second, "uRaysPerProbe"),    dirRes * dirRes);
 
     glBindVertexArray(debugQuadVAO);
     glDisable(GL_DEPTH_TEST);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glEnable(GL_DEPTH_TEST);
     glBindVertexArray(0);
 
@@ -935,25 +966,50 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glBindTexture(GL_TEXTURE_3D, albedoTexture);
     glUniform1i(glGetUniformLocation(prog, "uAlbedo"), 1);
 
-    // Upper cascade for merge: when a ray misses this level's interval, sample the
-    // coarser level at the same probe position to get the far-field contribution.
-    // Disabled when disableCascadeMerging is set so the user can compare merged vs raw.
+    // Phase 5c: upper cascade directional atlas for per-direction merge.
+    // When a ray misses this level's interval, fetch the upper atlas at the exact
+    // direction bin instead of the isotropic probe average.
     int upperIdx = cascadeIndex + 1;
     if (!disableCascadeMerging &&
-        upperIdx < cascadeCount && cascades[upperIdx].active && cascades[upperIdx].probeGridTexture != 0) {
+        upperIdx < cascadeCount && cascades[upperIdx].active && cascades[upperIdx].probeAtlasTexture != 0) {
+        // Unit 2: directional atlas (Phase 5c texelFetch path)
         glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_3D, cascades[upperIdx].probeAtlasTexture);
+        glUniform1i(glGetUniformLocation(prog, "uUpperCascadeAtlas"), 2);
+        // Unit 3: isotropic probeGridTexture (Phase 4 fallback when toggle is OFF)
+        glActiveTexture(GL_TEXTURE3);
         glBindTexture(GL_TEXTURE_3D, cascades[upperIdx].probeGridTexture);
-        glUniform1i(glGetUniformLocation(prog, "uUpperCascade"), 2);
+        glUniform1i(glGetUniformLocation(prog, "uUpperCascade"), 3);
         glUniform1i(glGetUniformLocation(prog, "uHasUpperCascade"), 1);
     } else {
         glUniform1i(glGetUniformLocation(prog, "uHasUpperCascade"), 0);
     }
+    glUniform1i(glGetUniformLocation(prog, "uUseDirectionalMerge"), useDirectionalMerge ? 1 : 0);
 
-    glBindImageTexture(0, c.probeGridTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+    // Phase 5b: write per-direction radiance into the atlas (not the isotropic grid)
+    glBindImageTexture(0, c.probeAtlasTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 
     glm::ivec3 wg = calculateWorkGroups(c.resolution, c.resolution, c.resolution, 4);
     glDispatchCompute(wg.x, wg.y, wg.z);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+    // Phase 5b-1: reduction — average D² atlas bins per probe → isotropic probeGridTexture
+    // This keeps raymarch.frag's display path (texture(uRadiance, uvw).rgb) valid.
+    auto red = shaders.find("reduction_3d.comp");
+    if (red != shaders.end()) {
+        glUseProgram(red->second);
+        glUniform1i(glGetUniformLocation(red->second, "uDirRes"),      dirRes);
+        glUniform3iv(glGetUniformLocation(red->second, "uVolumeSize"), 1, glm::value_ptr(volRes));
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_3D, c.probeAtlasTexture);
+        glUniform1i(glGetUniformLocation(red->second, "uAtlas"), 0);
+
+        glBindImageTexture(0, c.probeGridTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+
+        glDispatchCompute(wg.x, wg.y, wg.z);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+    }
 }
 
 void Demo3D::injectDirectLighting() {
@@ -1202,6 +1258,7 @@ void Demo3D::reloadShaders() {
     loadShader("sdf_3d.comp");
     loadShader("sdf_analytic.comp");
     loadShader("radiance_3d.comp");
+    loadShader("reduction_3d.comp");
     loadShader("inject_radiance.comp");
     loadShader("sdf_debug.frag");
     loadShader("radiance_debug.frag");
@@ -1319,9 +1376,24 @@ void Demo3D::initCascades() {
 
     for (int i = 0; i < cascadeCount; ++i) {
         cascades[i].initialize(probeRes, cellSz, volumeOrigin, baseRaysPerProbe * (1 << i));
+
+        // Phase 5b: per-direction atlas — (res*D)×(res*D)×res RGBA16F, must be GL_NEAREST
+        int atlasXY = probeRes * dirRes;
+        cascades[i].probeAtlasTexture = gl::createTexture3D(
+            atlasXY, atlasXY, probeRes,
+            GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr);
+        // gl::createTexture3D defaults to GL_LINEAR — override to prevent bin bleed
+        glBindTexture(GL_TEXTURE_3D, cascades[i].probeAtlasTexture);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_3D, 0);
+
         std::cout << "[Demo3D] Cascade " << i << ": " << probeRes
                   << "^3 probes, cellSize=" << cellSz
-                  << ", raysPerProbe=" << cascades[i].raysPerProbe
+                  << ", atlas=" << atlasXY << "x" << atlasXY << "x" << probeRes
                   << ", active=" << cascades[i].active << std::endl;
     }
 }
@@ -1934,15 +2006,25 @@ void Demo3D::renderCascadePanel() {
     ImGui::Checkbox("Disable Merge (raw per-level)", &disableCascadeMerging);
     HelpMarker(
         "Merge ON (default): each cascade's miss rays pull radiance from\n"
-        "the next coarser level (C3->C2->C1->C0).\n"
-        "Current model: ISOTROPIC approximation — the upper cascade\n"
-        "contributes its probe average, not a per-direction sample.\n"
-        "Per-direction merge (Phase 5) is needed for full ShaderToy parity.\n\n"
+        "the next coarser level (C3->C2->C1->C0).\n\n"
         "Merge OFF (debug): every cascade solved independently with no\n"
         "upper-cascade fallback. Useful to isolate a single level's\n"
         "direct contribution without any inter-level blending.");
     ImGui::SameLine();
     ImGui::TextDisabled(disableCascadeMerging ? "(each level independent)" : "(C3->C2->C1->C0)");
+
+    // ── Phase 5c: directional merge toggle (A/B) ─────────────────────────────
+    ImGui::Checkbox("Directional merge (Phase 5c)", &useDirectionalMerge);
+    HelpMarker(
+        "ON  (default): per-direction texelFetch from upper cascade atlas.\n"
+        "     Each ray's miss pulls the upper cascade value for THAT exact\n"
+        "     direction bin, not the probe average.\n\n"
+        "OFF (Phase 4 fallback): isotropic texture() from upper cascade's\n"
+        "     probeGridTexture — same averaged value for all directions.\n\n"
+        "Toggle to A/B compare. Expect: ON reduces banding at cascade\n"
+        "boundaries; red/green walls show distinct directional color.");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useDirectionalMerge ? "(directional)" : "(isotropic fallback)");
 
     // ── Environment fill (4a) ────────────────────────────────────────────────
     ImGui::Separator();
@@ -2031,22 +2113,34 @@ void Demo3D::renderCascadePanel() {
     if (showRadianceDebug) {
         ImGui::Text("Radiance debug mode ([F] to cycle):");
         HelpMarker(
-            "Controls what the top-right 400x400 radiance debug viewer shows\n"
-            "for the selected cascade level.\n\n"
-            "Slice    — 2D cross-section at the chosen axis/position\n"
-            "MaxProj  — maximum intensity projection along the axis\n"
-            "Avg      — average radiance along the axis\n"
-            "Direct   — direct lighting component only\n"
-            "HitType  — per-probe hit fractions from packed alpha:\n"
-            "           G=surface hit  B=sky exit  R=miss (no direct hit)\n"
-            "           Use to verify ray scaling coverage spatially.");
-        ImGui::RadioButton("Slice##rad",    &radianceVisualizeMode, 0); ImGui::SameLine();
-        ImGui::RadioButton("MaxProj##rad",  &radianceVisualizeMode, 1); ImGui::SameLine();
-        ImGui::RadioButton("Avg##rad",      &radianceVisualizeMode, 2); ImGui::SameLine();
-        ImGui::RadioButton("Direct##rad",   &radianceVisualizeMode, 3); ImGui::SameLine();
-        ImGui::RadioButton("HitType##rad",  &radianceVisualizeMode, 4);
+            "Controls what the top-right 400x400 radiance debug viewer shows.\n\n"
+            "Slice    — isotropic probeGridTexture 2D cross-section\n"
+            "MaxProj  — isotropic probeGridTexture max intensity projection\n"
+            "Avg      — isotropic probeGridTexture average projection\n"
+            "Atlas    — raw per-direction atlas; each D*D block = one probe\n"
+            "           Shows all 16 directional bins per probe at once.\n"
+            "HitType  — surf/sky/miss fractions from atlas alpha per probe\n"
+            "           G=surface  B=sky  R=miss (reads atlas, not grid alpha)\n"
+            "Bin      — single direction bin (dx,dy) across all probes\n"
+            "           Key validation: near red wall, leftward bin -> red;\n"
+            "           opposite bin -> green. Proves directional merge works.");
+        ImGui::RadioButton("Slice##rad",   &radianceVisualizeMode, 0); ImGui::SameLine();
+        ImGui::RadioButton("MaxProj##rad", &radianceVisualizeMode, 1); ImGui::SameLine();
+        ImGui::RadioButton("Avg##rad",     &radianceVisualizeMode, 2); ImGui::SameLine();
+        ImGui::RadioButton("Atlas##rad",   &radianceVisualizeMode, 3); ImGui::SameLine();
+        ImGui::RadioButton("HitType##rad", &radianceVisualizeMode, 4); ImGui::SameLine();
+        ImGui::RadioButton("Bin##rad",     &radianceVisualizeMode, 5);
+
+        if (radianceVisualizeMode == 3)
+            ImGui::TextColored(ImVec4(0.8f,0.8f,1.0f,1), "  Atlas raw — each D%cD block is one probe's directional bins", (char)0xD7);
         if (radianceVisualizeMode == 4)
-            ImGui::TextColored(ImVec4(0.5f,1,0.5f,1), "  G=surf hit  B=sky exit  R=miss");
+            ImGui::TextColored(ImVec4(0.5f,1,0.5f,1), "  G=surf hit  B=sky exit  R=miss  (reads atlas alpha — fixed for Phase 5b-1)");
+        if (radianceVisualizeMode == 5) {
+            ImGui::TextColored(ImVec4(1,0.9f,0.5f,1), "  Bin viewer: one direction across all probes");
+            ImGui::SliderInt("bin dx##atlas", &atlasBinDx, 0, dirRes - 1);
+            ImGui::SliderInt("bin dy##atlas", &atlasBinDy, 0, dirRes - 1);
+            ImGui::TextDisabled("  Validation: near red wall, bin pointing left -> red; right -> green");
+        }
     }
 
     if (probeTotal > 0) {
@@ -2154,7 +2248,7 @@ void Demo3D::renderCascadePanel() {
             "consistent with reduced sampling noise, but not proof of it.");
         for (int ci = 0; ci < cascadeCount; ++ci) {
             char label[32];
-            std::snprintf(label, sizeof(label), "C%d r=%d", ci, cascades[ci].raysPerProbe);
+            std::snprintf(label, sizeof(label), "C%d D^2=%d", ci, dirRes * dirRes);
             ImGui::PlotHistogram(label, probeHistogram[ci], 16, 0, nullptr, 0.0f, 1.0f,
                                  ImVec2(200, 40));
             if (ci + 1 < cascadeCount) ImGui::SameLine();
@@ -2302,6 +2396,45 @@ void Demo3D::renderTutorialPanel() {
     {
         ImVec4 c = ImVec4(0.3f, 1, 0.3f, 1);
         ImGui::TextColored(c, "  [4e] Packed-decode fix + blend-zone + coverage bars + mean-lum chart");
+    }
+
+    ImGui::NewLine();
+
+    // Phase 5 header: yellow if merge is isotropic fallback, green if directional
+    ImVec4 p5col = useDirectionalMerge ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(1.0f, 0.85f, 0.2f, 1.0f);
+    ImGui::TextColored(p5col, "Phase 5 (in progress — 5a/5b/5c done, 5e pending):");
+
+    // 5a
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [5a] Octahedral direction encoding  D=%d  D^2=%d bins/probe",
+            dirRes, dirRes * dirRes);
+    }
+    // 5b
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [5b] Per-direction atlas  %dx%dx%d RGBA16F  GL_NEAREST",
+            cascadeCount > 0 ? cascades[0].resolution * dirRes : 0,
+            cascadeCount > 0 ? cascades[0].resolution * dirRes : 0,
+            cascadeCount > 0 ? cascades[0].resolution : 0);
+    }
+    // 5b-1
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [5b-1] Atlas reduction pass  (atlas avg -> probeGridTexture)");
+    }
+    // 5c
+    {
+        ImVec4 c = useDirectionalMerge ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
+        ImGui::TextColored(c,
+            "  [5c] Directional merge  %s",
+            useDirectionalMerge ? "ON  — texelFetch per bin (Phase 5c active)"
+                                : "OFF — isotropic fallback (Phase 4 mode)");
+    }
+    // 5e
+    {
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+            "  [5e] D scaling A/B  (pending — run after 5c visual validation)");
     }
 
     ImGui::End();
