@@ -18,7 +18,12 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 uniform int   uCascadeIndex;
 uniform int   uCascadeCount;
-uniform float uBaseInterval;   // cell size passed directly: volumeSize / probeRes
+uniform float uBaseInterval;   // C0's cellSize (0.125) -- always used for tMin/tMax formula
+uniform float uProbeCellSize;  // this cascade's cellSize for probeToWorld()
+// Phase 5d: upper-cascade spatial scale.
+// 0=no upper; 1=co-located (same index); 2=non-co-located (probePos/2)
+uniform int   uUpperToCurrentScale;
+uniform float uUpperProbeCellSize;  // upper cascade's cellSize for Phase 5d visibility check
 
 uniform ivec3 uVolumeSize;     // probe grid dimensions (e.g. 32^3)
 uniform vec3  uGridSize;       // SDF volume size in world units (e.g. 4,4,4)
@@ -61,8 +66,8 @@ const float INF = 1e10;
 // =============================================================================
 
 vec3 probeToWorld(ivec3 probePos) {
-    // uBaseInterval is already the correct cell size for this cascade
-    return uGridOrigin + (vec3(probePos) + 0.5) * uBaseInterval;
+    // Phase 5d: use uProbeCellSize (per-cascade) not uBaseInterval (always C0's 0.125)
+    return uGridOrigin + (vec3(probePos) + 0.5) * uProbeCellSize;
 }
 
 float sampleSDF(vec3 worldPos) {
@@ -190,20 +195,48 @@ void main() {
             vec3 rayDir = binToDir(ivec2(dx, dy), uDirRes);
             vec4 hit    = raymarchSDF(worldPos, rayDir, tMin, tMax);
 
-            // Atlas texel for this probe × direction bin — same coords for write and upper read.
-            // Co-located grids: upper probe is at the same world position, so upper atlas
-            // uses the identical (px*D+dx, py*D+dy, pz) index.
+            // This cascade's write target -- always indexed by current probePos
             ivec3 atlasTxl = ivec3(probePos.x * uDirRes + dx,
                                    probePos.y * uDirRes + dy,
                                    probePos.z);
+
+            // Phase 5d: upper probe index.
+            // uUpperToCurrentScale: 0=no upper, 1=co-located (same), 2=non-co-located (halved)
+            ivec3 upperProbePos = (uUpperToCurrentScale > 0)
+                ? (probePos / uUpperToCurrentScale)
+                : ivec3(0);
+            ivec3 upperAtlasTxl = ivec3(upperProbePos.x * uDirRes + dx,
+                                        upperProbePos.y * uDirRes + dy,
+                                        upperProbePos.z);
 
             // Phase 5c / debug toggle: directional texelFetch or isotropic texture() fallback
             vec3 upperDir = vec3(0.0);
             if (uHasUpperCascade != 0) {
                 if (uUseDirectionalMerge != 0)
-                    upperDir = texelFetch(uUpperCascadeAtlas, atlasTxl, 0).rgb;
+                    upperDir = texelFetch(uUpperCascadeAtlas, upperAtlasTxl, 0).rgb;
                 else
                     upperDir = texture(uUpperCascade, uvwProbe).rgb;
+            }
+
+            // Phase 5d: probe visibility weighting (active only in non-co-located mode).
+            // Check whether the upper probe can see the current probe's world position.
+            // If blocked, zero the upper contribution to prevent cross-wall bleed.
+            if (uUpperToCurrentScale == 2 && uHasUpperCascade != 0) {
+                vec3 wUpper = uGridOrigin + (vec3(upperProbePos) + 0.5) * uUpperProbeCellSize;
+                vec3 toCurrentFromUpper = worldPos - wUpper;
+                float distToUpper = length(toCurrentFromUpper);
+                if (distToUpper > 1e-4) {
+                    ivec2 visBin = dirToBin(toCurrentFromUpper / distToUpper, uDirRes);
+                    ivec3 visTxl = ivec3(upperProbePos.x * uDirRes + visBin.x,
+                                         upperProbePos.y * uDirRes + visBin.y,
+                                         upperProbePos.z);
+                    float visHit = texelFetch(uUpperCascadeAtlas, visTxl, 0).a;
+                    // visHit > 0: surface was hit at that distance.
+                    // If the hit was closer than 90% of the distance to us, the upper
+                    // probe's view is occluded -- discard its contribution.
+                    if (visHit > 0.0 && visHit < distToUpper * 0.9)
+                        upperDir = vec3(0.0);
+                }
             }
 
             vec3 rad;

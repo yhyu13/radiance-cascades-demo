@@ -671,6 +671,12 @@ private:
     /** 5c: Use per-direction texelFetch merge (true) or isotropic texture() fallback (false). */
     bool useDirectionalMerge;
 
+    /** 5d: Co-located cascades (all 32^3, default) vs ShaderToy-style halving (32/16/8/4). */
+    bool useColocatedCascades;
+
+    /** 5d: Per-cascade probe count for fill-rate display (set during probe readback). */
+    int  probeTotalPerCascade[MAX_CASCADES];
+
     // =============================================================================
     // Shaders
     // =============================================================================
