@@ -13,7 +13,30 @@
       "Bash(cmake --build build --config Release)",
       "Bash(timeout 5 ./build/RadianceCascades3D.exe)",
       "Bash(echo \"EXIT_CODE: $?\")",
-      "Bash(timeout 4 ./build/RadianceCascades3D.exe)"
+      "Bash(timeout 4 ./build/RadianceCascades3D.exe)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(cmake --build d:/GitRepo-My/radiance-cascades-demo/3d/build --config Release)",
+      "Bash(git -C d:/GitRepo-My/radiance-cascades-demo/3d log --oneline -10)",
+      "Bash(awk -F: '{print NR\": \"$0}')",
+      "Bash(start build/RadianceCascades3D.exe)",
+      "Bash(grep -E \"error C|error:|\\\\.exe$\")",
+      "Bash(python -c ' *)",
+      "Bash(git reset *)",
+      "Bash(MSBuild.exe Demo3D.vcxproj -p:Configuration=Debug -p:Platform=x64 -verbosity:minimal)",
+      "Bash(cmd //c \"cd /d D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d && \\\\\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\\\\\" Demo3D.vcxproj /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal 2>&1\")",
+      "Bash(cmd //c \"\\\\\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\\\\\" D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\Demo3D.vcxproj /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal\")",
+      "Bash(cmd //c \"where MSBuild.exe 2>nul || dir /s /b \\\\\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\\" 2>nul | findstr /i msbuild.exe | head -3\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem 'C:\\\\Program Files\\\\Microsoft Visual Studio' -Recurse -Filter 'MSBuild.exe' -ErrorAction SilentlyContinue | Select-Object -First 3 FullName\")",
+      "Bash(powershell.exe -NonInteractive -Command \"& 'C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe' 'D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\Demo3D.vcxproj' /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal 2>&1 | Select-Object -Last 20\")",
+      "PowerShell(& 'C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe' 'D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\\\\RadianceCascades3D.vcxproj' /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal 2>&1)",
+      "PowerShell(& 'C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe' 'D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\\\\RadianceCascades3D.vcxproj' /p:Configuration=Debug /p:Platform=x64 /v:minimal 2>&1)",
+      "Bash(sed -n '108,115p' src/demo3d.h)",
+      "Bash(sed -n '658,668p' src/demo3d.h)",
+      "Bash(sed -n '368,390p' src/demo3d.cpp)",
+      "Bash(sed -n '1386,1396p' src/demo3d.cpp)",
+      "Bash(sed -n '2080,2095p' src/demo3d.cpp)",
+      "Bash(sed -n '2258,2272p' src/demo3d.cpp)"
     ]
   }
 }
