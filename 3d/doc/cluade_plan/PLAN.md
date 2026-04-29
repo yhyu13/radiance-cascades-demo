@@ -143,11 +143,12 @@ See `phase5_plan.md` for full sub-phase breakdown (5a–5e), shader code, textur
 | 5b-1 | Atlas reduction pass — averages D² bins → probeGridTexture (keeps raymarch.frag valid) | ✅ Implemented, compile-verified |
 | 5c | Directional upper cascade merge — `texelFetch` at exact direction bin + isotropic A/B toggle | ✅ Implemented, compile-verified |
 | Debug | 6-mode atlas vis, HitType fix, Bin viewer, probe fill rate readback fix | ✅ Implemented |
-| 5e | Per-cascade D scaling A/B — after 5c visual validation | ⬜ Pending |
+| 5d | Non-co-located cascades toggle — halved probe resolution per level; visibility check (inert, preserved) | ✅ Implemented, compile-verified |
+| 5e | Per-cascade D scaling — `min(16, D<<i)` = [D4,D8,D16,D16]; D=2 degenerate case fixed | ✅ Implemented, compile-verified |
 
-**Runtime validation status:** All 5a–5c changes compile clean. Visual A/B (directional vs isotropic merge toggle) has not yet been run. The Bin viewer (mode 5) near a red wall should show directional color separation as the key confirmation.
+**Runtime validation status:** All 5a–5e changes compile clean. Visual A/B (directional vs isotropic merge, D-scaled vs fixed) has not yet been run. Key validation: Phase 5c ON vs OFF at C0/C1 boundary; Phase 5e scaled vs fixed at C2/C3 boundary. Bin viewer (mode 5) near a red wall should show directional color separation as the primary 5c confirmation.
 
-See `phase5bc_impl_learnings.md` and `phase5_debug_impl_learnings.md` for implementation details and known gotchas.
+See `phase5bc_impl_learnings.md`, `phase5d_impl_learnings.md`, `phase5e_impl_learnings.md`, and `phase5_debug_impl_learnings.md` for implementation details.
 
 ---
 

@@ -3,7 +3,9 @@
 **Date:** 2026-04-28
 **Branch:** 3d
 **Status:** Phase 5d is a verified no-op under the current co-located architecture.
-**Outcome:** Co-location is an architectural choice with measurable trade-offs. Non-co-located cascades (ShaderToy-style) are a planned follow-on feature with a runtime toggle.
+**Outcome:** Co-location is an architectural choice with measurable trade-offs. Non-co-located cascades (ShaderToy-style, probe-resolution halving only; no spatial interpolation merge) were added as a runtime-switchable mode in commit `a13e020`. See `phase5d_impl_learnings.md`.
+
+> **Historical context:** The code evidence below was captured against the pre-toggle architecture (all cascades at 32³, 2026-04-28 before the toggle existed). The co-located no-op proof is correct for that snapshot. The live codebase now uses `useColocatedCascades`, per-cascade `uProbeCellSize`, `uUpperToCurrentScale`, and `uUpperProbeCellSize`. A post-implementation finding (the non-co-located visibility check is also inert) is summarised at the end of this document.
 
 ---
 
@@ -99,12 +101,12 @@ Upper cascade probes are at different world positions from lower cascade probes.
 
 **Co-located cascades are retained as the default** -- they are simpler and correct for scenes where cascade intervals are small relative to geometry thickness.
 
-**Non-co-located cascades will be added as a runtime-switchable mode** with a "Co-located / ShaderToy-style" toggle. This enables an A/B comparison of:
+**Non-co-located cascades were added as a runtime-switchable mode** (commit `a13e020`) with a "Co-located / ShaderToy-style (probe-resolution halving only; no spatial interpolation merge)" toggle. This enables an A/B comparison of:
 - Memory and compute cost per cascade (lower for coarser upper cascades)
 - Merge quality at cascade boundaries
 - Phase 5d visibility weighting (active only in non-co-located mode)
 
-See `phase5d_impl_learnings.md` for the implementation details.
+See `phase5d_impl_learnings.md` for the implementation details and the post-implementation finding that the non-co-located visibility check is also structurally inert.
 
 ---
 
@@ -116,3 +118,11 @@ See `phase5d_impl_learnings.md` for the implementation details.
 | `src/demo3d.cpp:948-953` | `updateSingleCascade()` -- same spatial uniforms for all dispatches |
 | `res/shaders/radiance_3d.comp:63-66` | `probeToWorld()` -- world pos from probePos * uBaseInterval |
 | `res/shaders/radiance_3d.comp:173-183` | tMin/tMax interval computation from uCascadeIndex |
+
+---
+
+## Post-Implementation Finding (2026-04-28)
+
+Even after implementing non-co-located cascades, the Phase 5d Euclidean-distance visibility check is also structurally inert under the current interval design. See `phase5d_impl_learnings.md` section "Phase 5d Visibility Check: Structural No-Op" for the full proof.
+
+**One-line conclusion:** the current 4x-interval / 2x-halving scheme means `distToUpper ~= 0.108m < tMin_upper = 0.125m` for all cascade pairs -- the condition `visHit < distToUpper * 0.9` cannot be satisfied, so the visibility filter never zeros any upper contribution.

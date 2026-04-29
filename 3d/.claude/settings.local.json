@@ -36,7 +36,12 @@
       "Bash(sed -n '368,390p' src/demo3d.cpp)",
       "Bash(sed -n '1386,1396p' src/demo3d.cpp)",
       "Bash(sed -n '2080,2095p' src/demo3d.cpp)",
-      "Bash(sed -n '2258,2272p' src/demo3d.cpp)"
+      "Bash(sed -n '2258,2272p' src/demo3d.cpp)",
+      "Bash(start \"\" \"build\\\\RadianceCascades3D.exe\")",
+      "Bash(taskkill /IM RadianceCascades3D.exe /F)",
+      "Bash(powershell -Command \"Stop-Process -Name RadianceCascades3D -Force -ErrorAction SilentlyContinue; Start-Sleep 1; Start-Process 'd:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\\\\RadianceCascades3D.exe'; Write-Host 'relaunched'\")",
+      "Bash(powershell -Command \"Stop-Process -Name RadianceCascades3D -Force -ErrorAction SilentlyContinue\")",
+      "Bash(tasklist)"
     ]
   }
 }
