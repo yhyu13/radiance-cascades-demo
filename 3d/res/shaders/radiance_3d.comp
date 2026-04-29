@@ -1,10 +1,11 @@
 /**
  * @file radiance_3d.comp
- * @brief Compute shader for 3D Radiance Cascade injection (Phase 5b+5c)
+ * @brief Compute shader for 3D Radiance Cascade injection (Phase 5b+5c+5d trilinear)
  *
  * Phase 5b: writes per-direction radiance into a D×D tile atlas (oAtlas).
- * Phase 5c: upper-cascade merge uses per-direction texelFetch from uUpperCascadeAtlas
- *            instead of the old isotropic texture(uUpperCascade, uvwProbe).
+ * Phase 5c: upper-cascade merge uses per-direction texelFetch from uUpperCascadeAtlas.
+ * Phase 5d: non-co-located path uses 8-neighbor spatial trilinear across upper probes.
+ * Phase 5f: directional bilinear within each upper probe's D×D tile.
  * The isotropic probeGridTexture is written by reduction_3d.comp after this pass.
  */
 
@@ -21,9 +22,11 @@ uniform int   uCascadeCount;
 uniform float uBaseInterval;   // C0's cellSize (0.125) -- always used for tMin/tMax formula
 uniform float uProbeCellSize;  // this cascade's cellSize for probeToWorld()
 // Phase 5d: upper-cascade spatial scale.
-// 0=no upper; 1=co-located (same index); 2=non-co-located (probePos/2)
+// 0=no upper; 1=co-located (same index); 2=non-co-located (trilinear 8-neighbor)
 uniform int   uUpperToCurrentScale;
-uniform float uUpperProbeCellSize;  // upper cascade's cellSize for Phase 5d visibility check
+uniform float uUpperProbeCellSize;  // upper cascade's cellSize for Phase 5d trilinear
+uniform ivec3 uUpperVolumeSize;     // Phase 5d trilinear: upper cascade probe grid dims for clamping
+uniform int   uUseSpatialTrilinear; // Phase 5d: 1=8-neighbor trilinear (non-co-located), 0=nearest-parent
 
 uniform ivec3 uVolumeSize;     // probe grid dimensions (e.g. 32^3)
 uniform vec3  uGridSize;       // SDF volume size in world units (e.g. 4,4,4)
@@ -46,10 +49,12 @@ uniform sampler3D uAlbedo;
 uniform sampler3D uUpperCascadeAtlas;
 // Phase 5 debug: isotropic fallback for A/B comparison (probeGridTexture of upper cascade)
 uniform sampler3D uUpperCascade;
-uniform int       uUseDirectionalMerge; // 1=directional texelFetch (5c), 0=isotropic texture() (Phase 4)
+uniform int       uUseDirectionalMerge; // 1=directional texelFetch (5c/5f), 0=isotropic texture() (Phase 4)
+uniform int       uUseDirBilinear;     // 5f: 1=bilinear across 4 direction bins (default), 0=nearest-bin (Phase 5c)
 uniform int       uHasUpperCascade;
 uniform float     uBlendFraction;  // 0.0 = binary (Phase 3), default 0.5
-uniform int       uDirRes;         // Phase 5a: octahedral bin resolution (D); D^2 rays per probe
+uniform int       uDirRes;         // Phase 5a/5e: octahedral bin resolution (D) for this cascade
+uniform int       uUpperDirRes;    // Phase 5e: upper cascade D (== uDirRes when D-scaling is OFF)
 
 // Phase 5b: per-direction atlas write target — (res*D)×(res*D)×res RGBA16F
 layout(rgba16f) uniform image3D oAtlas;
@@ -104,6 +109,66 @@ ivec2 dirToBin(vec3 dir, int D) {
 vec3 binToDir(ivec2 bin, int D) {
     vec2 oct = (vec2(bin) + 0.5) / float(D);
     return octToDir(oct);
+}
+
+// Phase 5f: sample upper cascade atlas with optional directional bilinear interpolation.
+// Bilinear blends 4 surrounding bin centers instead of snapping to nearest bin.
+// octScaled = oct*D - 0.5 maps bin-k center to integer k, so fract() gives center-to-center weight.
+// All bin indices are clamped to [0, D-1] — no cross-probe reads (GL_NEAREST safe).
+vec3 sampleUpperDir(ivec3 upperProbePos, vec3 rayDir, int D) {
+    if (uUseDirBilinear == 0) {
+        ivec2 bin = dirToBin(rayDir, D);
+        return texelFetch(uUpperCascadeAtlas,
+            ivec3(upperProbePos.x*D+bin.x, upperProbePos.y*D+bin.y, upperProbePos.z),
+            0).rgb;
+    }
+    // Clamp octScaled to [0, D-1] before floor/fract.
+    // Without this, octScaled < 0 (e.g. -0.1) gives fract = 0.9 → 90% weight on bin 1
+    // even though the direction maps to bin 0. The clamp makes fract(0) = 0 → 100% bin 0.
+    vec2 octScaled = clamp(dirToOct(rayDir) * float(D) - 0.5, 0.0, float(D - 1));
+    ivec2 b00 = ivec2(floor(octScaled));          // in [0, D-1] after clamp; no further clamp needed
+    ivec2 b11 = clamp(b00 + ivec2(1), ivec2(0), ivec2(D-1));
+    ivec2 b10 = ivec2(b11.x, b00.y);
+    ivec2 b01 = ivec2(b00.x, b11.y);
+    vec2  f   = fract(octScaled);
+    int bx = upperProbePos.x * D, by = upperProbePos.y * D, bz = upperProbePos.z;
+    vec3 s00 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b00.x, by+b00.y, bz), 0).rgb;
+    vec3 s10 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b10.x, by+b10.y, bz), 0).rgb;
+    vec3 s01 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b01.x, by+b01.y, bz), 0).rgb;
+    vec3 s11 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b11.x, by+b11.y, bz), 0).rgb;
+    return mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
+}
+
+// Phase 5d trilinear: spatially blend 8 surrounding upper probes at the same direction bin.
+// triP000/triF are pre-computed per probe outside the direction loop.
+// Each corner delegates to sampleUpperDir() which handles Phase 5f directional bilinear.
+// +1 corners are clamped to [0, uUpperVolumeSize-1] to prevent OOB texelFetch.
+// At high spatial border triF == 0 so +1 samples carry zero blend weight — the clamp
+// to the border probe is correct (GL_CLAMP_TO_EDGE semantics, same as Phase 5f high edge).
+vec3 sampleUpperDirTrilinear(ivec3 triP000, vec3 triF, vec3 rayDir, int Du) {
+    ivec3 hi   = uUpperVolumeSize - ivec3(1);
+    ivec3 p100 = clamp(triP000 + ivec3(1,0,0), ivec3(0), hi);
+    ivec3 p010 = clamp(triP000 + ivec3(0,1,0), ivec3(0), hi);
+    ivec3 p110 = clamp(triP000 + ivec3(1,1,0), ivec3(0), hi);
+    ivec3 p001 = clamp(triP000 + ivec3(0,0,1), ivec3(0), hi);
+    ivec3 p101 = clamp(triP000 + ivec3(1,0,1), ivec3(0), hi);
+    ivec3 p011 = clamp(triP000 + ivec3(0,1,1), ivec3(0), hi);
+    ivec3 p111 = clamp(triP000 + ivec3(1,1,1), ivec3(0), hi);
+    vec3 s000 = sampleUpperDir(triP000, rayDir, Du);
+    vec3 s100 = sampleUpperDir(p100,   rayDir, Du);
+    vec3 s010 = sampleUpperDir(p010,   rayDir, Du);
+    vec3 s110 = sampleUpperDir(p110,   rayDir, Du);
+    vec3 s001 = sampleUpperDir(p001,   rayDir, Du);
+    vec3 s101 = sampleUpperDir(p101,   rayDir, Du);
+    vec3 s011 = sampleUpperDir(p011,   rayDir, Du);
+    vec3 s111 = sampleUpperDir(p111,   rayDir, Du);
+    vec3 sx00 = mix(s000, s100, triF.x);
+    vec3 sx10 = mix(s010, s110, triF.x);
+    vec3 sx01 = mix(s001, s101, triF.x);
+    vec3 sx11 = mix(s011, s111, triF.x);
+    vec3 sxy0 = mix(sx00, sx10, triF.y);
+    vec3 sxy1 = mix(sx01, sx11, triF.y);
+    return mix(sxy0, sxy1, triF.z);
 }
 
 bool inShadow(vec3 hitPos, vec3 lightPos) {
@@ -189,6 +254,37 @@ void main() {
     float blendWidth = (tMax - tMin) * uBlendFraction;
     vec3  uvwProbe   = (worldPos - uGridOrigin) / uGridSize;  // for isotropic fallback
 
+    // Phase 5d: upper probe index for co-located path and isotropic fallback.
+    // Co-located: upperProbePos == probePos (scale=1, displacement=0, exact).
+    // Non-co-located: used only by isotropic texelFetch fallback; directional path uses trilinear.
+    ivec3 upperProbePos = (uUpperToCurrentScale > 0)
+        ? (probePos / uUpperToCurrentScale)
+        : ivec3(0);
+
+    // Phase 5d trilinear: pre-compute 8-neighbor base corner and blend weights.
+    // Only computed for non-co-located + directional merge + trilinear ON.
+    // The -0.5 converts edge-aligned grid coords to center-aligned probe-center coords
+    // (same pattern as directional bilinear's -0.5 in sampleUpperDir).
+    // Note: Phase 5d visibility (inert — distToUpper < tMin_upper for all cascade pairs)
+    // is intentionally removed. A per-neighbor weighted version would be correct but adds
+    // 8x cost for a check that has never fired analytically.
+    ivec3 triP000 = ivec3(0);
+    vec3  triF    = vec3(0.0);
+    if (uUpperToCurrentScale == 2 && uUseSpatialTrilinear != 0
+            && uHasUpperCascade != 0 && uUseDirectionalMerge != 0) {
+        vec3 upperGrid = (worldPos - uGridOrigin) / uUpperProbeCellSize - 0.5;
+        // Clamp continuous coordinate to [0, upperRes-1] BEFORE floor/fract.
+        // This is the spatial analogue of Phase 5f's:
+        //   octScaled = clamp(dirToOct(dir)*D - 0.5, 0, D-1)
+        // At low border:  clamped=0   → floor=0,  fract=0 → 100% probe 0
+        // At high border: clamped=N-1 → floor=N-1, fract=0 → 100% probe N-1
+        vec3 upperGridClamped = clamp(upperGrid,
+                                      vec3(0.0),
+                                      vec3(uUpperVolumeSize - ivec3(1)));
+        triP000 = ivec3(floor(upperGridClamped));
+        triF    = fract(upperGridClamped);
+    }
+
     // Phase 5b+5c: per-direction loop — write each bin to atlas, merge directionally
     for (int dy = 0; dy < uDirRes; ++dy) {
         for (int dx = 0; dx < uDirRes; ++dx) {
@@ -200,42 +296,23 @@ void main() {
                                    probePos.y * uDirRes + dy,
                                    probePos.z);
 
-            // Phase 5d: upper probe index.
-            // uUpperToCurrentScale: 0=no upper, 1=co-located (same), 2=non-co-located (halved)
-            ivec3 upperProbePos = (uUpperToCurrentScale > 0)
-                ? (probePos / uUpperToCurrentScale)
-                : ivec3(0);
-            ivec3 upperAtlasTxl = ivec3(upperProbePos.x * uDirRes + dx,
-                                        upperProbePos.y * uDirRes + dy,
-                                        upperProbePos.z);
-
-            // Phase 5c / debug toggle: directional texelFetch or isotropic texture() fallback
+            // Phase 5c/5f/5d: directional merge (bilinear or nearest-bin) or isotropic fallback.
+            // Directional path: non-co-located uses 8-neighbor spatial trilinear (Phase 5d);
+            //   co-located uses single probe (displacement=0, trilinear trivially exact).
+            // Isotropic path respects uUseDirBilinear:
+            //   ON  → texture() with hardware trilinear (probeGridTexture is GL_LINEAR by default)
+            //   OFF → texelFetch(upperProbePos) — nearest-probe, ignores sampler filter mode
             vec3 upperDir = vec3(0.0);
             if (uHasUpperCascade != 0) {
-                if (uUseDirectionalMerge != 0)
-                    upperDir = texelFetch(uUpperCascadeAtlas, upperAtlasTxl, 0).rgb;
-                else
+                if (uUseDirectionalMerge != 0) {
+                    if (uUpperToCurrentScale == 2 && uUseSpatialTrilinear != 0)
+                        upperDir = sampleUpperDirTrilinear(triP000, triF, rayDir, uUpperDirRes);
+                    else
+                        upperDir = sampleUpperDir(upperProbePos, rayDir, uUpperDirRes);
+                } else if (uUseDirBilinear != 0) {
                     upperDir = texture(uUpperCascade, uvwProbe).rgb;
-            }
-
-            // Phase 5d: probe visibility weighting (active only in non-co-located mode).
-            // Check whether the upper probe can see the current probe's world position.
-            // If blocked, zero the upper contribution to prevent cross-wall bleed.
-            if (uUpperToCurrentScale == 2 && uHasUpperCascade != 0) {
-                vec3 wUpper = uGridOrigin + (vec3(upperProbePos) + 0.5) * uUpperProbeCellSize;
-                vec3 toCurrentFromUpper = worldPos - wUpper;
-                float distToUpper = length(toCurrentFromUpper);
-                if (distToUpper > 1e-4) {
-                    ivec2 visBin = dirToBin(toCurrentFromUpper / distToUpper, uDirRes);
-                    ivec3 visTxl = ivec3(upperProbePos.x * uDirRes + visBin.x,
-                                         upperProbePos.y * uDirRes + visBin.y,
-                                         upperProbePos.z);
-                    float visHit = texelFetch(uUpperCascadeAtlas, visTxl, 0).a;
-                    // visHit > 0: surface was hit at that distance.
-                    // If the hit was closer than 90% of the distance to us, the upper
-                    // probe's view is occluded -- discard its contribution.
-                    if (visHit > 0.0 && visHit < distToUpper * 0.9)
-                        upperDir = vec3(0.0);
+                } else {
+                    upperDir = texelFetch(uUpperCascade, upperProbePos, 0).rgb;
                 }
             }
 

@@ -640,6 +640,12 @@ private:
     
     /** Base interval size in voxels */
     float baseInterval;
+
+    /** C0 probe grid resolution (powers of 2: 8/16/32/64). All other cascades derived from this.
+     *  co-located: all cascades use cascadeC0Res^3.
+     *  non-co-located: Ci uses (cascadeC0Res >> i)^3, halving per level.
+     *  Also sets baseInterval = volumeSize / cascadeC0Res (C0 cell size = tMax_C0). */
+    int cascadeC0Res;
     
     /** Whether to use bilinear filtering for cascades */
     bool cascadeBilinear;
@@ -676,6 +682,20 @@ private:
 
     /** 5d: Per-cascade probe count for fill-rate display (set during probe readback). */
     int  probeTotalPerCascade[MAX_CASCADES];
+
+    /** 5e: Per-cascade D scaling A/B toggle. false=all D4 (default); true=C0=D2,C1=D4,C2=D8,C3=D16. */
+    bool useScaledDirRes;
+    /** 5e: Per-cascade directional resolution (D). Computed in initCascades(). */
+    int  cascadeDirRes[MAX_CASCADES];
+
+    /** 5f: Bilinear interpolation across 4 surrounding direction bins when reading upper cascade.
+     *  true (default): smooth blend eliminates hard bin-boundary banding/bleeding.
+     *  false: nearest-bin texelFetch (Phase 5c behaviour, useful for A/B comparison). */
+    bool useDirBilinear;
+    /** Phase 5d trilinear: 8-neighbor spatial interpolation when reading upper cascade
+     *  in non-co-located mode. true=trilinear (default), false=nearest-parent (Phase 5d baseline).
+     *  No effect in co-located mode (upper probe is at same position; trilinear is trivially exact). */
+    bool useSpatialTrilinear;
 
     // =============================================================================
     // Shaders

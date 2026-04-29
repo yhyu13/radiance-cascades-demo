@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-28
 **Branch:** 3d
-**Status:** Implemented, compiled (0 errors). Phase 5d visibility check proven no-op analytically. Runtime GI A/B pending.
+**Status:** Layout toggle: implemented, compiled (0 errors), runtime A/B pending. Visibility-weighting: implemented but inert (proven analytically -- distToUpper ~= 0.108m < tMin_upper = 0.125m for all cascade pairs).
 **Follows:** `phase5d_logic_check.md` (co-location no-op proof) + `phase5bc_impl_learnings.md`
 
 ---
@@ -261,6 +261,8 @@ in this direction hit geometry before the current probe". Deferred to Phase 5e a
   (blocky 2x2x2 group reads the same parent) -- potential cascade-boundary seam artifact.
 - Phase 5d visibility weighting: no visual effect (check never fires per analytic proof)
 
+**Open cleanup:** The Phase 5d checkbox HelpMarker in `src/demo3d.cpp:2077-2081` still says "Phase 5d probe visibility check is meaningful" and "upper probes behind a wall zero their contribution" -- text that contradicts the analytic no-op proof. The tooltip should be updated to state the check is currently inert under the 4x-interval / 2x-halving scheme.
+
 ---
 
 ## Files Changed
@@ -271,3 +273,249 @@ in this direction hit geometry before the current probe". Deferred to Phase 5e a
 | `src/demo3d.cpp` | Constructor init + memset; `initCascades()` per-cascade branch; `render()` `lastColocated` tracking; `updateSingleCascade()` `uBaseInterval` split + 3 new uniforms; probe readback per-cascade buffers; `renderCascadePanel()` checkbox, cascade count title, fill-rate `n=` label, HelpMarker de-hardcoded |
 | `res/shaders/radiance_3d.comp` | New uniforms; `probeToWorld()` -> `uProbeCellSize`; split `atlasTxl`/`upperAtlasTxl`; Phase 5d visibility block |
 | `doc/cluade_plan/phase5d_logic_check.md` | Fixed cross-reference: `phase5d_noncolocated_plan.md` -> `phase5d_impl_learnings.md` |
+
+---
+
+## Design Rationale Addendum (2026-04-29)
+
+### Why 1:8 (not 1:4) — ShaderToy is 2D, we are 3D
+
+The ShaderToy reference uses **2D probes**. It halves each spatial axis once per level:
+N → N/2. In 2D, one upper probe covers a 2×2 block = **4 lower probes**.
+
+We use **3D volumetric probes**. The same halve-per-axis rule applies:
+N → N/2 per axis. In 3D, one upper probe covers a 2×2×2 block = **8 lower probes**.
+
+`baseRes >> i` implements this: 32→16→8→4, halving each axis once per level.
+The ratio 1:4 is the 2D answer; 1:8 is the correct 3D extension of the same rule.
+
+### Why not 4× halving per axis?
+
+If we halved each axis by 4× (instead of 2×) to match the 4× interval growth:
+```
+C0: 32³, spacing 0.125 m
+C1:  8³, spacing 0.500 m
+C2:  2³, spacing 2.000 m   ← spacing equals C2's tMin; barely 2 probes across the scene
+C3: 0.5³                   ← non-integer, degenerate
+```
+
+4× per axis means probe spacing grows at the same rate as interval tMin. By C3, one probe
+covers the entire scene. The correctness requirement is that probe spacing stays
+**sub-interval** at every level so that each point in the scene is close enough to a probe
+that the probe's answer is representative. 2× per axis satisfies this; 4× does not.
+
+### Probe centering — algebraic proof
+
+`probeToWorld()` places probe at index j at: `gridOrigin + (j + 0.5) × cellSize`
+
+C1 probe j=0 (cellSize=0.25 m): world = gridOrigin + **0.125 m**
+
+The 2×2×2 block of C0 probes it covers (per axis: index 0 and 1):
+```
+C0[0]: gridOrigin + 0.5 × 0.125 = gridOrigin + 0.0625 m
+C0[1]: gridOrigin + 1.5 × 0.125 = gridOrigin + 0.1875 m
+centroid:                          gridOrigin + 0.1250 m  ✓
+```
+
+The `+ 0.5` convention in `probeToWorld` guarantees centering algebraically for any level.
+This is not a coincidence — for the general case, C_i probe j covers C_{i-1} probes 2j
+and 2j+1. Their centroid is `(2j + 0.5 + 2j + 1.5)/2 × old_cellSize = (j + 0.5) × 2 × old_cellSize
+= (j + 0.5) × new_cellSize`. This matches the C_i probe position exactly.
+
+**No code change needed.** The `+ 0.5` convention makes centering automatic at all levels.
+
+### Centering is necessary but not sufficient — the remaining gap
+
+Even with correct centering, reading only one upper probe is an approximation. A C0 probe
+at position P reads C1's answer for the centroid of its 8-probe block, which is up to
+**half a C1 cell away** from P:
+
+```
+max displacement (C0 probe to C1 parent) = √3 × (C1 cellSize / 2) = √3 × 0.125 ≈ 0.217 m
+```
+
+For a C1 interval of [0.125, 0.5 m], a 0.217 m spatial error is large (the offset is
+1.7× the interval width).
+
+The correct fix is **spatial trilinear interpolation across the 8 nearest upper-cascade
+probes** (trilinear = 8-neighbor blend in 3D; ShaderToy's `WeightedSample()` is the 2D
+analogue blending 4 neighbors). The full implementation math (from Codex doc
+`09_phase5d_trilinear_upper_lookup.md`):
+
+**Step 1 — map world position into upper probe-center space:**
+```glsl
+// -0.5 converts edge-aligned grid coordinates to center-aligned, same pattern as
+// directional bilinear's -0.5 offset in sampleUpperDir()
+vec3 upperGrid = (worldPos - uGridOrigin) / upperCellSize - 0.5;
+// clamp to upperRes-2, not upperRes-1, so p000+1 never goes out of bounds
+ivec3 p000 = clamp(ivec3(floor(upperGrid)), ivec3(0), upperRes - ivec3(2));
+vec3  f    = fract(upperGrid);
+```
+
+**Step 2 — read directional sample from each of the 8 corner upper probes:**
+```glsl
+vec3 sampleUpperProbeDir(ivec3 p, vec3 rayDir, int Du) {
+    ivec2 bin = dirToBin(rayDir, Du);
+    return texelFetch(uUpperCascadeAtlas,
+        ivec3(p.x * Du + bin.x, p.y * Du + bin.y, p.z), 0).rgb;
+}
+vec3 s000 = sampleUpperProbeDir(p000,                 rayDir, Du);
+vec3 s100 = sampleUpperProbeDir(p000 + ivec3(1,0,0), rayDir, Du);
+// ... s010, s110, s001, s101, s011, s111 (8 total)
+```
+
+**Step 3 — trilinear blend:**
+```glsl
+vec3 sx00 = mix(s000, s100, f.x);  vec3 sx10 = mix(s010, s110, f.x);
+vec3 sx01 = mix(s001, s101, f.x);  vec3 sx11 = mix(s011, s111, f.x);
+vec3 sxy0 = mix(sx00, sx10, f.y);  vec3 sxy1 = mix(sx01, sx11, f.y);
+vec3 upperDir = mix(sxy0, sxy1, f.z);
+```
+
+**Visibility weighting attaches per-neighbor, not globally:**
+The current Phase 5d visibility check fires once and zeroes the entire upper contribution.
+The correct design weights each of the 8 upper probes individually, then renormalizes:
+```glsl
+// per corner Pi: w = trilinear_weight(Pi) * vis_weight(Pi, worldPos, rayDir)
+// result: accum / wsum  (fallback vec3(0) if wsum == 0)
+```
+Our current global-zero approach discards good data from 7 unoccluded neighbors when
+only 1 is blocked — worse than ignoring the check entirely.
+
+**Our implementation reads only the single nearest upper probe.** This is the remaining
+structural gap vs ShaderToy in non-co-located mode. Co-located mode sidesteps the issue
+(displacement = 0 m; nearest probe IS the correct probe; all 8 neighbors are identical).
+
+### Summary
+
+| Question | Answer |
+|---|---|
+| ShaderToy ratio | 1:4 (2D: one upper covers 2×2 lower) |
+| Our 3D ratio | 1:8 (3D: one upper covers 2×2×2 lower) |
+| Centering correct? | Yes — algebraically proven via the `+0.5` convention |
+| Centering enough? | No — spatial **trilinear** across 8 upper neighbors also needed |
+| Do we have spatial trilinear? | No. Single nearest probe only. Known gap. |
+| Visibility weighting | Structurally wrong (global zero); should be per-neighbor weighted sum |
+| When does gap not matter? | Co-located mode: displacement = 0 m |
+
+---
+
+## Phase 5d Trilinear Implementation (2026-04-29)
+
+**Status:** Implemented, pending build verification. Closes the structural gap documented above.
+
+### What was implemented
+
+**Goal:** replace the blocky `probePos / 2` single-parent lookup in non-co-located mode
+with 8-neighbor spatial trilinear interpolation. The global `upperOccluded` visibility
+check was removed (it is analytically inert for all cascade pairs; a per-neighbor version
+would be correct but adds 8× cost for zero measured benefit).
+
+### Critical math bug found and fixed (Codex review F1)
+
+The initial trilinear plan had a border-weight bug matching the Phase 5f low-edge issue:
+
+```glsl
+// WRONG — fract computed from unclamped value
+vec3 upperGrid = (worldPos - uGridOrigin) / uUpperProbeCellSize - 0.5;
+triP000 = clamp(ivec3(floor(upperGrid)), ivec3(0), max(uUpperVolumeSize - ivec3(2), ivec3(0)));
+triF    = fract(upperGrid);  // ← bug: -0.25 gives fract=0.75 → 75% toward probe 1
+```
+
+Concrete failure for first C0 probe (worldPos-origin = 0.0625m, upperCellSize = 0.25m):
+- `upperGrid = 0.0625/0.25 - 0.5 = -0.25`
+- `floor(-0.25) = -1`, clamped to 0 → `triP000.x = 0` ✓
+- `fract(-0.25) = 0.75` → 75% weight toward probe 1 ✗ (should be 100% probe 0)
+
+**Fix — clamp the continuous coordinate BEFORE floor/fract:**
+
+```glsl
+vec3 upperGrid = (worldPos - uGridOrigin) / uUpperProbeCellSize - 0.5;
+// Same invariant as Phase 5f directional bilinear:
+//   octScaled = clamp(dirToOct(dir)*D - 0.5, 0, D-1)
+// At low border:  clamped=0   → floor=0,  fract=0 → 100% probe 0 ✓
+// At high border: clamped=N-1 → floor=N-1, fract=0 → 100% probe N-1 ✓
+vec3 upperGridClamped = clamp(upperGrid, vec3(0.0), vec3(uUpperVolumeSize - ivec3(1)));
+triP000 = ivec3(floor(upperGridClamped));
+triF    = fract(upperGridClamped);
+```
+
+This pattern (`clamp(continuousCoord, 0, N-1)` before `floor`/`fract`) is now consistent
+across both directional (Phase 5f, octahedral space) and spatial (Phase 5d, world space)
+interpolation.
+
+### New `sampleUpperDirTrilinear()` function
+
+```glsl
+vec3 sampleUpperDirTrilinear(ivec3 triP000, vec3 triF, vec3 rayDir, int Du) {
+    ivec3 hi   = uUpperVolumeSize - ivec3(1);  // max valid probe index per axis
+    ivec3 p100 = clamp(triP000 + ivec3(1,0,0), ivec3(0), hi);
+    // ... 6 more +1 corners, all clamped to hi
+    vec3 s000 = sampleUpperDir(triP000, rayDir, Du);  // Phase 5f bilinear inside
+    // ... 7 more corners
+    vec3 sx00 = mix(s000, s100, triF.x); vec3 sx10 = mix(s010, s110, triF.x);
+    vec3 sx01 = mix(s001, s101, triF.x); vec3 sx11 = mix(s011, s111, triF.x);
+    vec3 sxy0 = mix(sx00, sx10, triF.y); vec3 sxy1 = mix(sx01, sx11, triF.y);
+    return mix(sxy0, sxy1, triF.z);
+}
+```
+
+Key design: each corner delegates to `sampleUpperDir()`, which already handles Phase 5f
+directional bilinear. Each `+1` corner is clamped to `hi = uUpperVolumeSize - ivec3(1)`.
+At the high spatial border `triF = 0.0`, so the clamped `+1` samples have zero blend
+weight — correct GL_CLAMP_TO_EDGE semantics without border probes.
+
+**Why `uUpperVolumeSize - ivec3(1)` (not `- ivec3(2)`):**
+The old plan used `- ivec3(2)` on the *integer* base corner to ensure `p000+1` didn't go
+OOB. But this was paired with unclamped `fract`, giving wrong weights. After clamping the
+continuous coord to `[0, N-1]`, `floor(N-1) = N-1`, so `p000.max = N-1` and
+`p000+1 = N` — only safe if we then clamp `p000+1` to `hi = N-1`. The two-clamp
+approach (continuous coord + each +1 offset) is safer and cleaner.
+
+### New uniforms
+
+```glsl
+uniform ivec3 uUpperVolumeSize;     // upper cascade probe grid dims (for +1 clamping)
+uniform int   uUseSpatialTrilinear; // 1=8-neighbor trilinear, 0=nearest-parent
+```
+
+### C++ changes
+
+| Location | Change |
+|---|---|
+| `demo3d.h` | `bool useSpatialTrilinear;` (default true) |
+| constructor | `, useSpatialTrilinear(true)` |
+| `render()` | tracking block: sets `cascadeReady=false` on toggle (no atlas rebuild needed) |
+| `updateSingleCascade()` | pushes `uUpperVolumeSize = ivec3(cascades[ci+1].resolution)` and `uUseSpatialTrilinear` |
+| `renderCascadePanel()` | checkbox disabled when `useColocatedCascades` is true |
+
+### Routing logic in the direction loop
+
+```glsl
+if (uHasUpperCascade != 0) {
+    if (uUseDirectionalMerge != 0) {
+        if (uUpperToCurrentScale == 2 && uUseSpatialTrilinear != 0)
+            upperDir = sampleUpperDirTrilinear(triP000, triF, rayDir, uUpperDirRes);
+        else
+            upperDir = sampleUpperDir(upperProbePos, rayDir, uUpperDirRes);
+    } else if (uUseDirBilinear != 0) {
+        upperDir = texture(uUpperCascade, uvwProbe).rgb;
+    } else {
+        upperDir = texelFetch(uUpperCascade, upperProbePos, 0).rgb;
+    }
+}
+```
+
+Co-located (`uUpperToCurrentScale=1`): trilinear branch not taken; `sampleUpperDir` used
+with `upperProbePos=probePos` (displacement=0, exact). **Zero regression.**
+
+Non-co-located + trilinear OFF: `sampleUpperDir(probePos/2, ...)` — same as original
+Phase 5d. **Zero regression.**
+
+### Scope limitation
+
+This implements the **spatial interpolation half** of ShaderToy's `WeightedSample()`.
+The per-neighbor visibility weighting (second half) is intentionally deferred:
+- Current visibility check is analytically inert (distToUpper < tMin_upper)
+- Per-corner weighting would add 8× cost for a check that has never fired
+- A per-neighbor version would be correct but is not needed for the current quality target

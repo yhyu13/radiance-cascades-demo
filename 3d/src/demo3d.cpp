@@ -106,6 +106,10 @@ Demo3D::Demo3D()
     , dirRes(4)
     , useDirectionalMerge(true)
     , useColocatedCascades(true)
+    , useScaledDirRes(false)
+    , useDirBilinear(true)
+    , useSpatialTrilinear(true)
+    , cascadeC0Res(32)
     , atlasBinDx(0)
     , atlasBinDy(0)
     , activeShader(0)
@@ -175,6 +179,7 @@ Demo3D::Demo3D()
      */
     
     std::memset(probeTotalPerCascade, 0, sizeof(probeTotalPerCascade));
+    for (int i = 0; i < MAX_CASCADES; ++i) cascadeDirRes[i] = dirRes;
     std::memset(probeNonZero,    0, sizeof(probeNonZero));
     std::memset(probeSurfaceHit, 0, sizeof(probeSurfaceHit));
     std::memset(probeSkyHit,     0, sizeof(probeSkyHit));
@@ -220,7 +225,7 @@ Demo3D::Demo3D()
     
     // Step 7: Set up initial scene
     std::cout << "\n[Demo3D] Setting up initial scene..." << std::endl;
-    setScene(0); // Empty room
+    setScene(1); // Cornell Box (default test scene)
     
     // Step 8: Initialize ImGui
     ImGui::GetIO().IniFilename = NULL;
@@ -312,8 +317,8 @@ void Demo3D::processInput() {
     
     // Phase 1: Radiance Debug Controls
     if (IsKeyPressed(KEY_F)) {
-        radianceVisualizeMode = (radianceVisualizeMode + 1) % 6;
-        const char* radModes[] = { "Slice", "MaxProj", "Avg", "Atlas", "HitType", "Bin" };
+        radianceVisualizeMode = (radianceVisualizeMode + 1) % 7;
+        const char* radModes[] = { "Slice", "MaxProj", "Avg", "Atlas", "HitType", "Bin", "Bilinear" };
         std::cout << "[Demo3D] Radiance Debug Mode: " << radModes[radianceVisualizeMode] << std::endl;
     }
 
@@ -375,6 +380,20 @@ void Demo3D::render() {
         lastDirectionalMerge = useDirectionalMerge;
         cascadeReady = false;  // directional/isotropic toggle → recompute all cascades
     }
+    static bool lastDirBilinear = true;
+    if (useDirBilinear != lastDirBilinear) {
+        lastDirBilinear = useDirBilinear;
+        cascadeReady = false;  // bilinear toggle changes merge result → recompute all cascades
+        std::cout << "[5f] dir bilinear: " << (useDirBilinear ? "ON" : "OFF") << std::endl;
+    }
+    static bool lastSpatialTrilinear = true;
+    if (useSpatialTrilinear != lastSpatialTrilinear) {
+        lastSpatialTrilinear = useSpatialTrilinear;
+        cascadeReady = false;
+        std::cout << "[5d] spatial trilinear: "
+                  << (useSpatialTrilinear ? "ON (8-neighbor)" : "OFF (nearest-parent)")
+                  << std::endl;
+    }
     // Phase 5d: co-located toggle changes texture dimensions -- must destroy+rebuild
     static bool lastColocated = true;
     if (useColocatedCascades != lastColocated) {
@@ -386,6 +405,29 @@ void Demo3D::render() {
                   << (useColocatedCascades ? "co-located (all 32^3)" : "non-co-located (32/16/8/4)")
                   << std::endl;
     }
+    // Phase 5e: D-scaling toggle changes atlas dimensions -- must destroy+rebuild
+    static bool lastScaledDirRes = false;
+    if (useScaledDirRes != lastScaledDirRes) {
+        lastScaledDirRes = useScaledDirRes;
+        destroyCascades();
+        initCascades();
+        cascadeReady = false;
+        std::cout << "[5e] dir scaling: "
+                  << (useScaledDirRes ? "scaled (D2/D4/D8/D16)" : "fixed (all D4)")
+                  << std::endl;
+    }
+
+    // C0 probe resolution slider — changes interval and atlas dimensions
+    static int lastC0Res = 32;
+    if (cascadeC0Res != lastC0Res) {
+        lastC0Res = cascadeC0Res;
+        destroyCascades();
+        initCascades();
+        cascadeReady = false;
+        std::cout << "[C0] probe res: " << cascadeC0Res
+                  << "^3  baseInterval=" << baseInterval << "m" << std::endl;
+    }
+
     static float lastBlendFrac = -1.0f;
     if (blendFraction != lastBlendFrac) {
         std::cout << "[4c] blendFraction " << lastBlendFrac << " -> " << blendFraction
@@ -416,7 +458,7 @@ void Demo3D::render() {
             // Phase 5d: per-cascade resolution (32 when co-located; 32>>ci when non-co-located)
             int res     = cascades[ci].resolution;
             int ciTotal = res * res * res;
-            int D       = dirRes;
+            int D       = cascadeDirRes[ci];   // Phase 5e: per-cascade D
             int atlasWH = res * D;
             probeTotalPerCascade[ci] = ciTotal;
 
@@ -982,7 +1024,14 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glUniform3iv(glGetUniformLocation(prog, "uVolumeSize"), 1, glm::value_ptr(volRes));
     glUniform3fv(glGetUniformLocation(prog, "uGridSize"),   1, glm::value_ptr(volumeSize));
     glUniform3fv(glGetUniformLocation(prog, "uGridOrigin"), 1, glm::value_ptr(volumeOrigin));
-    glUniform1i(glGetUniformLocation(prog, "uDirRes"), dirRes);  // Phase 5a: D^2 octahedral bins
+    glUniform1i(glGetUniformLocation(prog, "uDirRes"), cascadeDirRes[cascadeIndex]);  // Phase 5a/5e
+    int upperCascDirRes = hasUpper5d ? cascadeDirRes[cascadeIndex + 1] : cascadeDirRes[cascadeIndex];
+    glUniform1i(glGetUniformLocation(prog, "uUpperDirRes"), upperCascDirRes);  // Phase 5e
+    // Phase 5d trilinear: upper cascade probe grid dimensions for 8-neighbor clamping
+    int upperRes = hasUpper5d ? cascades[cascadeIndex + 1].resolution : 1;
+    glm::ivec3 upperVolRes(upperRes);
+    glUniform3iv(glGetUniformLocation(prog, "uUpperVolumeSize"), 1, glm::value_ptr(upperVolRes));
+    glUniform1i(glGetUniformLocation(prog, "uUseSpatialTrilinear"), useSpatialTrilinear ? 1 : 0);
     glUniform3f(glGetUniformLocation(prog, "uLightPos"),   0.0f, 0.8f, 0.0f);
     glUniform3f(glGetUniformLocation(prog, "uLightColor"), 1.0f, 0.95f, 0.85f);
     glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
@@ -1016,6 +1065,7 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
         glUniform1i(glGetUniformLocation(prog, "uHasUpperCascade"), 0);
     }
     glUniform1i(glGetUniformLocation(prog, "uUseDirectionalMerge"), useDirectionalMerge ? 1 : 0);
+    glUniform1i(glGetUniformLocation(prog, "uUseDirBilinear"),      useDirBilinear      ? 1 : 0);
 
     // Phase 5b: write per-direction radiance into the atlas (not the isotropic grid)
     glBindImageTexture(0, c.probeAtlasTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
@@ -1029,7 +1079,7 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     auto red = shaders.find("reduction_3d.comp");
     if (red != shaders.end()) {
         glUseProgram(red->second);
-        glUniform1i(glGetUniformLocation(red->second, "uDirRes"),      dirRes);
+        glUniform1i(glGetUniformLocation(red->second, "uDirRes"),      cascadeDirRes[cascadeIndex]);
         glUniform3iv(glGetUniformLocation(red->second, "uVolumeSize"), 1, glm::value_ptr(volRes));
 
         glActiveTexture(GL_TEXTURE0);
@@ -1402,8 +1452,9 @@ void Demo3D::initCascades() {
     //   Cascade 3: [16d,      64d ]  = [2.0,   8.0]  (beyond volume diagonal)
     cascadeCount = 4;
 
-    const int   baseRes    = 32;
-    const float baseCellSz = volumeSize.x / float(baseRes);  // 0.125
+    const int   baseRes    = cascadeC0Res;
+    baseInterval           = volumeSize.x / float(baseRes);
+    const float baseCellSz = baseInterval;
 
     for (int i = 0; i < cascadeCount; ++i) {
         // Phase 5d: co-located = all 32^3; non-co-located = 32>>i (32,16,8,4)
@@ -1412,8 +1463,14 @@ void Demo3D::initCascades() {
 
         cascades[i].initialize(probeRes, cellSz, volumeOrigin, baseRaysPerProbe * (1 << i));
 
+        // Phase 5e: per-cascade D. Scaled: C0=D4,C1=D8,C2=D16,C3=D16 (cap 16). Fixed: all D4.
+        // D=2 is degenerate: all 4 bin centers land on the octahedral equatorial fold (z=0),
+        // causing severe directional mismatch when reading upper cascade atlas. Min D is 4.
+        int cascD = useScaledDirRes ? std::min(16, dirRes << i) : dirRes;
+        cascadeDirRes[i] = cascD;
+
         // Phase 5b: per-direction atlas — (res*D)x(res*D)x res RGBA16F, must be GL_NEAREST
-        int atlasXY = probeRes * dirRes;
+        int atlasXY = probeRes * cascD;
         cascades[i].probeAtlasTexture = gl::createTexture3D(
             atlasXY, atlasXY, probeRes,
             GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr);
@@ -1427,7 +1484,7 @@ void Demo3D::initCascades() {
         glBindTexture(GL_TEXTURE_3D, 0);
 
         std::cout << "[Demo3D] Cascade " << i << ": " << probeRes
-                  << "^3 probes, cellSize=" << cellSz
+                  << "^3 probes, D=" << cascD << ", cellSize=" << cellSz
                   << ", atlas=" << atlasXY << "x" << atlasXY << "x" << probeRes
                   << ", active=" << cascades[i].active << std::endl;
     }
@@ -2014,8 +2071,15 @@ void Demo3D::renderCascadePanel() {
     ImGui::Begin("Cascades");
 
     // ── Cascade hierarchy ────────────────────────────────────────────────────
-    ImGui::Text("Cascade Count: %d  [%s]", cascadeCount,
-        useColocatedCascades ? "co-located, all 32^3" : "non-co-located, 32/16/8/4");
+    {
+        char layoutDesc[64];
+        if (useColocatedCascades)
+            snprintf(layoutDesc, sizeof(layoutDesc), "co-located, all %d^3", cascadeC0Res);
+        else
+            snprintf(layoutDesc, sizeof(layoutDesc), "non-co-located, %d/%d/%d/%d",
+                cascadeC0Res, cascadeC0Res>>1, cascadeC0Res>>2, cascadeC0Res>>3);
+        ImGui::Text("Cascade Count: %d  [%s]", cascadeCount, layoutDesc);
+    }
     HelpMarker(
         "4-level hierarchical probe grid (C0-C3).\n"
         "Co-located mode: all cascades share the same 32^3 world-space grid.\n"
@@ -2035,8 +2099,9 @@ void Demo3D::renderCascadePanel() {
             if (!cascades[i].active) continue;
             float tMin = (i == 0) ? 0.02f : d * std::pow(4.0f, float(i - 1));
             float tMax = d * std::pow(4.0f, float(i));
-            ImGui::Text("  C%d: %d^3  cell=%.4fm  [%.3f, %.3f]m  D^2=%d rays",
-                i, cascades[i].resolution, cascades[i].cellSize, tMin, tMax, dirRes * dirRes);
+            ImGui::Text("  C%d: %d^3  D=%d  cell=%.4fm  [%.3f, %.3f]m  D^2=%d rays",
+                i, cascades[i].resolution, cascadeDirRes[i], cascades[i].cellSize, tMin, tMax,
+                cascadeDirRes[i] * cascadeDirRes[i]);
         }
     }
 
@@ -2066,22 +2131,106 @@ void Demo3D::renderCascadePanel() {
     ImGui::SameLine();
     ImGui::TextDisabled(useDirectionalMerge ? "(directional)" : "(isotropic fallback)");
 
+    // ── Phase 5f: directional bilinear interpolation ──────────────────────────
+    ImGui::Checkbox("Directional bilinear merge (Phase 5f)", &useDirBilinear);
+    HelpMarker(
+        "ON  (default): when reading the upper cascade atlas, blends across\n"
+        "     4 surrounding direction bins (bilinear in octahedral space).\n"
+        "     Eliminates hard bin-boundary banding and wall-color bleeding.\n"
+        "     Cost: 4x texelFetch calls per direction bin vs nearest-bin.\n\n"
+        "OFF (Phase 5c nearest-bin): snaps to the single nearest bin via\n"
+        "     floor(oct * D). At D=4 each bin is ~36 degrees wide, so bin\n"
+        "     boundaries cause hard color steps -> banding and bleeding.\n\n"
+        "No effect when Directional merge (5c) is OFF.\n"
+        "Zero regression: at D=1 (not used) bilinear == nearest.\n\n"
+        "Use atlas debug modes 5 (nearest) and 6 (bilinear) to compare.");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useDirBilinear ? "(bilinear)" : "(nearest-bin)");
+
     // ── Phase 5d: co-located vs ShaderToy-style probe layout ─────────────────
     ImGui::Separator();
     ImGui::Text("Cascade Probe Layout (Phase 5d):");
-    ImGui::Checkbox("Co-located cascades (all 32^3)", &useColocatedCascades);
+    ImGui::Checkbox("Co-located cascades (all N^3)", &useColocatedCascades);
     HelpMarker(
         "ON (default): all 4 cascades share the same 32^3 probe grid.\n"
         "Upper probe for any cascade is at the same world position,\n"
         "so the directional merge reads the identical atlas texel.\n"
         "Phase 5d probe visibility check is a no-op (dist=0).\n\n"
-        "OFF (ShaderToy-style): C0=32^3  C1=16^3  C2=8^3  C3=4^3.\n"
-        "Same world volume; upper probes are 0.125-0.5m away.\n"
-        "Phase 5d probe visibility check is meaningful: upper probes\n"
-        "behind a wall zero their contribution.\n"
+        "OFF (ShaderToy-style, probe-resolution halving only; no spatial interpolation merge):\n"
+        "C0=32^3  C1=16^3  C2=8^3  C3=4^3. Same world volume; upper probes ~0.108m away.\n"
+        "Phase 5d visibility check is implemented but currently inert:\n"
+        "distToUpper ~= 0.108m < tMin_upper = 0.125m, so visHit < distToUpper*0.9 never fires.\n"
         "Toggling destroys and rebuilds all cascade textures.");
     ImGui::SameLine();
-    ImGui::TextDisabled(useColocatedCascades ? "(all 32^3)" : "(32/16/8/4)");
+    if (useColocatedCascades)
+        ImGui::TextDisabled("(all %d^3)", cascadeC0Res);
+    else
+        ImGui::TextDisabled("(%d/%d/%d/%d)", cascadeC0Res, cascadeC0Res>>1, cascadeC0Res>>2, cascadeC0Res>>3);
+
+    // C0 probe resolution slider
+    {
+        static const int kC0Options[] = { 8, 16, 32, 64 };
+        static const char* kC0Labels[] = { "8^3  (fast, coarse)", "16^3", "32^3 (default)", "64^3  (slow)" };
+        int curIdx = 2;
+        for (int k = 0; k < 4; ++k) if (kC0Options[k] == cascadeC0Res) { curIdx = k; break; }
+        ImGui::Text("C0 probe resolution:");
+        HelpMarker(
+            "Sets the C0 probe grid resolution. All other cascades derive from this:\n"
+            "  co-located:     all cascades use the same N^3 grid.\n"
+            "  non-co-located: Ci uses (N>>i)^3, halving per level.\n\n"
+            "Changing this sets baseInterval = volumeSize / N (C0 cell size).\n"
+            "The full cascade hierarchy is rebuilt on change.\n\n"
+            "Non-co-located minimum: N=32 (gives C3=4^3). N=8 gives C3=1^3 (degenerate).\n"
+            "N=64 co-located uses ~340 MB VRAM with D scaling ON.");
+        if (ImGui::Combo("##C0Res", &curIdx, kC0Labels, 4))
+            cascadeC0Res = kC0Options[curIdx];
+        ImGui::SameLine();
+        ImGui::TextDisabled("baseInterval=%.4fm", volumeSize.x / float(cascadeC0Res));
+    }
+
+    // Spatial trilinear merge — only meaningful in non-co-located mode
+    {
+        bool disabled = useColocatedCascades;
+        if (disabled) ImGui::BeginDisabled();
+        ImGui::Checkbox("Spatial trilinear merge (Phase 5d)", &useSpatialTrilinear);
+        HelpMarker(
+            "Non-co-located mode only. Has no effect when co-located is ON.\n\n"
+            "ON  (default): when a lower cascade misses, blends the 8 surrounding\n"
+            "     upper probes using trilinear interpolation weighted by the lower\n"
+            "     probe's fractional position within the upper cell.\n"
+            "     Cost: 8x directional reads per miss vs 1x (static bake only).\n\n"
+            "OFF: reads only the single nearest upper probe (Phase 5d baseline).\n"
+            "     All 8 lower probes in a 2x2x2 block read the same parent -- blocky.\n\n"
+            "The -0.5 offset in the trilinear formula maps upper probe centers to\n"
+            "integers, matching the same center-to-center convention as Phase 5f\n"
+            "directional bilinear (sampleUpperDir's octScaled = oct*D - 0.5).");
+        if (disabled) ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (useColocatedCascades)
+            ImGui::TextDisabled("(co-located: no effect)");
+        else
+            ImGui::TextDisabled(useSpatialTrilinear ? "(8-neighbor)" : "(nearest-parent)");
+    }
+
+    // ── Phase 5e: per-cascade D scaling ─────────────────────────────────────
+    ImGui::Separator();
+    ImGui::Text("Directional Resolution Scaling (Phase 5e):");
+    ImGui::Checkbox("Per-cascade D scaling (C0=D4, C1=D8, C2=D16, C3=D16)", &useScaledDirRes);
+    HelpMarker(
+        "OFF (default): all 4 cascades use D=4 (16 bins per probe).\n\n"
+        "ON: upper cascades use more directional bins (D=min(16, 4<<i)).\n"
+        "  C0=D4  (16 bins, unchanged)\n"
+        "  C1=D8  (64 bins)\n"
+        "  C2=D16 (256 bins)\n"
+        "  C3=D16 (256 bins, capped)\n\n"
+        "Note: C0=D2 was initially planned but is degenerate -- all 4 bin\n"
+        "centers land on the octahedral equatorial fold (z=0 plane), causing\n"
+        "severe directional mismatch and wall color bleed. Min safe D is 4.\n\n"
+        "Toggling destroys and rebuilds all cascade atlases.\n"
+        "Memory co-located + scaled ON: ~148 MB VRAM.\n"
+        "Memory non-co-located + scaled ON: ~7 MB VRAM.");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useScaledDirRes ? "(D4/D8/D16/D16)" : "(all D4)");
 
     // ── Environment fill (4a) ────────────────────────────────────────────────
     ImGui::Separator();
@@ -2178,25 +2327,35 @@ void Demo3D::renderCascadePanel() {
             "           Shows all 16 directional bins per probe at once.\n"
             "HitType  — surf/sky/miss fractions from atlas alpha per probe\n"
             "           G=surface  B=sky  R=miss (reads atlas, not grid alpha)\n"
-            "Bin      — single direction bin (dx,dy) across all probes\n"
+            "Bin      — single direction bin (dx,dy), nearest-bin (Phase 5c).\n"
             "           Key validation: near red wall, leftward bin -> red;\n"
-            "           opposite bin -> green. Proves directional merge works.");
-        ImGui::RadioButton("Slice##rad",   &radianceVisualizeMode, 0); ImGui::SameLine();
-        ImGui::RadioButton("MaxProj##rad", &radianceVisualizeMode, 1); ImGui::SameLine();
-        ImGui::RadioButton("Avg##rad",     &radianceVisualizeMode, 2); ImGui::SameLine();
-        ImGui::RadioButton("Atlas##rad",   &radianceVisualizeMode, 3); ImGui::SameLine();
-        ImGui::RadioButton("HitType##rad", &radianceVisualizeMode, 4); ImGui::SameLine();
-        ImGui::RadioButton("Bin##rad",     &radianceVisualizeMode, 5);
+            "           opposite bin -> green. Proves directional merge works.\n"
+            "Bilinear — same selected bin but bilinear blend at midpoint between\n"
+            "           selected bin and its (+1,+1) neighbor (f=0.5,0.5 point).\n"
+            "           Toggle Bin<->Bilinear to see Phase 5f smoothing effect.");
+        ImGui::RadioButton("Slice##rad",    &radianceVisualizeMode, 0); ImGui::SameLine();
+        ImGui::RadioButton("MaxProj##rad",  &radianceVisualizeMode, 1); ImGui::SameLine();
+        ImGui::RadioButton("Avg##rad",      &radianceVisualizeMode, 2); ImGui::SameLine();
+        ImGui::RadioButton("Atlas##rad",    &radianceVisualizeMode, 3); ImGui::SameLine();
+        ImGui::RadioButton("HitType##rad",  &radianceVisualizeMode, 4); ImGui::SameLine();
+        ImGui::RadioButton("Bin##rad",      &radianceVisualizeMode, 5); ImGui::SameLine();
+        ImGui::RadioButton("Bilinear##rad", &radianceVisualizeMode, 6);
 
         if (radianceVisualizeMode == 3)
             ImGui::TextColored(ImVec4(0.8f,0.8f,1.0f,1), "  Atlas raw — each D%cD block is one probe's directional bins", (char)0xD7);
         if (radianceVisualizeMode == 4)
             ImGui::TextColored(ImVec4(0.5f,1,0.5f,1), "  G=surf hit  B=sky exit  R=miss  (reads atlas alpha — fixed for Phase 5b-1)");
-        if (radianceVisualizeMode == 5) {
-            ImGui::TextColored(ImVec4(1,0.9f,0.5f,1), "  Bin viewer: one direction across all probes");
+        if (radianceVisualizeMode == 5 || radianceVisualizeMode == 6) {
+            if (radianceVisualizeMode == 5)
+                ImGui::TextColored(ImVec4(1,0.9f,0.5f,1), "  Bin viewer (nearest): one direction across all probes");
+            else
+                ImGui::TextColored(ImVec4(0.5f,1,0.9f,1), "  Bilinear viewer: blend at midpoint between selected bin and (+1,+1) neighbor");
             ImGui::SliderInt("bin dx##atlas", &atlasBinDx, 0, dirRes - 1);
             ImGui::SliderInt("bin dy##atlas", &atlasBinDy, 0, dirRes - 1);
-            ImGui::TextDisabled("  Validation: near red wall, bin pointing left -> red; right -> green");
+            if (radianceVisualizeMode == 5)
+                ImGui::TextDisabled("  Validation: near red wall, bin pointing left -> red; right -> green");
+            else
+                ImGui::TextDisabled("  Toggle mode 5 (nearest) vs 6 (bilinear) to see bin-boundary smoothing effect");
         }
     }
 
@@ -2460,41 +2619,49 @@ void Demo3D::renderTutorialPanel() {
 
     ImGui::NewLine();
 
-    // Phase 5 header: yellow if merge is isotropic fallback, green if directional
-    ImVec4 p5col = useDirectionalMerge ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(1.0f, 0.85f, 0.2f, 1.0f);
-    ImGui::TextColored(p5col, "Phase 5 (in progress — 5a/5b/5c done, 5e pending):");
+    // Phase 5 header: green if all major features active, yellow if any are off
+    bool p5full = useDirectionalMerge && useDirBilinear;
+    ImVec4 p5col = p5full ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f) : ImVec4(1.0f, 0.85f, 0.2f, 1.0f);
+    ImGui::TextColored(p5col, "Phase 5 (5a/5b/5c/5d/5e/5f implemented):");
 
     // 5a
     {
         ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
-            "  [5a] Octahedral direction encoding  D=%d  D^2=%d bins/probe",
+            "  [5a] Octahedral encoding  D=%d  (%d bins/probe)",
             dirRes, dirRes * dirRes);
     }
-    // 5b
+    // 5b / 5b-1
     {
         ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
-            "  [5b] Per-direction atlas  %dx%dx%d RGBA16F  GL_NEAREST",
+            "  [5b] Atlas  %dx%dx%d  GL_NEAREST  +  [5b-1] reduction pass",
             cascadeCount > 0 ? cascades[0].resolution * dirRes : 0,
             cascadeCount > 0 ? cascades[0].resolution * dirRes : 0,
             cascadeCount > 0 ? cascades[0].resolution : 0);
     }
-    // 5b-1
-    {
-        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
-            "  [5b-1] Atlas reduction pass  (atlas avg -> probeGridTexture)");
-    }
     // 5c
     {
         ImVec4 c = useDirectionalMerge ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
-        ImGui::TextColored(c,
-            "  [5c] Directional merge  %s",
-            useDirectionalMerge ? "ON  — texelFetch per bin (Phase 5c active)"
-                                : "OFF — isotropic fallback (Phase 4 mode)");
+        ImGui::TextColored(c, "  [5c] Directional merge  %s",
+            useDirectionalMerge ? "ON" : "OFF (isotropic fallback)");
+    }
+    // 5d
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [5d] Probe layout  %s",
+            useColocatedCascades ? "co-located (all 32^3)" : "non-co-located (32/16/8/4)");
     }
     // 5e
     {
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-            "  [5e] D scaling A/B  (pending — run after 5c visual validation)");
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [5e] D scaling  %s",
+            useScaledDirRes ? "ON  (C0=D4 C1=D8 C2=D16 C3=D16)" : "OFF (all D4)");
+    }
+    // 5f
+    {
+        ImVec4 c = useDirBilinear ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
+        ImGui::TextColored(c, "  [5f] Dir bilinear  %s",
+            useDirBilinear ? "ON  (4-tap bilinear, isotropic uses GL_LINEAR)"
+                           : "OFF (nearest-bin, nearest-probe)");
     }
 
     ImGui::End();

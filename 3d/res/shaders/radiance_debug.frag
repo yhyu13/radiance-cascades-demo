@@ -32,7 +32,8 @@ uniform float uSlicePosition;   // 0.0 to 1.0
  *  2 = Average (isotropic grid)
  *  3 = Atlas raw — D×D tile per probe, shows full directional layout
  *  4 = HitType heatmap — surf/sky/miss fractions from atlas alpha
- *  5 = Bin viewer — single direction bin (uAtlasBin) across all probes
+ *  5 = Bin viewer — single direction bin (uAtlasBin) across all probes (nearest-bin)
+ *  6 = Bilinear bin viewer — same direction, bilinear blend at bin midpoint (compare with 5)
  */
 uniform int uVisualizeMode;
 
@@ -166,16 +167,35 @@ void main() {
         fragColor = vec4(missF, surfF, skyF, 1.0);
         return;
 
-    } else {
-        // Mode 5: Bin viewer — shows a single direction bin (uAtlasBin.x, uAtlasBin.y)
-        // across all probes in the slice. Each pixel = one probe.
-        // Validation: near red wall, bins pointing toward red wall should show red;
-        // opposite bins should show green/blue from the far wall.
+    } else if (uVisualizeMode == 5) {
+        // Bin viewer — nearest-bin texelFetch for the selected direction bin.
+        // Each pixel = one probe. Near red wall, leftward bins → red; rightward → green.
         ivec3 probeCoord = probeFromUV(vTexCoords);
         ivec3 atlasTxl = ivec3(probeCoord.x * uAtlasDirRes + uAtlasBin.x,
                                probeCoord.y * uAtlasDirRes + uAtlasBin.y,
                                probeCoord.z);
         radiance = texelFetch(uAtlasTexture, atlasTxl, 0);
+
+    } else {
+        // Mode 6: Bilinear bin viewer — same selected bin, but queries at the midpoint
+        // between the selected bin center and its (+1,+1) neighbor (f=0.5,0.5 blend point).
+        // Toggle mode 5 ↔ 6 to see directional bilinear smoothing at bin boundaries.
+        ivec3 probeCoord = probeFromUV(vTexCoords);
+        int D = uAtlasDirRes;
+        // octScaled at bin-center midpoint: selected bin center is at uAtlasBin, add 0.5
+        // to reach the edge between the selected bin and its (+x,+y) neighbor.
+        vec2 octScaled = vec2(uAtlasBin) + 0.5;
+        ivec2 b00 = clamp(ivec2(floor(octScaled)), ivec2(0), ivec2(D-1));
+        ivec2 b11 = clamp(b00 + ivec2(1),          ivec2(0), ivec2(D-1));
+        ivec2 b10 = ivec2(b11.x, b00.y);
+        ivec2 b01 = ivec2(b00.x, b11.y);
+        vec2  f   = fract(octScaled);
+        int bx = probeCoord.x * D, by = probeCoord.y * D, bz = probeCoord.z;
+        vec3 s00 = texelFetch(uAtlasTexture, ivec3(bx+b00.x, by+b00.y, bz), 0).rgb;
+        vec3 s10 = texelFetch(uAtlasTexture, ivec3(bx+b10.x, by+b10.y, bz), 0).rgb;
+        vec3 s01 = texelFetch(uAtlasTexture, ivec3(bx+b01.x, by+b01.y, bz), 0).rgb;
+        vec3 s11 = texelFetch(uAtlasTexture, ivec3(bx+b11.x, by+b11.y, bz), 0).rgb;
+        radiance = vec4(mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y), 1.0);
     }
 
     // Shared tone-map + sRGB path (modes 0, 1, 2, 3, 5)
