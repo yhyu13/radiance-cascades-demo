@@ -18,6 +18,14 @@
 #include <iomanip>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <filesystem>
+#include <thread>
+#include <vector>
+
+// raylib already compiles STB_IMAGE_WRITE_IMPLEMENTATION in rtextures.c;
+// include the header here for declarations only (no redefinition).
+#include "external/stb_image_write.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -325,6 +333,12 @@ void Demo3D::processInput() {
         radianceVisualizeMode = (radianceVisualizeMode + 1) % 7;
         const char* radModes[] = { "Slice", "MaxProj", "Avg", "Atlas", "HitType", "Bin", "Bilinear" };
         std::cout << "[Demo3D] Radiance Debug Mode: " << radModes[radianceVisualizeMode] << std::endl;
+    }
+
+    // Phase 6a: P = screenshot + AI analysis
+    if (IsKeyPressed(KEY_P)) {
+        pendingScreenshot = true;
+        std::cout << "[6a] Screenshot queued (captured at next render point)." << std::endl;
     }
 
     // Basic camera controls would go here
@@ -2839,12 +2853,41 @@ void Demo3D::onResize() {
     std::cout << "[Demo3D] Window resized to " << width << "x" << height << std::endl;
 }
 
-void Demo3D::takeScreenshot() {
-    /**
-     * @brief Take screenshot of current frame
-     */
-    
-    std::cout << "[Demo3D] Screenshot functionality not yet implemented" << std::endl;
+void Demo3D::takeScreenshot(bool launchAiAnalysis) {
+    if (!pendingScreenshot) return;
+    pendingScreenshot = false;
+
+    std::filesystem::create_directories(screenshotDir);
+    std::filesystem::create_directories(analysisDir);
+
+    int w = GetScreenWidth(), h = GetScreenHeight();
+    std::vector<uint8_t> pixels(static_cast<size_t>(w) * h * 3);
+    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+    stbi_flip_vertically_on_write(1);  // GL origin is bottom-left
+
+    auto now = std::chrono::system_clock::now().time_since_epoch().count();
+    std::string filename = "frame_" + std::to_string(now) + ".png";
+    std::string path     = screenshotDir + "/" + filename;
+
+    if (stbi_write_png(path.c_str(), w, h, 3, pixels.data(), w * 3)) {
+        std::cout << "[6a] Screenshot saved: " << path << std::endl;
+        if (launchAiAnalysis)
+            launchAnalysis(path);
+    } else {
+        std::cerr << "[6a] Screenshot write failed: " << path << std::endl;
+    }
+}
+
+void Demo3D::launchAnalysis(const std::string& imagePath) {
+    std::thread([imagePath, this]() {
+        std::string cmd = "python tools/analyze_screenshot.py \""
+                        + imagePath + "\" \""
+                        + analysisDir + "\"";
+        int ret = system(cmd.c_str());
+        if (ret != 0)
+            std::cerr << "[6a] Analysis script failed (exit " << ret << ")\n";
+    }).detach();
 }
 
 void Demo3D::resetCamera() {

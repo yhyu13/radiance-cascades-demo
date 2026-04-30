@@ -152,7 +152,10 @@ int main() {
             BeginMode3D(demo->getRaylibCamera());
                 demo->render();
             EndMode3D();
-            
+
+            // Phase 6a: capture after 3D, before ImGui (clean 3D-only frame)
+            demo->takeScreenshot(/*launchAiAnalysis=*/true);
+
             // Render UI overlay
             rlImGuiBegin();
                 demo->renderUI();
