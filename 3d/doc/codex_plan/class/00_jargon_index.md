@@ -48,6 +48,9 @@ A ray that touched a surface inside that cascade's distance band.
 `Shadow ray`
 A second ray from a hit point toward the light to check whether something blocks direct light.
 
+`Soft shadow`
+An approximation that returns a value between fully lit and fully shadowed instead of only 0 or 1.
+
 ## Probe terms
 
 `Probe`
@@ -108,6 +111,9 @@ The block of atlas texels belonging to one probe.
 `Reduction pass`
 Average all direction bins in a probe's tile back into one isotropic value in `probeGridTexture`.
 
+`Directional GI`
+Final-render path that reads the directional atlas directly instead of only the isotropic reduced probe grid.
+
 `RGBA16F`
 Half-float texture format used for probe storage.
 
@@ -149,6 +155,9 @@ Snap to one single direction bin.
 `Directional bilinear`
 Blend the 4 nearby direction bins instead of snapping to one.
 
+`Trilinear spatial blend`
+Blend the 8 neighboring probes in 3D space instead of snapping to one probe.
+
 ## Phase 5 layout terms
 
 `Co-located cascades`
@@ -162,6 +171,9 @@ Higher cascades may use more direction bins than lower cascades.
 
 `Visibility weighting`
 A check meant to suppress upper-cascade light if the upper probe cannot see the lower probe's location.
+
+`C0 atlas`
+The directional atlas texture for the nearest cascade. The final renderer's directional-GI path reads this directly.
 
 ## Debug terms
 
@@ -179,6 +191,9 @@ Nearest-bin viewer.
 
 `Mode 6`
 Bilinear bin viewer.
+
+`Raymarch mode 6`
+The final-render GI-only view. It shows indirect light without direct lighting. In the current code it respects the directional-GI toggle.
 
 `A/B`
 Compare two versions by toggling a setting and looking for visible differences.

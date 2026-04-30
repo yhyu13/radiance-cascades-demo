@@ -20,7 +20,7 @@ The core probe-bake compute shader. This is where the cascade intervals, directi
 Averages atlas bins back into `probeGridTexture`.
 
 `res/shaders/raymarch.frag`
-Final image shader. Consumes the reduced isotropic probe grid.
+Final image shader. Handles direct shading, direct shadow, optional directional GI, and final display modes.
 
 `res/shaders/radiance_debug.frag`
 Atlas/debug visualization shader.
@@ -56,6 +56,7 @@ Atlas/debug visualization shader.
 - `res/shaders/radiance_3d.comp`
 - `res/shaders/reduction_3d.comp`
 - `res/shaders/radiance_debug.frag`
+- `res/shaders/raymarch.frag`
 - `src/demo3d.cpp` for CPU-side wiring and toggles
 
 ## Best linear code-reading order
@@ -65,7 +66,7 @@ If you want to read code after reading these notes:
 1. `src/demo3d.cpp`
    Focus on constructor, `initCascades()`, `updateSingleCascade()`, `raymarchPass()`, and the cascade/debug UI sections.
 2. `res/shaders/raymarch.frag`
-   Understand how the final image consumes GI.
+   Understand how the final image consumes GI, direct shadow, and the optional directional C0-atlas path.
 3. `res/shaders/radiance_3d.comp`
    Understand how probes are baked and merged.
 4. `res/shaders/reduction_3d.comp`
@@ -75,4 +76,4 @@ If you want to read code after reading these notes:
 
 ## Current one-paragraph summary
 
-Today, the branch raymarchs a Cornell Box from an SDF, computes direct lighting per visible surface, and adds indirect lighting from a 4-level probe hierarchy. The hierarchy now stores per-direction radiance in an atlas, merges upper-cascade data directionally, reduces that atlas back into an isotropic probe grid for final rendering, and exposes multiple atlas/debug views to inspect the result. The main remaining complexity is no longer "how do cascades work at all?" but "which Phase 5 layout, angular-resolution, and debug semantics are actually validated and worth keeping?"
+Today, the branch raymarchs a Cornell Box from an SDF, computes direct lighting per visible surface, can shadow that direct term, and adds indirect lighting from a 4-level probe hierarchy. The hierarchy stores per-direction radiance in an atlas, merges upper-cascade data directionally, optionally uses non-co-located 8-neighbor spatial interpolation, reduces the atlas back into an isotropic probe grid, and can also let the final shader read the C0 atlas directly for directional GI. The main complexity is now split between bake semantics and final-render consumption semantics.

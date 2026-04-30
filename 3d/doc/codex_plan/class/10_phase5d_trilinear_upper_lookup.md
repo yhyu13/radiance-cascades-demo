@@ -9,13 +9,18 @@ Short answer:
 - ShaderToy does 2D interpolation across `4` upper probes
 - this 3D volumetric branch should do 3D interpolation across `8` upper probes
 
-The current branch does not do that. It picks one parent upper probe with integer division:
+The older Phase 5d branch did not do that. It picked one parent upper probe with integer division:
 
 ```glsl
 upperProbePos = probePos / 2;
 ```
 
-That is a useful simplification for experiments, but it is not the full 3D equivalent.
+That was a useful simplification for experiments, but it was not the full 3D equivalent.
+
+The latest codebase has now moved past that simplification:
+
+- non-co-located directional merge can spatially trilinearly blend 8 upper probes
+- but it still does not do full per-corner visibility weighting in the ShaderToy spirit
 
 ---
 
@@ -94,9 +99,9 @@ So the branch's current **probe placement** is fine.
 
 ---
 
-## 3. What the current code actually does
+## 3. What the old simplified code did
 
-The current Phase 5d shortcut is:
+The original Phase 5d shortcut was:
 
 ```glsl
 upperProbePos = probePos / 2;
@@ -291,7 +296,7 @@ That is much closer to the spirit of ShaderToy's `WeightedSample()`.
 
 ---
 
-## 7. Why the current branch stopped short of this
+## 7. What the current branch still stops short of
 
 Because this full version is significantly more expensive and more complex:
 
@@ -300,13 +305,11 @@ Because this full version is significantly more expensive and more complex:
 - visibility weighting multiplies the cost again
 - edge clamping and different `D` values per cascade complicate it further
 
-So the current branch took the simpler experimental step:
+The branch no longer stops at one parent probe, but it still stops short of the fully weighted version:
 
-- halve probe resolution
-- pick one parent upper probe
-- study what breaks
-
-That was a valid intermediate step.
+- it does the 8-neighbor spatial blend
+- it does directional lookup per upper probe
+- it does not add full per-corner visibility weighting back in
 
 ---
 
@@ -325,5 +328,5 @@ And your stronger challenge is also correct:
 So:
 
 - current Phase 5d placement: reasonable
-- current Phase 5d parent selection: simplified
-- full 3D ShaderToy-like merge: `8`-neighbor trilinear spatial blend, plus directional lookup, plus optional visibility weighting
+- current latest branch: already does `8`-neighbor trilinear spatial blend for the non-co-located directional path
+- full 3D ShaderToy-like weighted version would still add per-corner visibility weighting on top
