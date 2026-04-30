@@ -432,9 +432,11 @@ public:
     void onResize();
     
     /**
-     * @brief Take screenshot of current frame
+     * @brief Take screenshot of current frame (3D scene only, no ImGui).
+     * Call between EndMode3D() and rlImGuiBegin(). If launchAiAnalysis is
+     * true and pendingScreenshot is set, spawns analyze_screenshot.py.
      */
-    void takeScreenshot();
+    void takeScreenshot(bool launchAiAnalysis = false);
     
     /**
      * @brief Reset camera to default position
@@ -467,9 +469,19 @@ public:
     
 private:
     // =============================================================================
+    // Phase 6a — Screenshot + AI Analysis
+    // =============================================================================
+
+    bool        pendingScreenshot = false;
+    std::string screenshotDir     = "doc/cluade_plan/AI/screenshots";
+    std::string analysisDir       = "doc/cluade_plan/AI/analysis";
+
+    void launchAnalysis(const std::string& imagePath);
+
+    // =============================================================================
     // Scene State
     // =============================================================================
-    
+
     /** Current scene type/index */
     int currentScene;
     
