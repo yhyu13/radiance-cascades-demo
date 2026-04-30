@@ -42,8 +42,8 @@
 /** Maximum number of cascade levels in the hierarchy */
 constexpr int MAX_CASCADES = 6;
 
-/** Default volume resolution (64^3 = fast SDF generation, ~6 voxels per wall at 4-unit volume) */
-constexpr int DEFAULT_VOLUME_RESOLUTION = 64;
+/** Default volume resolution (128^3 = 64 SDF samples per C0 probe cell, ~8 MB R32F) */
+constexpr int DEFAULT_VOLUME_RESOLUTION = 128;
 
 /** Maximum volume resolution supported */
 constexpr int MAX_VOLUME_RESOLUTION = 512;
@@ -473,9 +473,11 @@ private:
     // =============================================================================
 
     bool        pendingScreenshot = false;
-    std::string screenshotDir     = "doc/cluade_plan/AI/screenshots";
-    std::string analysisDir       = "doc/cluade_plan/AI/analysis";
+    std::string screenshotDir;   // resolved at construction time relative to exe
+    std::string analysisDir;     // same directory as screenshotDir (both in tools/)
+    std::string toolsScript;     // absolute path to analyze_screenshot.py
 
+    void initToolsPaths();       // resolve absolute paths from exe location
     void launchAnalysis(const std::string& imagePath);
 
     // =============================================================================

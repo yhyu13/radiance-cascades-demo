@@ -12,6 +12,12 @@ import textwrap
 import datetime
 import anthropic
 
+import os
+#set ANTHROPIC_API_KEY
+#os.environ["ANTHROPIC_API_KEY"] =
+# base url
+#os.environ["ANTHROPIC_BASE_URL"] =
+
 PROMPT = textwrap.dedent("""
     You are performing heuristic visual triage on a real-time 3D Cornell Box rendered
     with a radiance cascades global illumination system. The system stores per-direction

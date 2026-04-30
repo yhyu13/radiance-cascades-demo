@@ -347,8 +347,11 @@ void main() {
                 rad = hit.rgb;
             } else if (hit.a > 0.0) {
                 // Surface hit — 4c blend zone uses directional upper sample
+                // Phase 7: smoothstep removes the derivative kink at blend zone endpoints,
+                // softening the D4->D8 angular-resolution boundary into a smooth S-curve.
                 float l = (uHasUpperCascade != 0 && blendWidth > 0.0)
-                    ? 1.0 - clamp((hit.a - (tMax - blendWidth)) / blendWidth, 0.0, 1.0)
+                    ? 1.0 - smoothstep(0.0, 1.0,
+                          clamp((hit.a - (tMax - blendWidth)) / blendWidth, 0.0, 1.0))
                     : 1.0;
                 rad = hit.rgb * l + upperDir * (1.0 - l);
             } else {

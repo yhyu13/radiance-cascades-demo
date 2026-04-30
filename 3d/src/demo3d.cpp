@@ -113,12 +113,12 @@ Demo3D::Demo3D()
     , blendFraction(0.5f)
     , dirRes(4)
     , useDirectionalMerge(true)
-    , useColocatedCascades(true)
-    , useScaledDirRes(false)
+    , useColocatedCascades(false)   // non-colocated: better spatial coverage
+    , useScaledDirRes(true)         // D4/D8/D16/D16: upper cascades get finer angular res
     , useDirBilinear(true)
     , useSpatialTrilinear(true)
     , useShadowRay(true)
-    , useDirectionalGI(false)
+    , useDirectionalGI(true)        // cosine-weighted directional atlas lookup
     , useSoftShadow(false)
     , useSoftShadowBake(false)
     , softShadowK(8.0f)
@@ -201,10 +201,13 @@ Demo3D::Demo3D()
     std::memset(probeVariance,   0, sizeof(probeVariance));
     std::memset(probeHistogram,  0, sizeof(probeHistogram));
 
+    // Phase 6a: resolve tool paths from exe location (works regardless of CWD)
+    initToolsPaths();
+
     std::cout << "========================================" << std::endl;
     std::cout << "[Demo3D] Initializing 3D Radiance Cascades" << std::endl;
     std::cout << "========================================" << std::endl;
-    
+
     // Step 1: Camera setup
     resetCamera();
     
@@ -2112,9 +2115,10 @@ void Demo3D::renderSettingsPanel() {
     ImGui::RadioButton("Indirect*5 (3)", &raymarchRenderMode, 3);
     ImGui::RadioButton("Direct only (4)", &raymarchRenderMode, 4); ImGui::SameLine();
     ImGui::RadioButton("Steps (5)",       &raymarchRenderMode, 5); ImGui::SameLine();
-    ImGui::RadioButton("GI only (6)",     &raymarchRenderMode, 6);
+    ImGui::RadioButton("GI only (6)",     &raymarchRenderMode, 6); ImGui::SameLine();
+    ImGui::RadioButton("RayDist (7)",     &raymarchRenderMode, 7);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Mode 6 respects the Directional GI toggle (Phase 5g).\nSwitch it ON/OFF in mode 6 to A/B compare directional vs isotropic.");
+        ImGui::SetTooltip("Mode 7: ray travel distance heatmap (continuous float, green=near, red=far).\nCompare with Mode 5 (integer step count). If mode 7 is smooth but mode 5 is banded,\nthe banding is from integer step-count quantization, not SDF resolution.");
 
     ImGui::Separator();
     ImGui::Checkbox("Show Performance Metrics", &showPerformanceMetrics);
@@ -2853,6 +2857,22 @@ void Demo3D::onResize() {
     std::cout << "[Demo3D] Window resized to " << width << "x" << height << std::endl;
 }
 
+void Demo3D::initToolsPaths() {
+    namespace fs = std::filesystem;
+    // GetApplicationDirectory() returns the directory containing the exe.
+    // Walk upward until we find a "tools/" sibling, handling build/ and build/Debug/.
+    fs::path root = fs::weakly_canonical(fs::path(GetApplicationDirectory()));
+    for (int i = 0; i < 4; i++) {
+        if (fs::exists(root / "tools")) break;
+        root = root.parent_path();
+    }
+    fs::path tools = root / "tools";
+    screenshotDir = tools.string();
+    analysisDir   = tools.string();
+    toolsScript   = (tools / "analyze_screenshot.py").string();
+    std::cout << "[6a] Tools path: " << tools << std::endl;
+}
+
 void Demo3D::takeScreenshot(bool launchAiAnalysis) {
     if (!pendingScreenshot) return;
     pendingScreenshot = false;
@@ -2881,7 +2901,7 @@ void Demo3D::takeScreenshot(bool launchAiAnalysis) {
 
 void Demo3D::launchAnalysis(const std::string& imagePath) {
     std::thread([imagePath, this]() {
-        std::string cmd = "python tools/analyze_screenshot.py \""
+        std::string cmd = "python \"" + toolsScript + "\" \""
                         + imagePath + "\" \""
                         + analysisDir + "\"";
         int ret = system(cmd.c_str());
