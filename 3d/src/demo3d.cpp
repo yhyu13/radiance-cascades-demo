@@ -97,7 +97,7 @@ Demo3D::Demo3D()
     , baseInterval(0.125f)  // 4.0 (volumeSize) / 32 (probeRes) = 0.125
     , cascadeBilinear(true)
     , disableCascadeMerging(false)
-    , useCascadeGI(false)
+    , useCascadeGI(true)
     , selectedCascadeForRender(0)
     , useEnvFill(false)
     , skyColor(0.02f, 0.03f, 0.05f)
@@ -109,6 +109,11 @@ Demo3D::Demo3D()
     , useScaledDirRes(false)
     , useDirBilinear(true)
     , useSpatialTrilinear(true)
+    , useShadowRay(true)
+    , useDirectionalGI(false)
+    , useSoftShadow(false)
+    , useSoftShadowBake(false)
+    , softShadowK(8.0f)
     , cascadeC0Res(32)
     , atlasBinDx(0)
     , atlasBinDy(0)
@@ -394,6 +399,36 @@ void Demo3D::render() {
                   << (useSpatialTrilinear ? "ON (8-neighbor)" : "OFF (nearest-parent)")
                   << std::endl;
     }
+    static bool lastShadowRay = true;
+    if (useShadowRay != lastShadowRay) {
+        lastShadowRay = useShadowRay;
+        // Display-path only -- no cascade rebuild needed
+        std::cout << "[5h] shadow ray: " << (useShadowRay ? "ON" : "OFF (unshadowed)") << std::endl;
+    }
+    static bool lastDirectionalGI = false;
+    if (useDirectionalGI != lastDirectionalGI) {
+        lastDirectionalGI = useDirectionalGI;
+        // Display-path only -- no cascade rebuild needed
+        std::cout << "[5g] directional GI: " << (useDirectionalGI ? "ON (cosine-weighted atlas)" : "OFF (isotropic)") << std::endl;
+    }
+    // Phase 5i: soft shadow display toggle (display-path only)
+    static bool lastSoftShadow = false;
+    if (useSoftShadow != lastSoftShadow) {
+        lastSoftShadow = useSoftShadow;
+        std::cout << "[5i] soft shadow display: " << (useSoftShadow ? "ON" : "OFF (binary)") << std::endl;
+    }
+    // Phase 5i: soft shadow bake toggle or k change — requires cascade rebuild
+    static bool  lastSoftShadowBake = false;
+    static float lastSoftShadowK    = 8.0f;
+    if (useSoftShadowBake != lastSoftShadowBake ||
+            (useSoftShadowBake && softShadowK != lastSoftShadowK)) {
+        lastSoftShadowBake = useSoftShadowBake;
+        lastSoftShadowK    = softShadowK;
+        cascadeReady = false;
+        std::cout << "[5i] soft shadow bake: "
+                  << (useSoftShadowBake ? "ON" : "OFF (binary inShadow)")
+                  << "  k=" << softShadowK << std::endl;
+    }
     // Phase 5d: co-located toggle changes texture dimensions -- must destroy+rebuild
     static bool lastColocated = true;
     if (useColocatedCascades != lastColocated) {
@@ -413,7 +448,7 @@ void Demo3D::render() {
         initCascades();
         cascadeReady = false;
         std::cout << "[5e] dir scaling: "
-                  << (useScaledDirRes ? "scaled (D2/D4/D8/D16)" : "fixed (all D4)")
+                  << (useScaledDirRes ? "scaled (D4/D8/D16/D16)" : "fixed (all D4)")
                   << std::endl;
     }
 
@@ -1037,6 +1072,9 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
     glUniform3fv(glGetUniformLocation(prog, "uSkyColor"),  1, glm::value_ptr(skyColor));
     glUniform1f(glGetUniformLocation(prog, "uBlendFraction"), blendFraction);
+    // 5i: soft shadow in bake shader
+    glUniform1i(glGetUniformLocation(prog, "uUseSoftShadowBake"), useSoftShadowBake ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uSoftShadowK"),        softShadowK);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -1227,6 +1265,29 @@ void Demo3D::raymarchPass() {
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_3D, albedoTexture);
     glUniform1i(glGetUniformLocation(prog, "uAlbedo"), 2);
+
+    // 5h: shadow ray toggle (display-path only, no cascade rebuild)
+    glUniform1i(glGetUniformLocation(prog, "uUseShadowRay"), useShadowRay ? 1 : 0);
+    // 5i: soft shadow in display path
+    glUniform1i(glGetUniformLocation(prog, "uUseSoftShadow"), useSoftShadow ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uSoftShadowK"),   softShadowK);
+
+    // 5g: bind C0 directional atlas on unit 3 (units 0-2 = SDF/Radiance/Albedo)
+    // atlasAvailable gates the shader toggle so uUseDirectionalGI=0 is always pushed
+    // when the texture is missing -- even if the UI toggle is ON.
+    bool atlasAvailable = false;
+    if (cascadeCount > 0 && cascades[0].active && cascades[0].probeAtlasTexture != 0) {
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_3D, cascades[0].probeAtlasTexture);
+        glUniform1i(glGetUniformLocation(prog, "uDirectionalAtlas"), 3);
+        glm::ivec3 atlasVolSize(cascades[0].resolution);
+        glUniform3iv(glGetUniformLocation(prog, "uAtlasVolumeSize"), 1, glm::value_ptr(atlasVolSize));
+        glUniform3fv(glGetUniformLocation(prog, "uAtlasGridOrigin"), 1, glm::value_ptr(volumeOrigin));
+        glUniform3fv(glGetUniformLocation(prog, "uAtlasGridSize"),   1, glm::value_ptr(volumeSize));
+        glUniform1i(glGetUniformLocation(prog, "uAtlasDirRes"),      cascadeDirRes[0]);
+        atlasAvailable = true;
+    }
+    glUniform1i(glGetUniformLocation(prog, "uUseDirectionalGI"), (useDirectionalGI && atlasAvailable) ? 1 : 0);
 
     // Reuse the existing fullscreen quad VAO
     glBindVertexArray(debugQuadVAO);
@@ -2024,10 +2085,8 @@ void Demo3D::renderSettingsPanel() {
     ImGui::Text("Cascade GI (Phase 2):");
     ImGui::Checkbox("Cascade GI", &useCascadeGI);
     if (cascades[0].active)
-        ImGui::Text("Probe grid: 32^3  base=%d rays  (C0=%d C1=%d C2=%d C3=%d)",
-            baseRaysPerProbe,
-            cascades[0].raysPerProbe, cascades[1].raysPerProbe,
-            cascades[2].raysPerProbe, cascades[3].raysPerProbe);
+        ImGui::Text("Probe grid: %d^3  D=%d  rays/probe=%d (all cascades, Phase 5a)",
+            cascadeC0Res, dirRes, dirRes * dirRes);
     else
         ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Cascade not initialized!");
 
@@ -2040,6 +2099,8 @@ void Demo3D::renderSettingsPanel() {
     ImGui::RadioButton("Direct only (4)", &raymarchRenderMode, 4); ImGui::SameLine();
     ImGui::RadioButton("Steps (5)",       &raymarchRenderMode, 5); ImGui::SameLine();
     ImGui::RadioButton("GI only (6)",     &raymarchRenderMode, 6);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Mode 6 respects the Directional GI toggle (Phase 5g).\nSwitch it ON/OFF in mode 6 to A/B compare directional vs isotropic.");
 
     ImGui::Separator();
     ImGui::Checkbox("Show Performance Metrics", &showPerformanceMetrics);
@@ -2156,10 +2217,11 @@ void Demo3D::renderCascadePanel() {
         "Upper probe for any cascade is at the same world position,\n"
         "so the directional merge reads the identical atlas texel.\n"
         "Phase 5d probe visibility check is a no-op (dist=0).\n\n"
-        "OFF (ShaderToy-style, probe-resolution halving only; no spatial interpolation merge):\n"
+        "OFF (ShaderToy-style, probe-resolution halving):\n"
         "C0=32^3  C1=16^3  C2=8^3  C3=4^3. Same world volume; upper probes ~0.108m away.\n"
-        "Phase 5d visibility check is implemented but currently inert:\n"
-        "distToUpper ~= 0.108m < tMin_upper = 0.125m, so visHit < distToUpper*0.9 never fires.\n"
+        "Directional merge reads upper atlas with 8-neighbor spatial trilinear (Phase 5d\n"
+        "trilinear, default ON -- see checkbox below). Spatial trilinear OFF falls back to\n"
+        "nearest-parent (probePos/2), which is blocky but cheaper.\n"
         "Toggling destroys and rebuilds all cascade textures.");
     ImGui::SameLine();
     if (useColocatedCascades)
@@ -2211,6 +2273,81 @@ void Demo3D::renderCascadePanel() {
         else
             ImGui::TextDisabled(useSpatialTrilinear ? "(8-neighbor)" : "(nearest-parent)");
     }
+
+    // ── Phase 5h: shadow ray in direct path ─────────────────────────────────
+    ImGui::Separator();
+    ImGui::Checkbox("Shadow ray in direct path (Phase 5h)", &useShadowRay);
+    HelpMarker(
+        "ON  (default): casts a 32-step SDF shadow ray from each surface hit\n"
+        "     toward the light. Uses a normal-offset origin (normal*0.02 +\n"
+        "     ldir*0.01) -- better than the bake shader's fixed t=0.05 bias\n"
+        "     because the surface normal is known in the final renderer.\n"
+        "     Gives hard binary shadow in the direct term.\n\n"
+        "OFF (Phase 1-4 baseline): no shadow check in direct path. Shadow only\n"
+        "     appears via the cascade indirect contribution, diluted ~8x by the\n"
+        "     isotropic reduction.\n\n"
+        "Toggle does NOT re-bake cascades -- display path only.");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useShadowRay ? "(shadow ON)" : "(unshadowed)");
+
+    // ── Phase 5g: directional atlas GI sampling ──────────────────────────────
+    ImGui::Separator();
+    ImGui::Checkbox("Directional GI sampling (Phase 5g)", &useDirectionalGI);
+    HelpMarker(
+        "OFF (default): reads the isotropic average probeGridTexture.\n"
+        "     Shadow signal diluted ~8x by direction averaging.\n\n"
+        "ON: samples C0 directional atlas with cosine-weighted hemisphere\n"
+        "    integration over surface normal. 8 probes x D^2 bins = 128\n"
+        "    texelFetch per shaded pixel at D=4.\n"
+        "    Back-facing bins excluded; spatially trilinear-blended.\n\n"
+        "Combine with Phase 5h (shadow ray) for correct direct shadow +\n"
+        "smoother indirect GI transition across probe boundaries.\n\n"
+        "Mode 6 (GI only) respects this toggle -- use it to A/B compare\n"
+        "directional vs isotropic in isolation without direct light.\n\n"
+        "Toggle does NOT re-bake cascades -- display path only.");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useDirectionalGI ? "(directional)" : "(isotropic)");
+
+    // ── Phase 5i: soft shadow (display + bake) ───────────────────────────────
+    ImGui::Separator();
+    ImGui::Text("Soft Shadow (Phase 5i):");
+    ImGui::Checkbox("Soft shadow in direct path##5i_display", &useSoftShadow);
+    HelpMarker(
+        "ON: SDF cone soft shadow (IQ-style) in the final renderer.\n"
+        "    shadow = 1 - min(k*h/t) along the shadow ray.\n"
+        "    k controls penumbra width (see slider below).\n"
+        "    Not physically accurate for a point light -- this is an\n"
+        "    appearance approximation that hides the hard binary edge.\n"
+        "    Requires Phase 5h (shadow ray) to be ON.\n\n"
+        "OFF (default): hard binary shadow from Phase 5h shadowRay().\n\n"
+        "Debug: use mode 4 (direct-only) to compare binary vs soft.\n"
+        "Toggle does NOT re-bake cascades -- display path only.");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useSoftShadow ? "(soft)" : "(binary)");
+
+    ImGui::Checkbox("Soft shadow in bake shader##5i_bake", &useSoftShadowBake);
+    HelpMarker(
+        "ON: replaces binary inShadow() in the radiance bake shader with\n"
+        "    the same SDF cone shadow. Reduces probe-baked signal\n"
+        "    discontinuity at shadow boundaries (Sources 2+3 in banding doc).\n"
+        "    Uses the same k as the display soft shadow.\n\n"
+        "OFF (default): binary inShadow() -- hard shadow in probe data.\n\n"
+        "Debug: use mode 3 (indirect x5) or mode 6 (GI-only) to see\n"
+        "       the reduced banding in the probe-sourced indirect term.\n\n"
+        "Toggling DOES re-bake all cascades.");
+    ImGui::SameLine();
+    ImGui::TextDisabled(useSoftShadowBake ? "(soft bake)" : "(binary bake)");
+
+    if (ImGui::SliderFloat("Soft shadow k##5i_k", &softShadowK, 1.0f, 16.0f, "k=%.1f")) {
+        // k change is a display-only change; bake rebuild is handled by the tracking block
+    }
+    HelpMarker(
+        "Penumbra width for SDF cone soft shadow (display and bake).\n"
+        "  k=1  very wide soft shadow (over-softened)\n"
+        "  k=4  wide penumbra\n"
+        "  k=8  tight penumbra (default)\n"
+        "  k=16 nearly binary (close to Phase 5h hard shadow)\n\n"
+        "k change re-bakes cascades only when 'Soft shadow in bake' is ON.");
 
     // ── Phase 5e: per-cascade D scaling ─────────────────────────────────────
     ImGui::Separator();
@@ -2594,10 +2731,8 @@ void Demo3D::renderTutorialPanel() {
     // 4b
     {
         ImVec4 c = ImVec4(0.3f, 1, 0.3f, 1);
-        ImGui::TextColored(c, "  [4b] Per-cascade ray scaling  base=%d (C0=%d C1=%d C2=%d C3=%d)",
-            baseRaysPerProbe,
-            baseRaysPerProbe, baseRaysPerProbe * 2,
-            baseRaysPerProbe * 4, baseRaysPerProbe * 8);
+        ImGui::TextColored(c, "  [4b] Per-cascade ray scaling  retired (Phase 5a: fixed D^2=%d rays all cascades)",
+            dirRes * dirRes);
     }
     // 4c
     {
@@ -2662,6 +2797,31 @@ void Demo3D::renderTutorialPanel() {
         ImGui::TextColored(c, "  [5f] Dir bilinear  %s",
             useDirBilinear ? "ON  (4-tap bilinear, isotropic uses GL_LINEAR)"
                            : "OFF (nearest-bin, nearest-probe)");
+    }
+    // 5h
+    {
+        ImVec4 c = useShadowRay ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
+        ImGui::TextColored(c, "  [5h] Shadow ray  %s",
+            useShadowRay ? "ON  (binary direct shadow)" : "OFF (unshadowed)");
+    }
+    // 5g
+    {
+        ImVec4 c = useDirectionalGI ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
+        ImGui::TextColored(c, "  [5g] Dir GI  %s",
+            useDirectionalGI ? "ON  (cosine-weighted atlas)" : "OFF (isotropic avg)");
+    }
+    // 5i
+    {
+        if (useSoftShadow || useSoftShadowBake) {
+            ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+                "  [5i] Soft shadow  display=%s  bake=%s  k=%.1f",
+                useSoftShadow    ? "ON" : "off",
+                useSoftShadowBake ? "ON" : "off",
+                softShadowK);
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                "  [5i] Soft shadow  OFF (binary)");
+        }
     }
 
     ImGui::End();

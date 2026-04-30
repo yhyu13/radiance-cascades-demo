@@ -697,6 +697,34 @@ private:
      *  No effect in co-located mode (upper probe is at same position; trilinear is trivially exact). */
     bool useSpatialTrilinear;
 
+    /** 5h: Cast shadow ray from surface hit to light in direct path.
+     *  true (default): 32-step SDF march gives hard binary shadow in direct term.
+     *  false: unshadowed direct (Phase 1-4 behaviour). Display-path only, no cascade rebuild. */
+    bool useShadowRay;
+
+    /** 5g: Cosine-weighted directional atlas sampling for indirect GI.
+     *  false (default): reads isotropic probeGridTexture (same as pre-5g).
+     *  true: samples C0 directional atlas with hemisphere-weighted integration over surface normal.
+     *  Display-path only, no cascade rebuild. */
+    bool useDirectionalGI;
+
+    /** 5i: SDF cone soft shadow (IQ-style) in the final renderer's direct term.
+     *  false (default): binary shadow from Phase 5h shadowRay().
+     *  true: smooth penumbra via k*h/t accumulation. Display-path only, no cascade rebuild.
+     *  Requires useShadowRay=true to have any effect. */
+    bool useSoftShadow;
+
+    /** 5i: SDF cone soft shadow applied inside the bake shader's inShadow() call.
+     *  false (default): binary inShadow() — hard shadow baked into probe radiance.
+     *  true: smooth shadow baked per probe, reducing Source 2/3 probe-grid banding.
+     *  Requires cascade rebuild on toggle or k change. */
+    bool useSoftShadowBake;
+
+    /** 5i: Penumbra width for SDF cone soft shadow in both display and bake.
+     *  Lower k = wider, softer penumbra. Range [1, 16]. Default 8.
+     *  k change triggers cascade rebuild only when useSoftShadowBake is true. */
+    float softShadowK;
+
     // =============================================================================
     // Shaders
     // =============================================================================

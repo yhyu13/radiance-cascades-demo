@@ -53,6 +53,9 @@ uniform int       uUseDirectionalMerge; // 1=directional texelFetch (5c/5f), 0=i
 uniform int       uUseDirBilinear;     // 5f: 1=bilinear across 4 direction bins (default), 0=nearest-bin (Phase 5c)
 uniform int       uHasUpperCascade;
 uniform float     uBlendFraction;  // 0.0 = binary (Phase 3), default 0.5
+// Phase 5i: soft shadow in bake — 0=binary inShadow() (default), 1=SDF cone soft shadow
+uniform int   uUseSoftShadowBake;
+uniform float uSoftShadowK;        // penumbra width, shared with display shader
 uniform int       uDirRes;         // Phase 5a/5e: octahedral bin resolution (D) for this cascade
 uniform int       uUpperDirRes;    // Phase 5e: upper cascade D (== uDirRes when D-scaling is OFF)
 
@@ -184,6 +187,25 @@ bool inShadow(vec3 hitPos, vec3 lightPos) {
     return false;
 }
 
+// Phase 5i: SDF cone soft shadow for the bake shader.
+// Returns shadow factor 0=lit, 1=fully shadowed (same convention as display softShadow()).
+// Uses fixed t=0.05 bias — no surface normal available in the bake path.
+float softShadowBake(vec3 hitPos, vec3 lightPos, float k) {
+    vec3  toLight = lightPos - hitPos;
+    float dist    = length(toLight);
+    vec3  dir     = toLight / dist;
+    float t       = 0.05;
+    float res     = 1.0;
+    for (int i = 0; i < 32 && t < dist; ++i) {
+        float d = sampleSDF(hitPos + dir * t);
+        if (d >= INF * 0.5) return 0.0;               // exited volume — unoccluded
+        if (d < 0.002)      return 1.0;                // hit geometry — fully in shadow
+        res = min(res, k * d / max(t, 0.001));         // cone narrowing accumulation
+        t  += max(d * 0.9, 0.01);
+    }
+    return 1.0 - clamp(res, 0.0, 1.0);
+}
+
 // Return conventions:
 //   vec4(color, 1.0)  — surface hit
 //   vec4(sky,  -1.0)  — exited simulation volume and uUseEnvFill is on
@@ -217,9 +239,12 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
             vec3 uvw    = (pos - uGridOrigin) / uGridSize;
             vec3 albedo = texture(uAlbedo, uvw).rgb;
 
-            vec3  lightDir = normalize(uLightPos - pos);
-            float diff     = inShadow(pos, uLightPos) ? 0.0 : max(dot(n, lightDir), 0.0);
-            vec3  color    = albedo * (diff * uLightColor + vec3(0.05));
+            vec3  lightDir   = normalize(uLightPos - pos);
+            float shadowFact = (uUseSoftShadowBake != 0)
+                ? softShadowBake(pos, uLightPos, uSoftShadowK)
+                : (inShadow(pos, uLightPos) ? 1.0 : 0.0);
+            float diff       = max(dot(n, lightDir), 0.0) * (1.0 - shadowFact);
+            vec3  color      = albedo * (diff * uLightColor + vec3(0.05));
             return vec4(color, t);
         }
 

@@ -1,6 +1,6 @@
 # Claude Plan: 3D Radiance Cascades Demo
 
-**Updated:** 2026-04-28  
+**Updated:** 2026-04-29  
 **Branch:** 3d  
 **Goal:** Visible Cornell-box raymarched image with a working multi-cascade radiance hierarchy
 
@@ -144,15 +144,27 @@ See `phase5_plan.md` for full sub-phase breakdown (5a–5e), shader code, textur
 | 5c | Directional upper cascade merge — `texelFetch` at exact direction bin + isotropic A/B toggle | ✅ Implemented, compile-verified |
 | Debug | 6-mode atlas vis, HitType fix, Bin viewer, probe fill rate readback fix | ✅ Implemented |
 | 5d | Non-co-located cascades toggle — halved probe resolution per level; visibility check (inert, preserved) | ✅ Implemented, compile-verified |
+| 5d trilinear | 8-neighbor spatial blend for non-co-located merge; clamp-before-floor/fract border fix | ✅ Implemented, compile-verified |
 | 5e | Per-cascade D scaling — `min(16, D<<i)` = [D4,D8,D16,D16]; D=2 degenerate case fixed | ✅ Implemented, compile-verified |
+| 5f | Directional bilinear — 4-tap blend across octahedral bins when reading upper atlas | ✅ Implemented, compile-verified |
+| **5g** | **Cosine-weighted directional atlas sampling in final renderer — replaces isotropic average** | ⬜ Planned — `phase5g_directional_sampling_plan.md` |
+| **5h** | **Shadow ray in `raymarch.frag` direct path — hard shadow ground truth** | ⬜ Planned — `phase5h_shadow_ray_plan.md` |
+| **Debug 7** | **Directional atlas slice at light direction — isolates shadow quality before reduction** | ⬜ Planned |
 
-**Runtime validation status:** All 5a–5e changes compile clean. Visual A/B (directional vs isotropic merge, D-scaled vs fixed) has not yet been run. Key validation: Phase 5c ON vs OFF at C0/C1 boundary; Phase 5e scaled vs fixed at C2/C3 boundary. Bin viewer (mode 5) near a red wall should show directional color separation as the primary 5c confirmation.
+**Runtime validation status:** All 5a–5f changes compile clean. Visual A/B (directional vs isotropic merge, D-scaled vs fixed) has not yet been run. Key validation: Phase 5c ON vs OFF at C0/C1 boundary; Phase 5e scaled vs fixed at C2/C3 boundary. Bin viewer near a red wall should show directional color separation as the primary 5c confirmation.
 
-See `phase5bc_impl_learnings.md`, `phase5d_impl_learnings.md`, `phase5e_impl_learnings.md`, and `phase5_debug_impl_learnings.md` for implementation details.
+**Shadow penumbra banding — root cause diagnosed (2026-04-29):** Three stacked issues:
+(1) isotropic reduction dilutes shadow ~8–16× (1–2 bins out of D²=16 carry shadow signal);
+(2) `raymarch.frag` direct path has no shadow check — shadow only appears via cascade indirect;
+(3) probe spacing (0.125m) cannot resolve sub-probe shadow edges.
+Fix order: Phase 5h (hard shadow in direct path) → Debug mode 7 (confirm atlas has shadow data) → Phase 5g (directional atlas in final renderer for soft penumbra).
+See `phase5_gap_analysis_brainstorm.md` for full analysis.
+
+See `phase5bc_impl_learnings.md`, `phase5d_impl_learnings.md`, `phase5e_impl_learnings.md`, `phase5f_impl_learnings.md`, and `phase5_debug_impl_learnings.md` for implementation details.
 
 ---
 
 ## Definition of Done
 
 **Phase 4 done:** All 4a–4e sub-phases implemented, A/B result documented. ✅  
-**Phase 5 done when:** GI banding at cascade interval boundaries is visibly reduced with per-direction merge active vs Phase 4 baseline. Red wall and green wall show distinct directional color separation in probe atlas debug mode.
+**Phase 5 done when:** GI banding at cascade interval boundaries is visibly reduced with per-direction merge active vs Phase 4 baseline. Red wall and green wall show distinct directional color separation in probe atlas debug mode. Shadow penumbra visibly soft (not banded) with Phase 5h + 5g active.
