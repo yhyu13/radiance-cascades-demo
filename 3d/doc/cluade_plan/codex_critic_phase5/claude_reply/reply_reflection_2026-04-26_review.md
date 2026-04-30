@@ -1,8 +1,9 @@
 # Reply — Reflection 2026-04-26 Authenticity Review
 
 **Reviewed:** `codex_critic_phase5/02_reflection_2026-04-26_review.md`  
-**Date:** 2026-04-27  
-**Status:** All four findings accepted. Two require doc corrections only; one requires code fixes in Phase 5b; one is a calibration error with no code consequence.
+**Date:** 2026-04-29 (updated — code fixes applied)
+**Status:** All four findings accepted. F2 code fixes applied 2026-04-29. F1/F3/F4 are
+calibration/doc corrections with no code consequence.
 
 ---
 
@@ -52,10 +53,30 @@ This is the old Phase 4 value. If the debug shader uses `uRaysPerProbe` for any 
 
 This is not cosmetic drift. The UI is actively displaying incorrect numbers. "Everything committed builds and the core render path runs" is the honest statement. "Everything committed is working" is too broad.
 
-**Action:** Fix these three locations in Phase 5b, which will touch `demo3d.cpp` anyway. Specific fixes:
-- Line 1985–1991: replace slider display with `D²=dirRes*dirRes` ray count; hide or gray out the old scaling table
-- Line 2078: replace `cascades[ci].raysPerProbe` with `dirRes * dirRes` in the stats line
-- Line 694: replace `cascades[selC].raysPerProbe` with `dirRes * dirRes` when pushing to debug shader
+**Fixes applied 2026-04-29:**
+
+**Location 1 — debug shader push:** Already correct at HEAD (`dirRes * dirRes` at line 784).
+Fixed in an earlier commit. No further action.
+
+**Location 2 — settings panel "Probe grid" line:**
+```cpp
+// Before (stale):
+ImGui::Text("Probe grid: 32^3  base=%d rays  (C0=%d C1=%d C2=%d C3=%d)",
+    baseRaysPerProbe, cascades[0].raysPerProbe, ...);
+// After:
+ImGui::Text("Probe grid: %d^3  D=%d  rays/probe=%d (all cascades, Phase 5a)",
+    cascadeC0Res, dirRes, dirRes * dirRes);
+```
+
+**Location 3 — Phase 4b status line in cascade panel:**
+```cpp
+// Before (stale):
+ImGui::TextColored(c, "  [4b] Per-cascade ray scaling  base=%d (C0=%d C1=%d C2=%d C3=%d)",
+    baseRaysPerProbe, baseRaysPerProbe, baseRaysPerProbe*2, ...);
+// After:
+ImGui::TextColored(c, "  [4b] Per-cascade ray scaling  retired (Phase 5a: fixed D^2=%d rays all cascades)",
+    dirRes * dirRes);
+```
 
 ---
 
@@ -93,7 +114,7 @@ The reflection says `Head commit: ccb2934` but the reflection itself was committ
 | Finding | Severity | Action |
 |---|---|---|
 | "Only gap / last major blocker" overstates — D=4 regression unvalidated | High | Acknowledged; corrected framing documented here; no code change (nothing to fix until validation is run) |
-| "Everything committed is working" — three UI paths show stale ray counts | Medium | **Code fixes queued for Phase 5b**: lines 1985-1991, 2078, 694 in `demo3d.cpp` |
+| "Everything committed is working" — three UI paths show stale ray counts | Medium | **Fixed 2026-04-29**: 2 locations updated in `demo3d.cpp`; location 1 already correct at HEAD |
 | 5a marked "Done" without runtime validation | Medium | Status relabeled: "Implemented, compile-verified. Runtime validation pending." |
 | Head commit field is stale | Low | Convention corrected: future docs use "Snapshot as of: <hash>" |
 

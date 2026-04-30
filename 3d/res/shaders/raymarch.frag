@@ -86,7 +86,33 @@ uniform sampler3D uRadiance;
 uniform sampler3D uAlbedo;
 
 /** Whether to blend in cascade indirect lighting */
-uniform bool uUseCascade;
+uniform int uUseCascade;
+
+/** Phase 5h: 1=cast shadow ray from surface to light, 0=unshadowed direct (Phase 1-4) */
+uniform int uUseShadowRay;
+
+/** Phase 5i: 1=SDF cone soft shadow in direct term, 0=binary shadowRay() (Phase 5h) */
+uniform int   uUseSoftShadow;
+/** Phase 5i: penumbra width k — lower=wider penumbra. Shared with bake shader. */
+uniform float uSoftShadowK;
+
+/** Phase 5g: C0 directional atlas (per-direction D×D tile) */
+uniform sampler3D uDirectionalAtlas;
+
+/** Phase 5g: probe grid dimensions of C0 (same as uVolumeSize of C0) */
+uniform ivec3 uAtlasVolumeSize;
+
+/** Phase 5g: C0 grid origin in world space */
+uniform vec3 uAtlasGridOrigin;
+
+/** Phase 5g: C0 grid extent in world space */
+uniform vec3 uAtlasGridSize;
+
+/** Phase 5g: directional resolution D for the C0 atlas */
+uniform int uAtlasDirRes;
+
+/** Phase 5g: 1=cosine-weighted directional atlas sampling, 0=isotropic average (default) */
+uniform int uUseDirectionalGI;
 
 // =============================================================================
 // Constants
@@ -186,6 +212,115 @@ vec3 estimateNormal(vec3 worldPos) {
     return normalize(vec3(dx.x, dy.y, dz.z));
 }
 
+// =============================================================================
+// Phase 5g: Directional Atlas Sampling
+// =============================================================================
+
+// Octahedral decode: unit square [0,1]^2 -> unit sphere direction
+vec3 octToDir(vec2 uv) {
+    uv = uv * 2.0 - 1.0;
+    vec3 d = vec3(uv, 1.0 - abs(uv.x) - abs(uv.y));
+    if (d.z < 0.0) d.xy = (1.0 - abs(d.yx)) * sign(d.xy);
+    return normalize(d);
+}
+
+// Map integer bin (dx,dy) in [0,D)^2 to the bin's representative direction
+vec3 binToDir(ivec2 bin, int D) {
+    return octToDir((vec2(bin) + 0.5) / float(D));
+}
+
+// Cosine-weighted irradiance integral from one probe's D×D atlas tile.
+// Excludes back-facing bins (dot < 0) — they cannot illuminate the surface.
+vec3 sampleProbeDir(ivec3 pc, vec3 normal, int D) {
+    vec3  irrad = vec3(0.0);
+    float wsum  = 0.0;
+    for (int dy = 0; dy < D; ++dy) {
+        for (int dx = 0; dx < D; ++dx) {
+            vec3  bdir = binToDir(ivec2(dx, dy), D);
+            float w    = max(0.0, dot(bdir, normal));
+            irrad += texelFetch(uDirectionalAtlas,
+                                ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0).rgb * w;
+            wsum  += w;
+        }
+    }
+    return irrad / max(wsum, 1e-4);
+}
+
+// Trilinear spatial blend over the 8 surrounding C0 probes, each cosine-weighted.
+// -0.5 center-aligned offset: same convention as Phase 5d trilinear and Phase 5f bilinear.
+// Returns vec3(0) when pos is outside the atlas grid.
+vec3 sampleDirectionalGI(vec3 pos, vec3 normal) {
+    vec3 uvw = (pos - uAtlasGridOrigin) / uAtlasGridSize;
+    if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0))))
+        return vec3(0.0);
+
+    // Center-aligned probe-grid coordinate: probe k's center maps to float k
+    vec3  pg   = clamp(uvw * vec3(uAtlasVolumeSize) - 0.5,
+                       vec3(0.0), vec3(uAtlasVolumeSize - ivec3(1)));
+    ivec3 p000 = ivec3(floor(pg));
+    vec3  f    = fract(pg);
+    ivec3 hi   = uAtlasVolumeSize - ivec3(1);
+    int   D    = uAtlasDirRes;
+
+    vec3 s000 = sampleProbeDir(p000,                                    normal, D);
+    vec3 s100 = sampleProbeDir(clamp(p000 + ivec3(1,0,0), ivec3(0), hi), normal, D);
+    vec3 s010 = sampleProbeDir(clamp(p000 + ivec3(0,1,0), ivec3(0), hi), normal, D);
+    vec3 s110 = sampleProbeDir(clamp(p000 + ivec3(1,1,0), ivec3(0), hi), normal, D);
+    vec3 s001 = sampleProbeDir(clamp(p000 + ivec3(0,0,1), ivec3(0), hi), normal, D);
+    vec3 s101 = sampleProbeDir(clamp(p000 + ivec3(1,0,1), ivec3(0), hi), normal, D);
+    vec3 s011 = sampleProbeDir(clamp(p000 + ivec3(0,1,1), ivec3(0), hi), normal, D);
+    vec3 s111 = sampleProbeDir(clamp(p000 + ivec3(1,1,1), ivec3(0), hi), normal, D);
+
+    vec3 sx00 = mix(s000, s100, f.x);  vec3 sx10 = mix(s010, s110, f.x);
+    vec3 sx01 = mix(s001, s101, f.x);  vec3 sx11 = mix(s011, s111, f.x);
+    vec3 sxy0 = mix(sx00, sx10, f.y);  vec3 sxy1 = mix(sx01, sx11, f.y);
+    return mix(sxy0, sxy1, f.z);
+}
+
+/**
+ * @brief Shadow ray from surface point to light (Phase 5h).
+ * Normal-offset origin avoids self-intersection without a fixed bias.
+ * Returns 1.0 if occluded, 0.0 if visible.
+ */
+float shadowRay(vec3 hitPos, vec3 normal, vec3 lightPos) {
+    vec3  toLight   = lightPos - hitPos;
+    float distLight = length(toLight);
+    vec3  ldir      = toLight / distLight;
+    // Push origin along outward normal + small ldir offset for grazing incidence
+    vec3  origin    = hitPos + normal * 0.02 + ldir * 0.01;
+    float t         = 0.0;
+    for (int i = 0; i < 32 && t < distLight; ++i) {
+        float d = sampleSDF(origin + ldir * t);
+        if (d >= 1e9) return 0.0;   // exited volume — light is outside, not occluded
+        if (d < 0.002) return 1.0;  // hit geometry — in shadow
+        t += max(d * 0.9, 0.01);
+    }
+    return 0.0;
+}
+
+/**
+ * @brief SDF cone soft shadow (IQ-style) — Phase 5i.
+ * Same origin convention as shadowRay(). Returns shadow factor 0=lit, 1=shadow.
+ * res accumulates k*h/t; smaller h/t (narrow cone clearance) → lower res → more shadow.
+ * Not physically equivalent to a point light — this is an appearance approximation.
+ */
+float softShadow(vec3 hitPos, vec3 normal, vec3 lightPos, float k) {
+    vec3  toLight   = lightPos - hitPos;
+    float distLight = length(toLight);
+    vec3  ldir      = toLight / distLight;
+    vec3  origin    = hitPos + normal * 0.02 + ldir * 0.01;
+    float t         = 0.0;
+    float res       = 1.0;
+    for (int i = 0; i < 32 && t < distLight; ++i) {
+        float d = sampleSDF(origin + ldir * t);
+        if (d >= 1e9) return 0.0;                       // exited volume — light is outside, unoccluded
+        if (d < 0.002) return 1.0;                       // hit geometry — fully in shadow
+        res = min(res, k * d / max(t, 0.001));           // cone narrowing accumulation
+        t  += max(d * 0.9, 0.01);
+    }
+    return 1.0 - clamp(res, 0.0, 1.0);  // convert: res=1→shadow=0 (lit), res=0→shadow=1
+}
+
 /**
  * @brief Tone mapping (ACES approximation)
  */
@@ -265,31 +400,46 @@ void main() {
             // Intentionally different from mode 0: shows the cascade contribution in
             // linear space so subtle color bleed (red/green wall tint) is preserved
             // and not compressed away by ACES. Sky pixels stay black (no GI there).
+            // Respects uUseDirectionalGI toggle: ON → cosine-weighted atlas sample,
+            // OFF → isotropic probeGridTexture. Use this mode to compare the two.
             if (uRenderMode == 6) {
-                vec3 indirect6 = texture(uRadiance, uvw).rgb;
+                vec3 indirect6 = (uUseDirectionalGI != 0 && uUseCascade != 0)
+                    ? sampleDirectionalGI(pos, normal)
+                    : texture(uRadiance, uvw).rgb;
                 fragColor = vec4(clamp(indirect6 * 2.0, 0.0, 1.0), 1.0);
                 return;
             }
 
             // Debug mode 4: direct light only (bypass cascade regardless of uUseCascade)
             if (uRenderMode == 4) {
-                vec3 lightDir4 = normalize(uLightPos - pos);
-                float diff4    = max(dot(normal, lightDir4), 0.0);
-                vec3 direct    = albedo * (diff4 * uLightColor + vec3(0.05));
+                vec3  lightDir4 = normalize(uLightPos - pos);
+                float shadow4   = (uUseShadowRay != 0)
+                    ? ((uUseSoftShadow != 0) ? softShadow(pos, normal, uLightPos, uSoftShadowK)
+                                             : shadowRay(pos, normal, uLightPos))
+                    : 0.0;
+                float diff4     = max(dot(normal, lightDir4), 0.0) * (1.0 - shadow4);
+                vec3  direct    = albedo * (diff4 * uLightColor + vec3(0.05));
                 fragColor = vec4(toneMapACES(direct), 1.0);
                 fragColor.rgb = pow(fragColor.rgb, vec3(1.0 / 2.2));
                 return;
             }
 
             // Mode 0: final rendering
-            vec3 lightDir     = normalize(uLightPos - pos);
-            float diff        = max(dot(normal, lightDir), 0.0);
-            vec3 surfaceColor = albedo * (diff * uLightColor + vec3(0.05));
+            vec3  lightDir    = normalize(uLightPos - pos);
+            float shadow      = (uUseShadowRay != 0)
+                ? ((uUseSoftShadow != 0) ? softShadow(pos, normal, uLightPos, uSoftShadowK)
+                                         : shadowRay(pos, normal, uLightPos))
+                : 0.0;
+            float diff        = max(dot(normal, lightDir), 0.0) * (1.0 - shadow);
+            vec3  surfaceColor = albedo * (diff * uLightColor + vec3(0.05));
 
             // Indirect lighting from cascade (probes already store albedo-weighted radiance)
-            if (uUseCascade) {
-                vec3 indirect = texture(uRadiance, uvw).rgb;
-                surfaceColor += indirect * 1.0;
+            if (uUseCascade != 0) {
+                // 5g: cosine-weighted directional atlas OR isotropic average fallback
+                vec3 indirect = (uUseDirectionalGI != 0)
+                    ? sampleDirectionalGI(pos, normal)
+                    : texture(uRadiance, uvw).rgb;
+                surfaceColor += indirect;
             }
 
             // Front-to-back blending
