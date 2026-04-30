@@ -54,6 +54,13 @@ But the later implementation work found something stronger:
 
 Even in the current non-co-located implementation, the specific Euclidean-distance visibility test is still structurally inert under the current interval design.
 
+The branch then went one step farther:
+
+- instead of stopping at `upperProbePos = probePos / 2`
+- it added real 8-neighbor spatial trilinear interpolation for the non-co-located directional merge path
+
+So the current code is no longer just "nearest parent" in non-co-located mode.
+
 So the concept is understandable, but the current live behavior is subtler than the original pitch.
 
 ## Part 2: D scaling
@@ -82,6 +89,15 @@ Scaled-D view:
 
 So scaled D tries to give far cascades more directional resolution than near cascades.
 
+In the current codebase, the implemented scaled path is:
+
+- C0: `D=4`
+- C1: `D=8`
+- C2: `D=16`
+- C3: `D=16`
+
+The earlier idea of using `D=2` at C0 was dropped because it is too degenerate for this branch's directional encoding.
+
 ## Why this made the branch harder to follow
 
 Once 5d and 5e landed, the branch had several interacting toggles:
@@ -99,5 +115,6 @@ The safe way to think about it is:
 2. Phase 5d experiments with spatial layout
 3. Phase 5e experiments with angular-budget distribution
 4. Phase 5f smooths directional bin boundaries
+5. 5g, 5h, and 5i then change how the final renderer consumes and displays the result
 
 If you keep that order, the later jargon becomes easier to place.

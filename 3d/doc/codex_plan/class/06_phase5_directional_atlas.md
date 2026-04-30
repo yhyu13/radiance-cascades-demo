@@ -80,6 +80,18 @@ This is why the atlas exists.
 
 Without Phase 5c, the atlas would just be extra storage.
 
+## Phase 5g, 5h, and 5i: the final renderer catches up
+
+The first half of Phase 5 changed how probes are baked.
+
+The second half changed how the final screen shader uses that information:
+
+- 5g: optional directional GI in the final renderer
+- 5h: hard direct shadow ray in the final renderer
+- 5i: optional soft-shadow approximation in final shading and in the bake shader
+
+This matters because before 5g the final image still only read the isotropic reduced probe grid even though the bake had already become directional.
+
 ## Phase 5 debug views
 
 Once direction bins exist, new debug views become possible:
@@ -118,8 +130,8 @@ It did not magically make every related design perfect.
 Open issues still include:
 
 - runtime A/B validation quality
-- some stale debug/UI paths
 - the exact semantics of non-co-located visibility weighting
-- some debug-mode wiring drift
+- how much of the later soft-shadow path is considered a visual approximation versus a long-term keeper
+- which debug modes are meant to validate bake data versus final-render consumption
 
 But conceptually, this is the phase that turns the project from isotropic-probe GI into directional-probe GI.

@@ -61,6 +61,14 @@ That is why the branch can accumulate a lot of jargon. There are really two syst
 
 Most of the complex Phase 3-5 work is happening in the probe baking system.
 
+But in the latest codebase the final screen renderer also has important Phase 5 logic:
+
+- a hard shadow ray for direct light
+- an optional directional-GI path that reads the C0 atlas directly
+- an optional soft-shadow approximation
+
+So by the end of Phase 5, both systems matter.
+
 ## The shortest mental model
 
 Use this model if you get lost:
@@ -71,5 +79,6 @@ Use this model if you get lost:
 4. Different cascade levels cover different ray-distance bands.
 5. Higher cascades fill in the far-field answer for lower cascades.
 6. Phase 5 upgrades that fill-in from "one average color" to "the color for this exact direction."
+7. The final renderer can now either read the isotropic reduced grid or a directional C0-atlas-based GI answer.
 
 Everything else is optimization, debugging, or cleanup around that core.

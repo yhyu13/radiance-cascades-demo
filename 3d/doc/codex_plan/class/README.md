@@ -12,15 +12,17 @@ Use this reading order:
 6. `05_phase4_quality_fixes.md`
 7. `06_phase5_directional_atlas.md`
 8. `07_phase5_spatial_layout_and_scaling.md`
-9. `08_current_code_map.md`
-10. `09_phase5d_trilinear_upper_lookup.md`
+9. `08_phase5_final_renderer_directional_and_shadows.md`
+10. `09_current_code_map.md`
+11. `10_phase5d_trilinear_upper_lookup.md`
 
 If you only need the shortest path:
 
 1. Read `01_big_picture.md`
 2. Read `04_phase3_four_cascades.md`
 3. Read `06_phase5_directional_atlas.md`
-4. Skim `00_jargon_index.md` when a term is unclear
+4. Read `08_phase5_final_renderer_directional_and_shadows.md`
+5. Skim `00_jargon_index.md` when a term is unclear
 
 What this set tries to do:
 

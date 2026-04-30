@@ -147,10 +147,19 @@ The `cascadeReady` flag is set to false by any toggle that changes bake output:
 
 ## Summary of all Phase 5 toggles and what they control
 
-| Toggle | What it changes | Visual effect |
-|---|---|---|
-| Directional merge (5c) | Per-direction vs isotropic upper cascade lookup | Color bleeding accuracy |
-| Directional bilinear (5f) | 4-sample blend vs nearest-bin snap | Smoothness at bin boundaries |
-| Co-located (5d) | All N³ vs halving-per-level probe layout | Probe spatial density per level |
-| D-scaling (5e) | Same D vs growing D per level | Directional resolution for far cascades |
-| C0 resolution | Base probe count, sets baseInterval | Spatial density + interval widths |
+| Toggle | What it changes | Cascade rebuild? | Visual effect |
+|---|---|---|---|
+| Directional merge (5c) | Per-direction vs isotropic upper cascade lookup | Yes | Color bleeding accuracy |
+| Directional bilinear (5f) | 4-sample blend vs nearest-bin snap | Yes | Smoothness at bin boundaries |
+| Co-located (5d) | All N³ vs halving-per-level probe layout | Yes (reinit) | Probe spatial density per level |
+| D-scaling (5e) | Same D vs growing D per level | Yes (reinit) | Directional resolution for far cascades |
+| C0 resolution | Base probe count, sets baseInterval | Yes (reinit) | Spatial density + interval widths |
+| Shadow ray (5h) | Binary SDF shadow in direct term | No | Hard shadow in direct lighting |
+| Soft shadow display (5i-A) | Cone soft shadow in direct term | No | Soft penumbra in direct lighting |
+| Soft shadow bake (5i-B1) | Cone soft shadow baked into probe radiance | Yes | Soft shadow boundaries in indirect GI |
+| Soft shadow k (5i) | Penumbra width for both display and bake | Yes (if bake ON) | Shadow softness; low=wide, high=binary |
+| Directional GI (5g) | Cosine-weighted atlas sampling vs isotropic average | No | Directional contrast in indirect GI |
+
+**Rebuild column** notes: "reinit" means cascade textures are destroyed and re-created
+(atlas dimensions change). "Yes" means only `cascadeReady = false` (re-bake same textures).
+"No" means the toggle only affects the final renderer pass — no bake work at all.

@@ -20,22 +20,33 @@ but has not read the phase implementation docs. Read in order.
 | [08 Phase 5e: D Scaling](08_phase5e_direction_scaling.md) | Per-cascade bin count | Why D=2 is degenerate; what D scaling changes |
 | [09 Phase 5f: Bilinear](09_phase5f_bilinear.md) | Smooth bin transitions | Why GL_NEAREST blocks hardware bilinear; manual blend math |
 | [10 Configuration](10_c0_resolution_and_configuration.md) | All knobs and their effects | Full parameter space and memory costs |
+| [11 Phase 5h: Shadow Ray](11_phase5h_shadow_ray.md) | Binary SDF shadow in direct term | Normal-offset origin; why the renderer does better than the bake shader |
+| [12 Phase 5g: Directional GI](12_phase5g_directional_gi.md) | Cosine-weighted atlas sampling | Why back-facing bins dilute indirect; 8-probe trilinear is required |
+| [13 Phase 5i: Soft Shadow](13_phase5i_soft_shadow.md) | SDF cone soft shadow (display + bake) | IQ k·d/t formula; why shared k is UI convenience not physical coupling |
 
 ---
 
-## The core chain (Phase 5 in one paragraph)
+## The core chain (Phase 5 in two paragraphs)
 
-Phase 5a replaces Fibonacci sphere directions with octahedral bins (D×D grid over the
-sphere), making direction→index conversion analytic. Phase 5b stores one radiance value
-per bin per probe in an atlas texture (GL_NEAREST required). Phase 5b-1 averages the
-bins back to the isotropic probeGridTexture so the renderer still works. Phase 5c
-changes the merge: instead of pulling an averaged isotropic value from the upper cascade,
-a miss now reads the upper cascade's atlas at the exact same direction bin — giving
-directionally correct far-field radiance. Phase 5d lets each cascade use a different
+**Bake pipeline:** Phase 5a replaces Fibonacci sphere directions with octahedral bins
+(D×D grid over the sphere), making direction→index conversion analytic. Phase 5b stores
+one radiance value per bin per probe in an atlas texture (GL_NEAREST required). Phase 5b-1
+averages the bins back to the isotropic probeGridTexture so the renderer still works.
+Phase 5c changes the merge: instead of pulling an averaged isotropic value from the upper
+cascade, a miss now reads the upper cascade's atlas at the exact same direction bin —
+giving directionally correct far-field radiance. Phase 5d lets each cascade use a different
 probe count (halving per level), matching probe density to each level's coherence scale.
 Phase 5e optionally scales D per level (more bins for far cascades that need directional
 precision). Phase 5f adds bilinear blending across 4 surrounding direction bins, removing
 the hard 36° bin-boundary steps that Phase 5c's nearest-bin lookup produced.
+
+**Renderer pipeline:** Phase 5h adds a binary shadow ray from the primary surface hit to
+the point light, fixing the largest visual defect (unshadowed direct lighting). Phase 5g
+replaces the isotropic probe average in the renderer with a cosine-weighted directional
+integral over the C0 atlas (back-facing bins excluded, 8-probe trilinear spatial blend),
+removing washed-out indirect from non-contributing directions. Phase 5i adds SDF cone
+soft shadow in both the renderer (display path, no rebuild) and the bake shader (probe
+shading path, triggers rebuild), producing a soft penumbra controlled by the k parameter.
 
 ---
 
