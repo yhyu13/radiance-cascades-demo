@@ -51,14 +51,17 @@ Passes 4–6 run every frame (real-time final render + debug overlays).
 `raymarch.frag` runs once per screen pixel. For each pixel it:
 1. Casts a primary ray from the camera into the scene.
 2. Sphere-marches through `sdfTexture` until it hits a surface or leaves the volume.
-3. At the surface hit, computes **direct light** by checking a shadow ray toward the point light.
-4. Looks up **indirect light (GI)** from the nearest probe in C0's `probeGridTexture`.
-5. Combines: `final = direct + GI_from_C0`.
+3. At the surface hit, computes **direct light** by checking a shadow ray toward the point light (Phase 5h; binary hard shadow or optional cone soft shadow from Phase 5i).
+4. Looks up **indirect light (GI)** from the probe system. Two paths exist:
+   - **Isotropic path** (default baseline): `texture(uRadiance, uvw)` — hardware trilinear sample from the selected cascade's `probeGridTexture` (a 32³ direction-averaged texture written by the reduction pass).
+   - **Directional GI path** (Phase 5g, optional): `sampleDirectionalGI(pos, normal)` — reads the C0 `probeAtlasTexture` directly, integrating only bins facing the surface normal over 8 surrounding probes with manual trilinear blending. More directionally correct than the isotropic path.
+5. Combines: `final = direct + indirect`.
 6. Applies ACES tone mapping and gamma correction.
 
-The GI lookup in step 4 is a simple `texture()` trilinear sample from a 32³ texture.
-**The quality of GI entirely depends on what is stored in those 32³ probeGridTextures.**
-Everything in Phases 3–5 is about making that stored value more accurate.
+In the isotropic path, GI quality depends on what is stored in `probeGridTexture`. In the
+directional path, quality depends on the C0 `probeAtlasTexture` content and how many bins
+face the surface. Everything in Phases 3–5 is about making those stored values more accurate
+and reading them in a more directionally correct way.
 
 ---
 
@@ -70,7 +73,8 @@ Everything in Phases 3–5 is about making that stored value more accurate.
 | SDF grid | 64³ = 262,144 cells, 0.0625 m each |
 | Probe grid | 32³ = 32,768 probes, 0.125 m apart (default) |
 | Cascade levels | 4 (C0 near, C3 far) |
-| Final GI source | C0 probeGridTexture, 32³ RGBA16F |
+| Final GI source (isotropic) | Selected cascade `probeGridTexture`, 32³ RGBA16F |
+| Final GI source (directional, Phase 5g) | C0 `probeAtlasTexture`, 128×128×32 RGBA16F (D=4) |
 
 ---
 
@@ -79,6 +83,9 @@ Everything in Phases 3–5 is about making that stored value more accurate.
 | Problem | Root cause | Fix |
 |---|---|---|
 | GI too dark | Probes don't see far enough | More cascade levels / wider intervals |
-| Color bleeding wrong | Upper cascade value is averaged (isotropic) | Phase 5 directional merge |
+| Color bleeding wrong | Upper cascade value is averaged (isotropic) | Phase 5c directional merge |
 | Banding at cascade boundary | Hard cutoff when switching levels | Phase 4c blend zone |
 | Bin boundary banding | Nearest-bin lookup in atlas | Phase 5f bilinear |
+| No direct shadows | Direct term had no occlusion check | Phase 5h shadow ray |
+| Indirect washed-out (back-facing bins included) | Isotropic average ignores surface normal | Phase 5g directional GI path |
+| Hard shadow edge on binary point light | Binary shadow is visually harsh | Phase 5i soft shadow approximation |

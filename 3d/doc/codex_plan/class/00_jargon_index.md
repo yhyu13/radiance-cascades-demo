@@ -180,20 +180,47 @@ The directional atlas texture for the nearest cascade. The final renderer's dire
 `Radiance debug view`
 The overlay that shows slices, atlas data, hit types, and bin viewers.
 
-`Mode 3`
-Atlas raw view.
+`Overlay mode 0`
+Slice view in `radiance_debug.frag` `uVisualizeMode`.
 
-`Mode 4`
-Hit-type heatmap.
+`Overlay mode 1`
+Max-projection view in `radiance_debug.frag` `uVisualizeMode`.
 
-`Mode 5`
-Nearest-bin viewer.
+`Overlay mode 2`
+Average-projection view in `radiance_debug.frag` `uVisualizeMode`.
 
-`Mode 6`
-Bilinear bin viewer.
+`Overlay mode 3`
+Atlas raw view in `radiance_debug.frag`. Shows the packed `D x D` tile layout for every probe.
 
-`Raymarch mode 6`
-The final-render GI-only view. It shows indirect light without direct lighting. In the current code it respects the directional-GI toggle.
+`Overlay mode 4`
+Hit-type heatmap in `radiance_debug.frag`.
+
+`Overlay mode 5`
+Nearest-bin viewer in `radiance_debug.frag`.
+
+`Overlay mode 6`
+Bilinear bin viewer in `radiance_debug.frag`.
+
+`Render mode 0`
+The normal final image in `raymarch.frag`: direct light plus indirect GI.
+
+`Render mode 1`
+Surface normals view in `raymarch.frag`.
+
+`Render mode 2`
+Depth view in `raymarch.frag`.
+
+`Render mode 3`
+Indirect-times-5 view in `raymarch.frag`. Useful for seeing the isotropic reduced GI signal by itself.
+
+`Render mode 4`
+Direct-only view in `raymarch.frag`. Useful for validating shadow-ray behavior without indirect GI.
+
+`Render mode 5`
+Step-count heatmap in `raymarch.frag`. Useful for seeing where raymarching is expensive.
+
+`Render mode 6`
+GI-only view in `raymarch.frag`. In the current code it respects the directional-GI toggle.
 
 `A/B`
 Compare two versions by toggling a setting and looking for visible differences.

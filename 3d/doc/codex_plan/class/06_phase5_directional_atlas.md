@@ -94,7 +94,9 @@ This matters because before 5g the final image still only read the isotropic red
 
 ## Phase 5 debug views
 
-Once direction bins exist, new debug views become possible:
+Once direction bins exist, new debug views become possible.
+
+Atlas/debug overlay modes in `radiance_debug.frag`:
 
 - atlas raw
 - hit-type heatmap
@@ -105,6 +107,12 @@ These modes exist so you can ask:
 
 - does this probe really store different colors by direction?
 - does the merge look up the correct upper-cascade direction?
+
+Final-render debug modes in `raymarch.frag` are a different namespace. The important ones for later Phase 5 work are:
+
+- render mode 3: indirect-times-5
+- render mode 4: direct only
+- render mode 6: GI only
 
 ## Phase 5f: directional bilinear
 

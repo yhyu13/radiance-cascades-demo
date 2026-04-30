@@ -1,4 +1,4 @@
-# 09 Phase 5d: What the Full 3D Upper-Cascade Lookup Would Be
+# 10 Phase 5d: What the Full 3D Upper-Cascade Lookup Would Be
 
 This note answers one specific question:
 

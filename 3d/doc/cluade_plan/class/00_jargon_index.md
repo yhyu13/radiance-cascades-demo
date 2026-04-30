@@ -10,7 +10,7 @@ Terms are grouped by the concept they belong to. Cross-references point to the n
 **SDF (Signed Distance Field)**
 A 3D texture where every cell stores "how far is the nearest surface from this point?"
 Positive = outside, negative = inside, zero = on the surface.
-We use a 64×64×64 grid of floats. → see `02_scene_and_sdf`
+We use a 64×64×64 grid of floats. → see `01_scene_and_pipeline`
 
 **Analytic SDF**
 Each scene object (box, sphere) is described by a math formula rather than mesh triangles.
@@ -78,7 +78,7 @@ Upper and lower cascade probes at the same grid index occupy the same world poin
 **Non-co-located**
 Each cascade level uses a different probe count and spacing:
 C0=32³, C1=16³, C2=8³, C3=4³. Upper probes are physically displaced from lower probes.
-→ see `06_phase5_spatial_options`
+→ see `07_phase5d_probe_layout`
 
 ---
 
@@ -131,7 +131,7 @@ All directions see the same value. Cheap but causes banding.
 
 **Directional probe / atlas**
 A probe that stores one radiance value per direction bin.
-Enables correct direction-dependent merge. → see `05_phase5_atlas`
+Enables correct direction-dependent merge. → see `05_phase5b_atlas`
 
 ---
 
@@ -187,7 +187,20 @@ Used for atlas reads in Phase 5c onward.
 
 **probeGridTexture**
 The isotropic 32³ RGBA16F texture that stores the direction-averaged radiance per probe.
-Written by the reduction pass (5b-1). Read by `raymarch.frag` for final GI lookup.
+Written by the reduction pass (5b-1). Read by `raymarch.frag` for the isotropic GI path.
+The directional GI path (Phase 5g) bypasses this texture and reads `probeAtlasTexture` directly.
+
+**probeAtlasTexture**
+The directional atlas texture — 128×128×32 RGBA16F at D=4 — storing one radiance value per
+direction bin per probe. Written by the cascade bake compute shader. The Phase 5g directional
+GI path reads this directly from the final renderer, integrating bins weighted by the surface
+normal's hemisphere. → see `12_phase5g_directional_gi`
+
+**Directional GI path (Phase 5g)**
+The optional final-renderer code path that reads the C0 `probeAtlasTexture` instead of the
+isotropic `probeGridTexture`. Performs cosine-weighted hemisphere integration over D² bins per
+probe and manual 8-probe trilinear spatial blending. Excludes back-facing bins, giving more
+directionally correct indirect light than the isotropic average. → see `12_phase5g_directional_gi`
 
 **Reduction pass**
 A second compute shader (`reduction_3d.comp`) that averages the D² atlas bins per probe
@@ -214,7 +227,7 @@ The miss in direction D gets the upper level's answer for direction D specifical
 
 **Directional bilinear (Phase 5f)**
 Instead of snapping to the nearest bin, blend the 4 surrounding bin centers.
-Smooths hard color steps at bin boundaries. → see `06_phase5_bilinear`
+Smooths hard color steps at bin boundaries. → see `09_phase5f_bilinear`
 
 **Blend zone (Phase 4c)**
 A distance region near tMax where a surface hit is smoothly blended toward the upper cascade.
@@ -249,19 +262,27 @@ A GPU variable set from CPU code, shared across all shader threads in one dispat
 
 ## Debug / Visualization Terms
 
-**radianceVisualizeMode**
-Integer (0–6) controlling what the top-right debug panel shows.
-0=slice, 1=max proj, 2=avg, 3=atlas, 4=hit type, 5=bin (nearest), 6=bin (bilinear).
-
-**Mode 4 (HitType heatmap)**
+**Overlay mode 4 (HitType heatmap)** — `radiance_debug.frag` `uVisualizeMode=4`
 Colors each probe by fraction of rays that hit surface (green), hit sky (blue), or missed (red).
 
-**Mode 5 (Bin nearest)**
+**Overlay mode 5 (Bin nearest)** — `radiance_debug.frag` `uVisualizeMode=5`
 Shows a single selected direction bin's radiance for all probes, using nearest-bin lookup.
 
-**Mode 6 (Bin bilinear)**
+**Overlay mode 6 (Bin bilinear)** — `radiance_debug.frag` `uVisualizeMode=6`
 Shows the bilinearly interpolated radiance at the midpoint between the selected bin and its (+1,+1) neighbor.
-Exposes whether bilinear smoothing is working.
+Exposes whether bilinear smoothing is working. Note: different shader than `uRenderMode=6`.
+
+**uRenderMode**
+The final renderer's display mode selector (`raymarch.frag`). Key values:
+- 0 = final image (direct + indirect + tone map)
+- 3 = indirect × 5 (isotropic probe grid only, magnified; always isotropic regardless of directional GI toggle)
+- 4 = direct light only (no indirect; shadow ray applies)
+- 6 = GI-only (indirect without direct; respects the directional GI toggle — the primary A/B diagnostic for Phase 5g)
+
+**radianceVisualizeMode**
+Integer (0–6) controlling what the top-right **atlas debug overlay** shows (`radiance_debug.frag`).
+Different shader from `raymarch.frag` — mode numbers coincide but mean different things:
+0=slice, 1=max proj, 2=avg, 3=atlas raw, 4=hit type, 5=bin (nearest), 6=bin (bilinear).
 
 **cascadeReady**
 A bool flag on the CPU. When false, the next `render()` call re-bakes all cascades.
