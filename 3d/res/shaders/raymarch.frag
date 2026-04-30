@@ -396,6 +396,19 @@ void main() {
             vec3 uvw    = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
             vec3 albedo = texture(uAlbedo, uvw).rgb;
 
+            // Debug mode 7: ray travel distance heatmap (continuous float t, not integer stepCount).
+            // Use alongside mode 5 to separate "integer step-count quantization" banding from
+            // "actual SDF iso-contour" banding. If mode 7 is smooth but mode 5 is banded,
+            // the cause is integer quantization, not SDF resolution.
+            if (uRenderMode == 7) {
+                float tNorm = clamp((t - tNear) / max(tFar - tNear, 0.001), 0.0, 1.0);
+                vec3 heatColor = (tNorm < 0.5)
+                    ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), tNorm * 2.0)
+                    : mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (tNorm - 0.5) * 2.0);
+                fragColor = vec4(heatColor, 1.0);
+                return;
+            }
+
             // Debug mode 6: GI-only — raw linear indirect, no tone map, no gamma.
             // Intentionally different from mode 0: shows the cascade contribution in
             // linear space so subtle color bleed (red/green wall tint) is preserved
