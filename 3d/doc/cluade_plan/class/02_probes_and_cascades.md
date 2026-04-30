@@ -120,8 +120,16 @@ After all 4 cascades are baked, each C0 probe has radiance values for every dire
 The **reduction pass** averages all direction values into one color per probe and writes
 it to `probeGridTexture` (32³ RGBA16F).
 
-`raymarch.frag` reads this texture at the closest probe position to get the GI color
-for any surface point.
+`raymarch.frag` then reads indirect GI via one of two paths:
+
+- **Isotropic path** (default): `texture(uRadiance, uvw)` — hardware trilinear
+  sample from `probeGridTexture`. Spatially smooth (8-probe blend by the GPU sampler)
+  but directionally averaged (all hemisphere directions contribute equally regardless of
+  the surface normal).
+- **Directional GI path** (Phase 5g, optional): reads the C0 `probeAtlasTexture`
+  directly, manually trilinearly blending 8 surrounding probes and weighting each
+  probe's D² bins by `dot(binDir, surfaceNormal)`. Back-facing bins get zero weight,
+  giving more directionally correct indirect light.
 
 ---
 
@@ -136,7 +144,11 @@ for any surface point.
      ↓ merge
 [C0 bake]  ← C1 fills in misses; C0 now has full-range radiance
      ↓ reduction (average all directions)
-[probeGridTexture 32³]
-     ↓ texture() in raymarch.frag
-[Final GI on screen]
+[probeGridTexture 32³]           [C0 probeAtlasTexture 128×128×32]
+     ↓ texture() in raymarch.frag      ↓ sampleDirectionalGI() in raymarch.frag
+[Isotropic GI on screen]         [Directional GI on screen (Phase 5g)]
 ```
+
+The isotropic path is the simpler baseline; the directional path (Phase 5g) reads the
+atlas directly with cosine-weighted hemisphere integration, producing better directional
+contrast at the cost of ~128 texelFetch calls per pixel instead of ~8.
