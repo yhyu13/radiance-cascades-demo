@@ -816,6 +816,10 @@ private:
     /** Render mode sent to raymarch.frag: 0=final, 1=normals, 2=SDF dist, 3=indirect*5 */
     int raymarchRenderMode;
 
+    /** Phase 7 diagnostic: evaluate SDF analytically per-sample instead of texture lookup.
+     *  Toggle in UI alongside mode 5 / mode 7 to isolate grid-quantization banding. */
+    bool useAnalyticRaymarch;
+
     /** Show debug visualization windows */
     bool showDebugWindows;
     

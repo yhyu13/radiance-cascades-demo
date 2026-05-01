@@ -143,6 +143,7 @@ Demo3D::Demo3D()
     , raymarchSteps(256)
     , rayTerminationThreshold(0.95f)
     , raymarchRenderMode(0)
+    , useAnalyticRaymarch(false)
     , showDebugWindows(false)
     , showCascadeSlices(false)
     , showVoxelGrid(false)
@@ -1268,6 +1269,15 @@ void Demo3D::raymarchPass() {
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
     glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
 
+    // Phase 7: analytic SDF toggle — bind primitive SSBO so the fragment shader can
+    // evaluate SDF continuously (no grid). SSBO binding 0 is shared with the compute
+    // pass; safe here since compute is not running during the render draw call.
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, primitiveSSBO);
+    glUniform1i(glGetUniformLocation(prog, "uUseAnalyticSDF"),
+                useAnalyticRaymarch ? 1 : 0);
+    glUniform1i(glGetUniformLocation(prog, "uPrimitiveCount"),
+                static_cast<GLint>(analyticSDF.getPrimitiveCount()));
+
     // Cascade indirect lighting — bind the user-selected cascade level so each can be
     // inspected independently; uUseCascade only controls blending in mode 0
     int selC = std::max(0, std::min(selectedCascadeForRender, cascadeCount - 1));
@@ -2119,6 +2129,10 @@ void Demo3D::renderSettingsPanel() {
     ImGui::RadioButton("RayDist (7)",     &raymarchRenderMode, 7);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("Mode 7: ray travel distance heatmap (continuous float, green=near, red=far).\nCompare with Mode 5 (integer step count). If mode 7 is smooth but mode 5 is banded,\nthe banding is from integer step-count quantization, not SDF resolution.");
+
+    ImGui::Checkbox("Analytic SDF (smooth, no grid)", &useAnalyticRaymarch);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("OFF (default): SDF read from 128^3 texture (trilinear, grid-quantized).\nON: SDF evaluated analytically per-sample — truly continuous, no voxel grid.\nDiagnostic: toggle in Mode 5 or 7. If banding disappears -> grid is the cause.\nIf banding stays -> it is the natural rectangular iso-contours of the Cornell Box.");
 
     ImGui::Separator();
     ImGui::Checkbox("Show Performance Metrics", &showPerformanceMetrics);

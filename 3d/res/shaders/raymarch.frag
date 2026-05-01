@@ -23,7 +23,7 @@
  * - Temporal reprojection for stability
  */
 
-#version 330 core
+#version 430 core
 
 // =============================================================================
 // Input/Output
@@ -115,6 +115,24 @@ uniform int uAtlasDirRes;
 uniform int uUseDirectionalGI;
 
 // =============================================================================
+// Analytic SDF — primitive SSBO (binding 0, same layout as sdf_analytic.comp)
+// Only accessed when uUseAnalyticSDF == 1.
+// =============================================================================
+
+struct Primitive {
+    int   type;
+    float pad0, pad1, pad2;
+    vec4  position;
+    vec4  scale;
+    vec4  color;
+};
+layout(std430, binding = 0) readonly buffer PrimitiveBuffer {
+    Primitive primitives[];
+};
+uniform int uPrimitiveCount;
+uniform int uUseAnalyticSDF;  // 1 = evaluate SDF analytically per-sample (no grid)
+
+// =============================================================================
 // Constants
 // =============================================================================
 
@@ -174,16 +192,40 @@ bool intersectBox(
     return tFar > tNear && tFar > 0.0;
 }
 
+// Analytic SDF primitives — mirrors sdf_analytic.comp exactly
+float sdfBox(vec3 p, vec3 b) {
+    vec3 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0);
+}
+float sdfSphere(vec3 p, float r) { return length(p) - r; }
+
+float sampleSDFAnalytic(vec3 worldPos) {
+    float minDist = INF;
+    for (int i = 0; i < uPrimitiveCount; ++i) {
+        vec3 localPos = worldPos - primitives[i].position.xyz;
+        float d = (primitives[i].type == 0)
+            ? sdfBox(localPos, primitives[i].scale.xyz)
+            : sdfSphere(localPos, primitives[i].scale.x);
+        minDist = min(minDist, d);
+    }
+    return minDist;
+}
+
 /**
- * @brief Sample SDF at world position
+ * @brief Sample SDF at world position.
+ * uUseAnalyticSDF=1: evaluate primitives directly (continuous, no grid).
+ * uUseAnalyticSDF=0: read from precomputed 3D texture (trilinear, grid-quantized).
  */
 float sampleSDF(vec3 worldPos) {
+    if (uUseAnalyticSDF != 0)
+        return sampleSDFAnalytic(worldPos);
+
     // Convert world position to texture coordinates
     vec3 texCoord = (worldPos - uVolumeMin) / (uVolumeMax - uVolumeMin);
-    
+
     if (any(lessThan(texCoord, vec3(0.0))) || any(greaterThan(texCoord, vec3(1.0))))
         return INF;
-    
+
     return texture(uSDF, texCoord).r;
 }
 
