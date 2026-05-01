@@ -470,6 +470,17 @@ void Demo3D::render() {
                   << std::endl;
     }
 
+    // Phase 8: dirRes change — triggers full cascade rebuild (atlas layout depends on D)
+    static int lastDirRes = 4;
+    if (dirRes != lastDirRes) {
+        lastDirRes = dirRes;
+        destroyCascades();
+        initCascades();
+        cascadeReady = false;
+        std::cout << "[Phase 8] dirRes: " << dirRes
+                  << "  D^2=" << dirRes * dirRes << " bins/probe" << std::endl;
+    }
+
     // C0 probe resolution slider — changes interval and atlas dimensions
     static int lastC0Res = 32;
     if (cascadeC0Res != lastC0Res) {
@@ -2447,6 +2458,15 @@ void Demo3D::renderCascadePanel() {
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::TextDisabled("actual: D*D=%d rays/probe (all cascades)", dirRes * dirRes);
+
+    // Phase 8: live dirRes slider — rebuilds cascades on change
+    ImGui::SliderInt("Dir resolution (D)", &dirRes, 2, 8);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip(
+            "Octahedral directional bin count per probe: D*D bins total.\n"
+            "D=4 (default): 16 bins, coarse angular resolution.\n"
+            "D=8: 64 bins, 4x finer — costs 4x in BOTH bake and display per frame.\n"
+            "Phase 8 diagnostic: run E1 (toggle Directional GI) before raising D.");
 
     // ── Interval blend (4c) ──────────────────────────────────────────────────
     ImGui::Separator();
