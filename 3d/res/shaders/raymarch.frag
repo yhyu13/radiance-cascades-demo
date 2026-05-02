@@ -451,17 +451,14 @@ void main() {
                 return;
             }
 
-            // Debug mode 6: GI-only — raw linear indirect, no tone map, no gamma.
-            // Intentionally different from mode 0: shows the cascade contribution in
-            // linear space so subtle color bleed (red/green wall tint) is preserved
-            // and not compressed away by ACES. Sky pixels stay black (no GI there).
-            // Respects uUseDirectionalGI toggle: ON → cosine-weighted atlas sample,
-            // OFF → isotropic probeGridTexture. Use this mode to compare the two.
+            // Debug mode 6: GI-only — albedo * indirect, linear space, no tone map.
+            // Probes store source-albedo-weighted radiance; multiply by destination
+            // albedo here for energy-conserving Lambertian indirect.
             if (uRenderMode == 6) {
                 vec3 indirect6 = (uUseDirectionalGI != 0 && uUseCascade != 0)
                     ? sampleDirectionalGI(pos, normal)
                     : texture(uRadiance, uvw).rgb;
-                fragColor = vec4(clamp(indirect6 * 2.0, 0.0, 1.0), 1.0);
+                fragColor = vec4(clamp(albedo * indirect6, 0.0, 1.0), 1.0);
                 return;
             }
 
@@ -488,13 +485,13 @@ void main() {
             float diff        = max(dot(normal, lightDir), 0.0) * (1.0 - shadow);
             vec3  surfaceColor = albedo * (diff * uLightColor + vec3(0.05));
 
-            // Indirect lighting from cascade (probes already store albedo-weighted radiance)
+            // Probes store source-albedo-weighted radiance; multiply by destination
+            // albedo for energy-conserving Lambertian: L_out = albedo_dest * integral(L_in*cos)/integral(cos)
             if (uUseCascade != 0) {
-                // 5g: cosine-weighted directional atlas OR isotropic average fallback
                 vec3 indirect = (uUseDirectionalGI != 0)
                     ? sampleDirectionalGI(pos, normal)
                     : texture(uRadiance, uvw).rgb;
-                surfaceColor += indirect;
+                surfaceColor += albedo * indirect;
             }
 
             // Front-to-back blending
