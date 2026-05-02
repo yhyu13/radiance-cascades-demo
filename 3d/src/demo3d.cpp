@@ -30,6 +30,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// Phase 9b: Halton low-discrepancy sequence for probe jitter.
+// Maps index → [0,1) in the given base (van der Corput sequence).
+static float halton(uint32_t idx, uint32_t base) {
+    float f = 1.0f, r = 0.0f;
+    while (idx > 0) { f /= base; r += f * (idx % base); idx /= base; }
+    return r;
+}
+
 // =============================================================================
 // VoxelNode Implementation
 // =============================================================================
@@ -110,7 +118,7 @@ Demo3D::Demo3D()
     , skyColor(0.02f, 0.03f, 0.05f)
     , baseRaysPerProbe(8)
     , blendFraction(0.5f)
-    , dirRes(4)
+    , dirRes(8)
     , useDirectionalMerge(true)
     , useColocatedCascades(false)   // non-colocated: better spatial coverage
     , useScaledDirRes(true)         // D4/D8/D16/D16: upper cascades get finer angular res
@@ -125,6 +133,10 @@ Demo3D::Demo3D()
     , temporalAlpha(0.1f)
     , useProbeJitter(false)
     , currentProbeJitter(0.0f)
+    , probeJitterIndex(0)
+    , temporalRebuildCount(0)
+    , useHistoryClamp(true)
+    , historyNeedsSeed(false)
     , cascadeC0Res(32)
     , atlasBinDx(0)
     , atlasBinDy(0)
@@ -190,6 +202,16 @@ Demo3D::Demo3D()
     , sdfTimeQuery(0)
     , cascadeTimeQuery(0)
     , raymarchTimeQuery(0)
+    , giFBO(0)
+    , giDirectTex(0)
+    , giGBufferTex(0)
+    , giIndirectTex(0)
+    , giLastW(0)
+    , giLastH(0)
+    , useGIBlur(false)
+    , giBlurRadius(3)
+    , giBlurDepthSigma(0.05f)
+    , giBlurNormalSigma(0.2f)
 {
     /**
      * @brief Construct 3D demo and initialize all resources
@@ -237,6 +259,7 @@ Demo3D::Demo3D()
     loadShader("radiance_debug.frag"); // Phase 1: Radiance cascade debug (auto-loads .vert)
     loadShader("lighting_debug.frag"); // Phase 1: Lighting debug (auto-loads .vert)
     loadShader("raymarch.frag");       // Phase 1: Final raymarched image (auto-loads .vert)
+    loadShader("gi_blur.frag");        // Phase 9c: Bilateral GI blur (auto-loads .vert)
     
     // Step 5: Initialize cascades
     initCascades();
@@ -513,7 +536,12 @@ void Demo3D::render() {
     static bool lastTemporalAccum = false;
     if (useTemporalAccum != lastTemporalAccum) {
         lastTemporalAccum = useTemporalAccum;
-        if (useTemporalAccum) cascadeReady = false;  // warm-up on first enable
+        if (useTemporalAccum) {
+            cascadeReady = false;
+            historyNeedsSeed = true;   // Phase 9b: seed before first blend
+            probeJitterIndex = 0;      // reset Halton index
+            temporalRebuildCount = 0;  // reset general rebuild counter
+        }
     }
     static bool lastProbeJitter = false;
     if (useProbeJitter != lastProbeJitter) {
@@ -639,10 +667,11 @@ void Demo3D::render() {
         std::cout << std::defaultfloat << std::endl;
     }
 
-    // Pass 4: Raymarching
+    // Pass 4: Raymarching (+ optional bilateral GI blur)
     {
         double t0 = GetTime();
         raymarchPass();
+        if (useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6)) giBlurPass();
         raymarchTimeMs = (GetTime() - t0) * 1000.0;
     }
 
@@ -1067,14 +1096,18 @@ void Demo3D::sdfGenerationPass() {
 }
 
 void Demo3D::updateRadianceCascades() {
-    // Phase 9: generate one jitter vector per rebuild cycle (same for all cascades).
-    // With temporal accumulation, each rebuild samples at a different world position.
+    // Phase 9b: Halton(2,3,5) low-discrepancy jitter — fills [-0.5,0.5]^3 more
+    // evenly than uniform RNG over the first N samples, giving faster convergence.
     if (useProbeJitter) {
-        static std::mt19937 rng(std::random_device{}());
-        static std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
-        currentProbeJitter = glm::vec3(dist(rng), dist(rng), dist(rng));
+        currentProbeJitter = glm::vec3(
+            halton(probeJitterIndex, 2) - 0.5f,
+            halton(probeJitterIndex, 3) - 0.5f,
+            halton(probeJitterIndex, 5) - 0.5f
+        );
+        ++probeJitterIndex;
     } else {
         currentProbeJitter = glm::vec3(0.0f);
+        probeJitterIndex = 0;
     }
 
     // Coarse→fine: each level reads the already-written level above it for misses
@@ -1083,6 +1116,7 @@ void Demo3D::updateRadianceCascades() {
             updateSingleCascade(i);
         }
     }
+    historyNeedsSeed = false;  // Phase 9b: cleared after all cascades seeded this rebuild
 }
 
 void Demo3D::updateSingleCascade(int cascadeIndex) {
@@ -1198,26 +1232,43 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     auto tb = shaders.find("temporal_blend.comp");
     if (useTemporalAccum && tb != shaders.end() &&
         c.probeAtlasHistory != 0 && c.probeGridHistory != 0) {
-        GLuint tbProg = tb->second;
-        glUseProgram(tbProg);
-        glUniform1f(glGetUniformLocation(tbProg, "uAlpha"), temporalAlpha);
-
-        // Blend directional atlas
+        // Phase 9b: seed history = current on warm-up to eliminate dark startup.
+        // After copy, mix(current, current, alpha) = current regardless of alpha.
         int D    = cascadeDirRes[cascadeIndex];
         int axyz = c.resolution * D;
-        glUniform3i(glGetUniformLocation(tbProg, "uSize"), axyz, axyz, c.resolution);
+        if (historyNeedsSeed) {
+            glCopyImageSubData(c.probeAtlasTexture, GL_TEXTURE_3D, 0, 0, 0, 0,
+                               c.probeAtlasHistory,  GL_TEXTURE_3D, 0, 0, 0, 0,
+                               axyz, axyz, c.resolution);
+            glCopyImageSubData(c.probeGridTexture, GL_TEXTURE_3D, 0, 0, 0, 0,
+                               c.probeGridHistory,  GL_TEXTURE_3D, 0, 0, 0, 0,
+                               c.resolution, c.resolution, c.resolution);
+        }
+
+        GLuint tbProg = tb->second;
+        glUseProgram(tbProg);
+        glUniform1f(glGetUniformLocation(tbProg, "uAlpha"),        temporalAlpha);
+        glUniform1i(glGetUniformLocation(tbProg, "uClampHistory"), useHistoryClamp ? 1 : 0);
+
+        // Blend directional atlas — uDirRes = D (probe tile stride in atlas texels)
+        glUniform3i(glGetUniformLocation(tbProg, "uSize"),   axyz, axyz, c.resolution);
+        glUniform1i(glGetUniformLocation(tbProg, "uDirRes"), D);
         glBindImageTexture(0, c.probeAtlasHistory, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
         glBindImageTexture(1, c.probeAtlasTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA16F);
         glm::ivec3 wgA = calculateWorkGroups(axyz, axyz, c.resolution, 4);
         glDispatchCompute(wgA.x, wgA.y, wgA.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
-        // Blend isotropic grid
-        glUniform3i(glGetUniformLocation(tbProg, "uSize"), c.resolution, c.resolution, c.resolution);
+        // Blend isotropic grid — uDirRes = 0 (cardinal 3D neighborhood)
+        glUniform3i(glGetUniformLocation(tbProg, "uSize"),   c.resolution, c.resolution, c.resolution);
+        glUniform1i(glGetUniformLocation(tbProg, "uDirRes"), 0);
         glBindImageTexture(0, c.probeGridHistory, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
         glBindImageTexture(1, c.probeGridTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA16F);
         glDispatchCompute(wg.x, wg.y, wg.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+        // Phase 9b: count one rebuild per full cascade cycle (C0 is last in coarse→fine order).
+        if (cascadeIndex == 0) ++temporalRebuildCount;
     }
 }
 
@@ -1379,6 +1430,15 @@ void Demo3D::raymarchPass() {
     // Use selC (not hardcoded 0) so the cascade debug selector works in mode 6.
     // atlasAvailable gates the shader toggle so uUseDirectionalGI=0 is always pushed
     // when the texture is missing -- even if the UI toggle is ON.
+    //
+    // Phase 9c: always set probe grid bounds so mode 8 (probe cell boundary visualization)
+    // works regardless of whether the directional atlas is active.
+    {
+        glm::ivec3 probeGridRes(cascadeC0Res);
+        glUniform3iv(glGetUniformLocation(prog, "uAtlasVolumeSize"), 1, glm::value_ptr(probeGridRes));
+        glUniform3fv(glGetUniformLocation(prog, "uAtlasGridOrigin"), 1, glm::value_ptr(volumeOrigin));
+        glUniform3fv(glGetUniformLocation(prog, "uAtlasGridSize"),   1, glm::value_ptr(volumeSize));
+    }
     bool atlasAvailable = false;
     if (cascadeCount > 0 && cascades[selC].active && cascades[selC].probeAtlasTexture != 0) {
         glActiveTexture(GL_TEXTURE3);
@@ -1390,12 +1450,28 @@ void Demo3D::raymarchPass() {
         glUniform1i(glGetUniformLocation(prog, "uDirectionalAtlas"), 3);
         glm::ivec3 atlasVolSize(cascades[selC].resolution);
         glUniform3iv(glGetUniformLocation(prog, "uAtlasVolumeSize"), 1, glm::value_ptr(atlasVolSize));
-        glUniform3fv(glGetUniformLocation(prog, "uAtlasGridOrigin"), 1, glm::value_ptr(volumeOrigin));
-        glUniform3fv(glGetUniformLocation(prog, "uAtlasGridSize"),   1, glm::value_ptr(volumeSize));
         glUniform1i(glGetUniformLocation(prog, "uAtlasDirRes"),      cascadeDirRes[selC]);
         atlasAvailable = true;
     }
     glUniform1i(glGetUniformLocation(prog, "uUseDirectionalGI"), (useDirectionalGI && atlasAvailable) ? 1 : 0);
+
+    // GI blur: redirect mode-0/3/6 render to 3-attachment FBO (direct / gbuffer / indirect).
+    // Modes 3 and 6 are pure-indirect views so direct=black and blur applies to full output.
+    // Other debug modes go directly to the default framebuffer and are unaffected.
+    const bool giBlurActive = useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6);
+    glUniform1i(glGetUniformLocation(prog, "uSeparateGI"), giBlurActive ? 1 : 0);
+
+    if (giBlurActive) {
+        int w = GetScreenWidth(), h = GetScreenHeight();
+        if (w != giLastW || h != giLastH) initGIBlur(w, h);
+        if (giFBO != 0) {
+            glBindFramebuffer(GL_FRAMEBUFFER, giFBO);
+            GLenum drawBufs[3] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
+            glDrawBuffers(3, drawBufs);
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
+    }
 
     // Reuse the existing fullscreen quad VAO
     glBindVertexArray(debugQuadVAO);
@@ -1405,6 +1481,106 @@ void Demo3D::raymarchPass() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
+
+    // Restore default framebuffer; giBlurPass() will composite to screen in render()
+    if (giBlurActive && giFBO != 0) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK);
+    }
+}
+
+void Demo3D::initGIBlur(int w, int h) {
+    destroyGIBlur();
+
+    glGenFramebuffers(1, &giFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, giFBO);
+
+    auto makeColorTex = [](GLuint& tex, int w, int h) {
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    };
+
+    // [0] = linear direct lighting (from raymarch.frag location=0 when uSeparateGI=1)
+    makeColorTex(giDirectTex,   w, h);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, giDirectTex,   0);
+
+    // [1] = GBuffer: normal*0.5+0.5 (rgb), linearDepth (a). Sky = a=0.
+    makeColorTex(giGBufferTex,  w, h);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, giGBufferTex,  0);
+
+    // [2] = linear indirect/GI (from raymarch.frag location=2 when uSeparateGI=1)
+    makeColorTex(giIndirectTex, w, h);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, giIndirectTex, 0);
+
+    GLenum drawBufs[3] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
+    glDrawBuffers(3, drawBufs);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "[GIBlur] FBO incomplete at " << w << "x" << h << "\n";
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    giLastW = w;
+    giLastH = h;
+}
+
+void Demo3D::destroyGIBlur() {
+    if (giFBO)         { glDeleteFramebuffers(1, &giFBO);        giFBO = 0; }
+    if (giDirectTex)   { glDeleteTextures(1, &giDirectTex);      giDirectTex = 0; }
+    if (giGBufferTex)  { glDeleteTextures(1, &giGBufferTex);     giGBufferTex = 0; }
+    if (giIndirectTex) { glDeleteTextures(1, &giIndirectTex);    giIndirectTex = 0; }
+    giLastW = giLastH = 0;
+}
+
+void Demo3D::giBlurPass() {
+    auto it = shaders.find("gi_blur.frag");
+    if (it == shaders.end() || giFBO == 0 || giDirectTex == 0) return;
+
+    GLuint prog = it->second;
+    glUseProgram(prog);
+
+    // unit 0: linear direct lighting
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, giDirectTex);
+    glUniform1i(glGetUniformLocation(prog, "uDirectTex"), 0);
+
+    // unit 1: GBuffer (normal+depth)
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, giGBufferTex);
+    glUniform1i(glGetUniformLocation(prog, "uGBufferTex"), 1);
+
+    // unit 2: linear indirect/GI (only this buffer is blurred)
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, giIndirectTex);
+    glUniform1i(glGetUniformLocation(prog, "uIndirectTex"), 2);
+
+    glUniform1i(glGetUniformLocation(prog, "uBlurRadius"),  giBlurRadius);
+    glUniform1f(glGetUniformLocation(prog, "uDepthSigma"),  giBlurDepthSigma);
+    glUniform1f(glGetUniformLocation(prog, "uNormalSigma"), giBlurNormalSigma);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);
+    glViewport(0, 0, GetScreenWidth(), GetScreenHeight());
+
+    glBindVertexArray(debugQuadVAO);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Demo3D::renderDebugVisualization() {
@@ -2228,10 +2404,26 @@ void Demo3D::renderSettingsPanel() {
     ImGui::RadioButton("RayDist (7)",     &raymarchRenderMode, 7);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("Mode 7: ray travel distance heatmap (continuous float, green=near, red=far).\nCompare with Mode 5 (integer step count). If mode 7 is smooth but mode 5 is banded,\nthe banding is from integer step-count quantization, not SDF resolution.");
+    ImGui::RadioButton("ProbeCell (8)",   &raymarchRenderMode, 8);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Mode 8: probe cell boundary (fract of probe-grid coord as RGB).\nColor transitions occur at probe center positions; halfway = cell boundary.\nCompare with Mode 6 (GI-only): aligned banding = Type A (cell-size limited);\nmisaligned banding = Type B (directional D quantization).");
 
     ImGui::Checkbox("Analytic SDF (smooth, no grid)", &useAnalyticRaymarch);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("OFF (default): SDF read from 128^3 texture (trilinear, grid-quantized).\nON: SDF evaluated analytically per-sample — truly continuous, no voxel grid.\nDiagnostic: toggle in Mode 5 or 7. If banding disappears -> grid is the cause.\nIf banding stays -> it is the natural rectangular iso-contours of the Cornell Box.");
+
+    ImGui::Separator();
+    ImGui::Text("GI Bilateral Blur:");
+    ImGui::Checkbox("Enable GI Blur##giblur", &useGIBlur);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Depth+normal aware bilateral filter applied to the full frame.\nReduces probe-grid spatial banding without blurring depth/normal edges.\nAdjust Radius, DepthSigma, and NormalSigma to taste.");
+    if (useGIBlur) {
+        ImGui::SliderInt("Radius##giblur",         &giBlurRadius,       1, 8);
+        ImGui::SliderFloat("DepthSigma##giblur",   &giBlurDepthSigma,   0.005f, 0.5f, "%.3f");
+        ImGui::SliderFloat("NormalSigma##giblur",  &giBlurNormalSigma,  0.05f,  1.0f, "%.2f");
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("NormalSigma: cosine-distance threshold for normal edge preservation.\nLower = sharper edges preserved; higher = more blurring across normals.");
+    }
 
     ImGui::Separator();
     ImGui::Checkbox("Show Performance Metrics", &showPerformanceMetrics);
@@ -2362,10 +2554,11 @@ void Demo3D::renderCascadePanel() {
 
     // C0 probe resolution slider
     {
-        static const int kC0Options[] = { 8, 16, 32, 64 };
-        static const char* kC0Labels[] = { "8^3  (fast, coarse)", "16^3", "32^3 (default)", "64^3  (slow)" };
-        int curIdx = 2;
-        for (int k = 0; k < 4; ++k) if (kC0Options[k] == cascadeC0Res) { curIdx = k; break; }
+        static const int kC0Options[] = { 8, 16, 24, 32, 48, 64 };
+        static const char* kC0Labels[] = { "8^3  (fast, coarse)", "16^3", "24^3", "32^3 (default)", "48^3", "64^3  (slow)" };
+        static const int kC0Count = 6;
+        int curIdx = 3;
+        for (int k = 0; k < kC0Count; ++k) if (kC0Options[k] == cascadeC0Res) { curIdx = k; break; }
         ImGui::Text("C0 probe resolution:");
         HelpMarker(
             "Sets the C0 probe grid resolution. All other cascades derive from this:\n"
@@ -2375,7 +2568,7 @@ void Demo3D::renderCascadePanel() {
             "The full cascade hierarchy is rebuilt on change.\n\n"
             "Non-co-located minimum: N=32 (gives C3=4^3). N=8 gives C3=1^3 (degenerate).\n"
             "N=64 co-located uses ~340 MB VRAM with D scaling ON.");
-        if (ImGui::Combo("##C0Res", &curIdx, kC0Labels, 4))
+        if (ImGui::Combo("##C0Res", &curIdx, kC0Labels, kC0Count))
             cascadeC0Res = kC0Options[curIdx];
         ImGui::SameLine();
         ImGui::TextDisabled("baseInterval=%.4fm", volumeSize.x / float(cascadeC0Res));
@@ -2570,20 +2763,42 @@ void Demo3D::renderCascadePanel() {
         "Expected: with alpha=0.1 + jitter ON, rebuild ~30 cycles — bands soften.");
     ImGui::Checkbox("Temporal accumulation##phase9", &useTemporalAccum);
     if (useTemporalAccum) {
+        ImGui::Checkbox("History clamp (TAA-style)", &useHistoryClamp);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip(
+                "Clamp history to the AABB of the current-frame probe neighborhood\n"
+                "before blending. Rejects stale samples that fall outside the current\n"
+                "lighting range — eliminates color bleeding from jitter ghost samples.\n"
+                "Grid: 6-tap cardinal AABB. Atlas: same direction bin in adjacent probes.\n"
+                "With clamping ON: use alpha 0.3-0.8 for fast, clean convergence.\n"
+                "With clamping OFF: use alpha 0.05-0.1 to suppress ghosting manually.");
         ImGui::SliderFloat("Temporal alpha", &temporalAlpha, 0.01f, 1.0f);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip(
                 "Blend weight for the current bake (0=keep history, 1=replace).\n"
-                "1.0 = no accumulation (same as pre-Phase-9).\n"
-                "0.1 = ~22 rebuilds for old data to fall below 10%% weight.\n"
-                "Recommended: 0.05–0.1 with jitter ON.");
+                "With history clamp ON: 0.3-0.8 recommended (fast, ghost-free).\n"
+                "With history clamp OFF: 0.05-0.1 recommended (suppresses ghosting).\n"
+                "1.0 = no accumulation (same as pre-Phase-9).");
         ImGui::Checkbox("Probe jitter (requires temporal)", &useProbeJitter);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip(
-                "Each rebuild offsets probe world positions by a random [-0.5,0.5]^3\n"
-                "sub-cell jitter. Combined with temporal accumulation, the running\n"
-                "average integrates over a wider spatial footprint, reducing banding.\n"
+                "Each rebuild offsets probe world positions by a Halton(2,3,5)\n"
+                "low-discrepancy sub-cell jitter in [-0.5,0.5]^3 cell units.\n"
+                "Combined with temporal accumulation, the running average integrates\n"
+                "over a wider spatial footprint, reducing banding.\n"
                 "Has no effect without temporal accumulation.");
+        // Phase 9b: debug readout — rebuild count, EMA fill heuristic, jitter vector
+        {
+            float fill = 1.0f - std::pow(1.0f - temporalAlpha, (float)temporalRebuildCount);
+            ImGui::Text("Rebuilds: %u  EMA fill: %.0f%%", temporalRebuildCount, fill * 100.0f);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip(
+                    "EMA fill = 1-(1-alpha)^N: settling heuristic assuming constant alpha.\n"
+                    "Not a pixel-accurate history readout.");
+            if (useProbeJitter)
+                ImGui::TextDisabled("Jitter: (%.3f, %.3f, %.3f)",
+                    currentProbeJitter.x, currentProbeJitter.y, currentProbeJitter.z);
+        }
     } else if (useProbeJitter) {
         useProbeJitter = false;  // auto-disable jitter when accum is off — it only adds noise alone
     }

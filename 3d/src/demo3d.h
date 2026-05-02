@@ -279,11 +279,20 @@ public:
     
     /**
      * @brief Raymarching pass for final visualization
-     * 
+     *
      * Casts rays through volume to produce final pixel colors.
      * Supports both perspective and orthographic projections.
      */
     void raymarchPass();
+
+    /** Create or recreate the GI blur FBO at size w x h. */
+    void initGIBlur(int w, int h);
+
+    /** Free GI blur FBO and textures. */
+    void destroyGIBlur();
+
+    /** Apply bilateral blur to the GI FBO color output; writes to default framebuffer. */
+    void giBlurPass();
     
     /**
      * @brief Debug visualization of intermediate buffers
@@ -762,6 +771,18 @@ private:
     /** Current frame's jitter vector (probe-cell units). Updated each rebuild. */
     glm::vec3 currentProbeJitter;
 
+    /** Phase 9b: Halton sequence index — increments when jitter is ON, resets when disabled. */
+    uint32_t probeJitterIndex;
+
+    /** Phase 9b: total temporal blend dispatches since temporal was last enabled (jitter or not). */
+    uint32_t temporalRebuildCount;
+
+    /** Phase 9b: clamp history to current-neighborhood AABB before EMA blend (TAA-style ghost rejection). */
+    bool useHistoryClamp;
+
+    /** Phase 9b: seed history textures = current bake on next warm-up rebuild (eliminates dark warmup). */
+    bool historyNeedsSeed;
+
     // =============================================================================
     // Shaders
     // =============================================================================
@@ -867,12 +888,27 @@ private:
     
     /** FBO for voxelization pass */
     GLuint voxelizationFBO;
-    
+
     /** FBO for SDF generation */
     GLuint sdfFBO;
-    
+
     /** FBO for cascade rendering */
     GLuint cascadeFBO;
+
+    // GI bilateral blur FBO (Phase 9d)
+    // 3 color attachments: [0]=direct (linear), [1]=gbuffer (normal+depth), [2]=indirect/GI (linear)
+    // Only active when useGIBlur=true AND raymarchRenderMode==0.
+    GLuint giFBO;
+    GLuint giDirectTex;    // linear direct lighting (location=0 from raymarch.frag)
+    GLuint giGBufferTex;   // normal*0.5+0.5 + linearDepth (location=1)
+    GLuint giIndirectTex;  // linear indirect/GI (location=2 from raymarch.frag)
+    int giLastW, giLastH;
+
+    // GI blur settings
+    bool  useGIBlur;
+    int   giBlurRadius;
+    float giBlurDepthSigma;
+    float giBlurNormalSigma;
     
     // =============================================================================
     // Query Objects (Performance)
