@@ -37,6 +37,9 @@ uniform float uDepthSigma;
 /** Normal difference (cosine-distance in [0,1]) that reduces neighbor weight to ~0.6. */
 uniform float uNormalSigma;
 
+/** GI luminance difference that reduces neighbor weight to ~0.6. 0.0 = disabled. */
+uniform float uLumSigma;
+
 vec3 toneMapACES(vec3 color) {
     const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
     return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
@@ -81,8 +84,16 @@ void main() {
             float dNormal = cosDiff / max(uNormalSigma, 1e-4);
             float wNormal = exp(-0.5 * dNormal * dNormal);
 
-            float w = wDepth * wNormal;
-            accumIndirect += texelFetch(uIndirectTex, nc, 0).rgb * w;
+            vec3  nGI    = texelFetch(uIndirectTex, nc, 0).rgb;
+            float wLum   = 1.0;
+            if (uLumSigma > 0.0) {
+                float centerLum = dot(indirect, vec3(0.299, 0.587, 0.114));
+                float nLum      = dot(nGI,      vec3(0.299, 0.587, 0.114));
+                float dLum      = (centerLum - nLum) / max(uLumSigma, 1e-4);
+                wLum = exp(-0.5 * dLum * dLum);
+            }
+            float w = wDepth * wNormal * wLum;
+            accumIndirect += nGI * w;
             accumW        += w;
         }
     }

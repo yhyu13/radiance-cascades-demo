@@ -132,13 +132,13 @@ Demo3D::Demo3D()
     , useSoftShadowBake(false)
     , softShadowK(8.0f)
     , useTemporalAccum(true)
-    , temporalAlpha(0.05f)
+    , temporalAlpha(0.05f)           // Phase 14b: 0.10→0.05 (slower EMA for smoother convergence with 8-tap Halton)
     , useProbeJitter(true)
     , currentProbeJitter(0.0f)
     , probeJitterIndex(0)
-    , probeJitterScale(0.05f)
-    , jitterPatternSize(4)
-    , jitterHoldFrames(1)
+    , probeJitterScale(0.06f)         // Phase 14a: 0.25→0.12→0.06
+    , jitterPatternSize(8)            // Phase 14b: 4→8 (8-tap Halton(2,3,5) for better low-discrepancy coverage)
+    , jitterHoldFrames(2)             // 8 positions × 2 hold = 16-frame cycle
     , jitterHoldCounter(0)
     , temporalRebuildCount(0)
     , useHistoryClamp(true)
@@ -220,6 +220,8 @@ Demo3D::Demo3D()
     , giBlurRadius(8)
     , giBlurDepthSigma(0.05f)
     , giBlurNormalSigma(0.2f)
+    , giBlurLumSigma(0.4f)           // Phase 13b: stops within-plane tonal blur
+    , c0MinRange(1.0f)               // Phase 14b: C0 tMax min (wu); 0=legacy cellSize=0.125
 {
     /**
      * @brief Construct 3D demo and initialize all resources
@@ -710,17 +712,127 @@ void Demo3D::render() {
         std::cout << std::defaultfloat << std::endl;
     }
 
-    // Phase 12a: auto-capture on startup after delay
+    // Auto-capture delay: starts a burst (default) or a sequence (--auto-sequence).
     {
         static bool autoCaptured = false;
         if (!autoCaptured
                 && autoCaptureDelaySeconds > 0.0f
                 && GetTime() > autoCaptureDelaySeconds
-                && cascadeReady) {
-            autoCaptured      = true;
-            pendingScreenshot = true;
-            pendingStatsDump  = true;
-            std::cout << "[12a] Auto-capture triggered at t=" << GetTime() << "s\n";
+                && cascadeReady
+                && burstState == BurstState::Idle
+                && seqCapState == SeqCapState::Idle) {
+            autoCaptured = true;
+            if (autoSequencePending) {
+                seqCapState   = SeqCapState::Capturing;
+                seqFrameIndex = 0;
+                seqPaths.clear();
+                lastScreenshotPath.clear();
+                std::cout << "[14a] Auto-sequence triggered at t=" << GetTime() << "s\n";
+            } else {
+                burstState = BurstState::CapM0;
+                std::cout << "[12b] Auto-burst triggered at t=" << GetTime() << "s\n";
+            }
+        }
+    }
+
+    // Phase 12b: burst state machine — runs before raymarchPass() so mode is set this frame
+    {
+        auto abortBurst = [&](const char* reason) {
+            std::cerr << "[12b] Burst aborted: " << reason << "\n";
+            raymarchRenderMode = savedRenderMode;
+            burstState         = BurstState::Idle;
+            lastScreenshotPath.clear();
+        };
+
+        if (burstState == BurstState::CapM0) {
+            savedRenderMode      = raymarchRenderMode;
+            lastScreenshotPath.clear();          // clear so failed write leaves it empty
+            pendingStatsDump     = true;         // write stats JSON alongside _m0
+            pendingScreenshotTag = "_m0";
+            pendingScreenshot    = true;
+            raymarchRenderMode   = 0;
+            burstState           = BurstState::CapM3;
+
+        } else if (burstState == BurstState::CapM3) {
+            if (lastScreenshotPath.empty() ||
+                    lastScreenshotPath.find("_m0.png") == std::string::npos) {
+                abortBurst("_m0 write failed");
+            } else {
+                burstPaths[0]        = lastScreenshotPath;
+                lastScreenshotPath.clear();
+                pendingScreenshotTag = "_m3";
+                pendingScreenshot    = true;
+                raymarchRenderMode   = 3;
+                burstState           = BurstState::CapM6;
+            }
+
+        } else if (burstState == BurstState::CapM6) {
+            if (lastScreenshotPath.empty() ||
+                    lastScreenshotPath.find("_m3.png") == std::string::npos) {
+                abortBurst("_m3 write failed");
+            } else {
+                burstPaths[1]        = lastScreenshotPath;
+                lastScreenshotPath.clear();
+                pendingScreenshotTag = "_m6";
+                pendingScreenshot    = true;
+                raymarchRenderMode   = 6;
+                burstState           = BurstState::Analyze;
+            }
+
+        } else if (burstState == BurstState::Analyze) {
+            if (lastScreenshotPath.empty() ||
+                    lastScreenshotPath.find("_m6.png") == std::string::npos) {
+                abortBurst("_m6 write failed");
+            } else {
+                burstPaths[2]      = lastScreenshotPath;
+                raymarchRenderMode = savedRenderMode;
+                burstState         = BurstState::Idle;
+                launchBurstAnalysis();
+            }
+        }
+    }
+
+    // Phase 14a: multi-frame sequence capture — temporal jitter stability analysis.
+    // Captures seqFrameCount consecutive frames of the current render mode,
+    // then sends the full sequence to Claude to identify per-frame flickering.
+    // Runs only when burst is idle so lastScreenshotPath is unambiguous.
+    if (burstState == BurstState::Idle) {
+        auto abortSeq = [&](const std::string& reason) {
+            std::cerr << "[14a] Sequence aborted: " << reason << "\n";
+            seqCapState = SeqCapState::Idle;
+            seqPaths.clear();
+            seqFrameIndex = 0;
+            lastScreenshotPath.clear();
+        };
+
+        if (seqCapState == SeqCapState::Capturing) {
+            // Step 1: collect the screenshot from the previous tick (if any).
+            if (seqFrameIndex > 0) {
+                std::string tag = "_f" + std::to_string(seqFrameIndex - 1) + ".png";
+                if (lastScreenshotPath.empty() ||
+                        lastScreenshotPath.find(tag) == std::string::npos) {
+                    abortSeq("_f" + std::to_string(seqFrameIndex - 1) + " write failed");
+                } else {
+                    seqPaths.push_back(lastScreenshotPath);
+                    lastScreenshotPath.clear();
+                }
+            }
+
+            // Step 2: request the next frame or finish.
+            if (seqCapState == SeqCapState::Capturing) {
+                if (seqFrameIndex < seqFrameCount) {
+                    if (seqFrameIndex == 0)
+                        pendingStatsDump = true;  // capture stats with first frame
+                    pendingScreenshotTag = "_f" + std::to_string(seqFrameIndex);
+                    pendingScreenshot    = true;
+                    seqFrameIndex++;
+                } else {
+                    // All seqFrameCount frames collected — launch analysis.
+                    seqCapState   = SeqCapState::Idle;
+                    seqFrameIndex = 0;
+                    launchSequenceAnalysis();
+                }
+            }
         }
     }
 
@@ -1190,6 +1302,9 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     // In co-located mode both are 0.125; in non-co-located they diverge.
     glUniform1f(glGetUniformLocation(prog, "uBaseInterval"),  cascades[0].cellSize);  // always 0.125
     glUniform1f(glGetUniformLocation(prog, "uProbeCellSize"), c.cellSize);             // per-cascade
+    // Phase 14b: C0 minimum ray reach; passed only for C0, zero-out for all others.
+    glUniform1f(glGetUniformLocation(prog, "uC0MinRange"),
+                (cascadeIndex == 0) ? c0MinRange : 0.0f);
 
     // Phase 5d: upper-cascade scale factor for upperProbePos = probePos / scale.
     // 0 = no upper cascade; 1 = co-located (same index); 2 = non-co-located (halved index).
@@ -1640,6 +1755,7 @@ void Demo3D::giBlurPass() {
     glUniform1i(glGetUniformLocation(prog, "uBlurRadius"),  giBlurRadius);
     glUniform1f(glGetUniformLocation(prog, "uDepthSigma"),  giBlurDepthSigma);
     glUniform1f(glGetUniformLocation(prog, "uNormalSigma"), giBlurNormalSigma);
+    glUniform1f(glGetUniformLocation(prog, "uLumSigma"),    giBlurLumSigma);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK);
@@ -2464,11 +2580,40 @@ void Demo3D::renderSettingsPanel() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("Save a PNG screenshot to the tools/ directory (same as pressing P).\n"
                           "Phase 6a: AI analysis script is also triggered if available.");
+    ImGui::SameLine();
+    if (ImGui::Button("Burst Capture##burst")) {
+        if (burstState == BurstState::Idle)
+            burstState = BurstState::CapM0;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Phase 12b: capture modes 0/3/6 over 3 frames, then\n"
+                          "send all three images + probe stats to Claude in one call.\n"
+                          "Produces frame_T.md in tools/.");
+    ImGui::SameLine();
+    if (ImGui::Button("Seq Capture##seq")) {
+        if (burstState == BurstState::Idle && seqCapState == SeqCapState::Idle) {
+            seqCapState   = SeqCapState::Capturing;
+            seqFrameIndex = 0;
+            seqPaths.clear();
+            lastScreenshotPath.clear();
+        }
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Phase 14a: capture N consecutive frames of the current render mode\n"
+                          "to analyze temporal jitter stability. Sends all frames to Claude.\n"
+                          "Set N with the 'Seq Frames' slider below.\n"
+                          "Default N=8 = one full jitter cycle (4 positions x 2 hold frames).\n"
+                          "Produces frame_T_seq.md in tools/.");
+    ImGui::SliderInt("Seq Frames##seq", &seqFrameCount, 2, 32);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Number of consecutive frames to capture for sequence analysis.\n"
+                          "8 = one full jitter cycle at jitterPatternSize=4, holdFrames=2.");
     ImGui::SliderFloat("Auto-capture delay (s)##ac", &autoCaptureDelaySeconds, 0.0f, 30.0f, "%.1f s");
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Phase 12a: 0 = disabled.\n"
-                          "After N seconds AND cascade is ready, captures a screenshot\n"
-                          "+ probe_stats JSON and triggers AI analysis automatically.");
+        ImGui::SetTooltip("Phase 12b: 0 = disabled.\n"
+                          "After N seconds AND cascade is ready, triggers a burst capture\n"
+                          "(modes 0, 3, 6 over 4 frames) + probe_stats JSON, then sends\n"
+                          "all three images to Claude for multi-mode analysis.");
     if (!lastAnalysisPath.empty())
         ImGui::TextDisabled("Last analysis: %s", lastAnalysisPath.c_str());
 
@@ -2517,6 +2662,11 @@ void Demo3D::renderSettingsPanel() {
         ImGui::SliderFloat("NormalSigma##giblur",  &giBlurNormalSigma,  0.05f,  1.0f, "%.2f");
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("NormalSigma: cosine-distance threshold for normal edge preservation.\nLower = sharper edges preserved; higher = more blurring across normals.");
+        ImGui::SliderFloat("LumSigma##giblur",     &giBlurLumSigma,     0.0f,   2.0f, "%.2f");
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Phase 13b: luminance edge-stop for within-plane tonal transitions.\n"
+                              "Lower = stops blur at GI brightness boundaries on flat surfaces.\n"
+                              "0.0 = disabled (same as pre-Phase-13).");
     }
 
     ImGui::Separator();
@@ -2667,6 +2817,14 @@ void Demo3D::renderCascadePanel() {
         ImGui::SameLine();
         ImGui::TextDisabled("baseInterval=%.4fm", volumeSize.x / float(cascadeC0Res));
     }
+    // Phase 14b: C0 minimum ray reach experiment
+    ImGui::SliderFloat("C0 min range##c0mr", &c0MinRange, 0.0f, 2.0f, "%.2f wu");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Phase 14b experiment: minimum C0 ray reach in world units.\n"
+                          "0 = legacy (tMax=cellSize=0.125wu, surfPct~30%%).\n"
+                          "0.5 = extends C0 to cover Cornell box interior (hypothesis: surfPct>65%%).\n"
+                          "Higher values raise surfPct but increase C0 bake cost.\n"
+                          "Changing requires rebuild of cascades (hold ~1s).");
 
     // Spatial trilinear merge — only meaningful in non-co-located mode
     {
@@ -3485,8 +3643,15 @@ void Demo3D::takeScreenshot(bool launchAiAnalysis) {
 
     stbi_flip_vertically_on_write(1);  // GL origin is bottom-left
 
+    // Phase 12b: consume tag and clear lastScreenshotPath before attempting write.
+    // Clearing here ensures a failed write leaves lastScreenshotPath empty so the
+    // burst state machine can detect the failure on the next frame.
+    std::string tag = pendingScreenshotTag;
+    pendingScreenshotTag.clear();
+    lastScreenshotPath.clear();
+
     auto now = std::chrono::system_clock::now().time_since_epoch().count();
-    std::string stem     = "frame_" + std::to_string(now);
+    std::string stem     = "frame_" + std::to_string(now) + tag;  // e.g. frame_T_m0
     std::string filename = stem + ".png";
     std::string path     = screenshotDir + "/" + filename;
 
@@ -3496,6 +3661,7 @@ void Demo3D::takeScreenshot(bool launchAiAnalysis) {
         return;
     }
     std::cout << "[6a] Screenshot saved: " << path << std::endl;
+    lastScreenshotPath = path;  // Phase 12b: burst state machine reads this next frame
 
     // Phase 12a: write probe stats JSON alongside the screenshot.
     // statsToPass is local — it is empty for plain screenshots and only populated here,
@@ -3503,6 +3669,7 @@ void Demo3D::takeScreenshot(bool launchAiAnalysis) {
     std::string statsToPass;
     if (pendingStatsDump) {
         pendingStatsDump = false;
+        statsPathForAnalysis.clear();  // clear before write; failed write leaves it empty
         std::ostringstream j;
         j << "{\n";
         j << "  \"dirRes\": "          << dirRes         << ",\n";
@@ -3539,7 +3706,10 @@ void Demo3D::takeScreenshot(bool launchAiAnalysis) {
         }
     }
 
-    if (launchAiAnalysis)
+    // During burst or sequence capture, suppress the single-image P-key analysis.
+    // Burst: burstState advanced beyond Idle before render() returns (safe guard).
+    // Sequence: seqCapState == Capturing while frames are being collected.
+    if (launchAiAnalysis && burstState == BurstState::Idle && seqCapState == SeqCapState::Idle)
         launchAnalysis(path, statsToPass);  // statsToPass="" for plain P-key screenshots
 }
 
@@ -3567,6 +3737,76 @@ void Demo3D::launchAnalysis(const std::string& imagePath, const std::string& sta
             int ret = system(cmd.c_str());
             if (ret != 0)
                 std::cerr << "[6a] Analysis script failed (exit " << ret << ")\n";
+        }).detach();
+    }
+}
+
+void Demo3D::launchBurstAnalysis() {
+    namespace fs = std::filesystem;
+    // Strip "_m0" suffix to get shared stem "frame_T"
+    std::string stem = fs::path(burstPaths[0]).stem().string();
+    if (stem.size() >= 3 && stem.substr(stem.size() - 3) == "_m0")
+        stem = stem.substr(0, stem.size() - 3);
+    lastAnalysisPath = analysisDir + "/" + stem + ".md";
+
+    std::string cmd = "python \"" + toolsScript + "\""
+                    + " --burst"
+                    + " \"" + burstPaths[0] + "\""
+                    + " \"" + burstPaths[1] + "\""
+                    + " \"" + burstPaths[2] + "\""
+                    + " \"" + analysisDir   + "\"";
+    if (!statsPathForAnalysis.empty())
+        cmd += " \"" + statsPathForAnalysis + "\"";
+
+    std::cout << "[12b] Burst analysis: " << burstPaths[0]
+              << " + m3 + m6 -> " << lastAnalysisPath << "\n";
+
+    if (autoCloseAfterCapture) {
+        std::cout << "[12b] Running burst analysis synchronously (auto-close mode)...\n";
+        int ret = system(cmd.c_str());
+        if (ret != 0)
+            std::cerr << "[12b] Burst analysis failed (exit " << ret << ")\n";
+        captureAndAnalysisDone = true;
+    } else {
+        std::thread([cmd]() {
+            int ret = system(cmd.c_str());
+            if (ret != 0)
+                std::cerr << "[12b] Burst analysis failed (exit " << ret << ")\n";
+        }).detach();
+    }
+}
+
+void Demo3D::launchSequenceAnalysis() {
+    namespace fs = std::filesystem;
+    // Strip "_f0" suffix to get shared stem "frame_T", then append "_seq"
+    std::string stem = fs::path(seqPaths[0]).stem().string();
+    if (stem.size() >= 3 && stem.substr(stem.size() - 3) == "_f0")
+        stem = stem.substr(0, stem.size() - 3);
+    lastAnalysisPath = analysisDir + "/" + stem + "_seq.md";
+
+    // --sequence <output_dir> <f0> <f1> ... [stats.json]
+    std::string cmd = "python \"" + toolsScript + "\""
+                    + " --sequence"
+                    + " \"" + analysisDir + "\"";
+    for (const auto& p : seqPaths)
+        cmd += " \"" + p + "\"";
+    if (!statsPathForAnalysis.empty())
+        cmd += " \"" + statsPathForAnalysis + "\"";
+
+    std::cout << "[14a] Sequence analysis: " << seqPaths.size()
+              << " frames -> " << lastAnalysisPath << "\n";
+
+    if (autoCloseAfterCapture) {
+        std::cout << "[14a] Running sequence analysis synchronously (auto-close mode)...\n";
+        int ret = system(cmd.c_str());
+        if (ret != 0)
+            std::cerr << "[14a] Sequence analysis failed (exit " << ret << ")\n";
+        captureAndAnalysisDone = true;
+    } else {
+        std::thread([cmd]() {
+            int ret = system(cmd.c_str());
+            if (ret != 0)
+                std::cerr << "[14a] Sequence analysis failed (exit " << ret << ")\n";
         }).detach();
     }
 }
