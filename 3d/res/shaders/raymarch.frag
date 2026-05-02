@@ -33,7 +33,17 @@
 in vec2 vUV;
 
 /** Final color output */
-out vec4 fragColor;
+layout(location=0) out vec4 fragColor;
+
+/** GBuffer for bilateral GI blur (location=1). Discarded when rendering to default framebuffer.
+ *  rgb = world-space normal * 0.5 + 0.5, a = linearDepth in (0,1] (0 = sky/no surface). */
+layout(location=1) out vec4 fragGBuffer;
+
+/** Indirect-only (GI) term in linear light, mode 0 only (location=2).
+ *  Written when uSeparateGI=1; gi_blur.frag blurs this independently and composites
+ *  with fragColor (direct-only, also linear) before applying tone map + gamma.
+ *  Discarded when rendering to the default framebuffer or in debug modes. */
+layout(location=2) out vec4 fragGI;
 
 // =============================================================================
 // Uniforms
@@ -113,6 +123,10 @@ uniform int uAtlasDirRes;
 
 /** Phase 5g: 1=cosine-weighted directional atlas sampling, 0=isotropic average (default) */
 uniform int uUseDirectionalGI;
+
+/** Phase 9d: 1=output linear direct (location=0) and linear indirect (location=2) separately
+ *  for the bilateral GI blur composite pass. 0=composite here and tone-map here (default). */
+uniform int uSeparateGI;
 
 // =============================================================================
 // Analytic SDF — primitive SSBO (binding 0, same layout as sdf_analytic.comp)
@@ -381,6 +395,10 @@ vec3 toneMapACES(vec3 color) {
 // =============================================================================
 
 void main() {
+    // Default GBuffer = sky (a=0 signals no surface to the blur pass)
+    fragGBuffer = vec4(0.0);
+    fragGI      = vec4(0.0);
+
     // Generate ray from camera
     vec3 rayDir = calculateRayDirection(vUV);
     
@@ -413,6 +431,12 @@ void main() {
             // Hit surface!
             vec3 normal = estimateNormal(pos);
 
+            // Write GBuffer for bilateral blur pass (discarded when no FBO attachment at location=1)
+            {
+                float linearDepth = clamp((t - tNear) / max(tFar - tNear, 0.001), 0.001, 1.0);
+                fragGBuffer = vec4(normal * 0.5 + 0.5, linearDepth);
+            }
+
             // Debug mode 1: normals as RGB
             if (uRenderMode == 1) {
                 fragColor = vec4(normal * 0.5 + 0.5, 1.0);
@@ -430,6 +454,11 @@ void main() {
             if (uRenderMode == 3) {
                 vec3 uvw3 = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
                 vec3 indirect = texture(uRadiance, uvw3).rgb;
+                if (uSeparateGI != 0) {
+                    fragColor = vec4(0.0);
+                    fragGI    = vec4(indirect * 5.0, 1.0);
+                    return;
+                }
                 fragColor = vec4(toneMapACES(indirect * 5.0), 1.0);
                 return;
             }
@@ -438,10 +467,25 @@ void main() {
             vec3 uvw    = (pos - uVolumeMin) / (uVolumeMax - uVolumeMin);
             vec3 albedo = texture(uAlbedo, uvw).rgb;
 
+            // Debug mode 8: probe cell boundary visualization.
+            // Shows fract(pg) as RGB where pg is the continuous probe-grid coordinate at pos.
+            //   R = fract(probe-x), G = fract(probe-y), B = fract(probe-z).
+            // Color transitions (fract wraps 1→0) occur at probe CENTER positions.
+            // Halfway between centers (fract=0.5) is the cell boundary (trilinear blend weight=0.5).
+            // Compare with mode 6 (GI-only): if banding in mode 6 aligns with mode 8 transitions,
+            // the banding is probe-spatial Type A (cell-size limited). If not aligned → Type B
+            // (directional quantization from finite D).
+            if (uRenderMode == 8) {
+                vec3 uvw5 = (pos - uAtlasGridOrigin) / uAtlasGridSize;
+                vec3 pg5  = clamp(uvw5 * vec3(uAtlasVolumeSize) - 0.5,
+                                  vec3(0.0), vec3(uAtlasVolumeSize - ivec3(1)));
+                fragColor = vec4(fract(pg5), 1.0);
+                return;
+            }
+
             // Debug mode 7: ray travel distance heatmap (continuous float t, not integer stepCount).
-            // Use alongside mode 5 to separate "integer step-count quantization" banding from
-            // "actual SDF iso-contour" banding. If mode 7 is smooth but mode 5 is banded,
-            // the cause is integer quantization, not SDF resolution.
+            // Mode 7 is the continuous analogue of step-count mode 5: if mode 7 is smooth but
+            // mode 5 (step count) is banded, the cause is integer quantization, not SDF resolution.
             if (uRenderMode == 7) {
                 float tNorm = clamp((t - tNear) / max(tFar - tNear, 0.001), 0.0, 1.0);
                 vec3 heatColor = (tNorm < 0.5)
@@ -458,6 +502,11 @@ void main() {
                 vec3 indirect6 = (uUseDirectionalGI != 0 && uUseCascade != 0)
                     ? sampleDirectionalGI(pos, normal)
                     : texture(uRadiance, uvw).rgb;
+                if (uSeparateGI != 0) {
+                    fragColor = vec4(0.0);
+                    fragGI    = vec4(albedo * indirect6, 1.0);
+                    return;
+                }
                 fragColor = vec4(clamp(albedo * indirect6, 0.0, 1.0), 1.0);
                 return;
             }
@@ -482,8 +531,9 @@ void main() {
                 ? ((uUseSoftShadow != 0) ? softShadow(pos, normal, uLightPos, uSoftShadowK)
                                          : shadowRay(pos, normal, uLightPos))
                 : 0.0;
-            float diff        = max(dot(normal, lightDir), 0.0) * (1.0 - shadow);
-            vec3  surfaceColor = albedo * (diff * uLightColor + vec3(0.05));
+            float diff         = max(dot(normal, lightDir), 0.0) * (1.0 - shadow);
+            vec3  directColor  = albedo * (diff * uLightColor + vec3(0.05));
+            vec3  indirectColor = vec3(0.0);
 
             // Probes store source-albedo-weighted radiance; multiply by destination
             // albedo for energy-conserving Lambertian: L_out = albedo_dest * integral(L_in*cos)/integral(cos)
@@ -491,12 +541,20 @@ void main() {
                 vec3 indirect = (uUseDirectionalGI != 0)
                     ? sampleDirectionalGI(pos, normal)
                     : texture(uRadiance, uvw).rgb;
-                surfaceColor += albedo * indirect;
+                indirectColor = albedo * indirect;
             }
 
-            // Front-to-back blending
+            // uSeparateGI=1: output linear direct + linear indirect separately for the
+            // bilateral GI blur composite pass. Tone mapping moves to gi_blur.frag.
+            if (uSeparateGI != 0) {
+                fragColor = vec4(directColor,   1.0);
+                fragGI    = vec4(indirectColor, 1.0);
+                return;
+            }
+
+            // Normal path: composite here, tone map after the loop.
             float alpha = 1.0;
-            accumulatedColor += surfaceColor * alpha * (1.0 - accumulatedAlpha);
+            accumulatedColor += (directColor + indirectColor) * alpha * (1.0 - accumulatedAlpha);
             accumulatedAlpha += alpha * (1.0 - accumulatedAlpha);
 
             break;
@@ -510,15 +568,16 @@ void main() {
             break;
     }
     
-    // Debug mode 5: step count heatmap (green=few, yellow=moderate, red=many/miss)
-    // Normalize against 32 not uSteps — Cornell Box rays typically hit in <32 steps,
-    // dividing by uSteps(256) would compress everything into pure green.
+    // Debug mode 5: SDF step count heatmap (green=few, yellow=moderate, red=many/miss).
+    // Normalize against 32 — Cornell Box rays typically hit in <32 steps.
+    // Non-surface pixels show red (stepCount → max). Post-loop, non-surface-hit mode.
+    // Pair with mode 7 (ray-travel-distance): if mode 7 is smooth but mode 5 is banded,
+    // the cause is integer step-count quantization, not actual SDF iso-contour structure.
     if (uRenderMode == 5) {
-        float t5 = clamp(float(stepCount) / 32.0, 0.0, 1.0);
-        // green -> yellow -> red ramp
-        vec3 heatColor = (t5 < 0.5)
-            ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), t5 * 2.0)
-            : mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (t5 - 0.5) * 2.0);
+        float t8 = clamp(float(stepCount) / 32.0, 0.0, 1.0);
+        vec3 heatColor = (t8 < 0.5)
+            ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), t8 * 2.0)
+            : mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (t8 - 0.5) * 2.0);
         fragColor = vec4(heatColor, 1.0);
         return;
     }

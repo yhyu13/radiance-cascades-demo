@@ -1,31 +1,37 @@
 /**
  * @file temporal_blend.comp
- * @brief Exponential moving average blend of probe atlas or grid history.
+ * @brief EMA blend of probe atlas or grid history with optional AABB history clamping.
  *
  * Phase 9: temporal accumulation for probe-grid spatial aliasing.
- * Called after each bake+reduction cycle for both the directional atlas
- * and the isotropic probe grid.
+ * Phase 9b: TAA-style AABB clamping eliminates color bleeding from stale jitter samples.
  *
- * oHistory = mix(oHistory, uCurrent, uAlpha)
+ * Without clamping (uClampHistory=0):
+ *   oHistory = mix(oHistory, uCurrent, uAlpha)
+ *   Low alpha needed to suppress ghosting → slow convergence.
  *
- * With probe jitter (uProbeJitter in radiance_3d.comp), each rebuild samples
- * at slightly different world positions. The accumulated average integrates
- * over a wider spatial footprint than any single bake, softening the discrete
- * probe-grid banding without increasing probe count.
+ * With clamping (uClampHistory=1):
+ *   Clamp oHistory to AABB of current neighborhood before blending.
+ *   Stale probe values outside the current neighborhood are rejected immediately.
+ *   Higher alpha (0.3–0.8) is viable → fast convergence without color bleeding.
  *
- * alpha=1.0 → no accumulation (current bake only, same as pre-Phase-9)
- * alpha=0.1 → ~22 rebuilds for old data to fall below 10% weight
+ * Neighborhood definition:
+ *   uDirRes == 0 (isotropic grid): 6-tap cardinal neighbors (±1 in each axis).
+ *   uDirRes >  0 (directional atlas): same direction bin in spatially adjacent probes.
+ *     Probe stride in atlas is uDirRes texels in x and y, 1 in z.
+ *     Offset ±D in x/y preserves bin identity (bin = coord % D unchanged).
  */
 
 #version 430 core
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
-layout(rgba16f, binding = 0) uniform image3D oHistory;  // R+W: running average
-layout(rgba16f, binding = 1) readonly uniform image3D uCurrent;  // R:   fresh bake output
+layout(rgba16f, binding = 0) uniform image3D oHistory;          // R+W: running average
+layout(rgba16f, binding = 1) readonly uniform image3D uCurrent; // R:   fresh bake output
 
-uniform float uAlpha;   // blend weight for current frame (0=keep history, 1=replace)
-uniform ivec3 uSize;    // texture dimensions for bounds check
+uniform float uAlpha;        // blend weight for current frame (0=keep history, 1=replace)
+uniform ivec3 uSize;         // texture dimensions for bounds check
+uniform int   uClampHistory; // 0=EMA only, 1=clamp history to neighborhood AABB before blend
+uniform int   uDirRes;       // 0=isotropic grid; >0=directional atlas probe stride (D)
 
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID);
@@ -33,5 +39,45 @@ void main() {
 
     vec4 cur = imageLoad(uCurrent, coord);
     vec4 his = imageLoad(oHistory, coord);
+
+    if (uClampHistory != 0) {
+        // Build AABB from current-bake neighborhood.
+        vec4 nMin = cur, nMax = cur;
+
+        if (uDirRes <= 0) {
+            // Isotropic grid: 6-tap cardinal neighborhood (±1 in each axis).
+            for (int axis = 0; axis < 3; ++axis) {
+                for (int s = -1; s <= 1; s += 2) {
+                    ivec3 off = ivec3(0); off[axis] = s;
+                    ivec3 nc  = coord + off;
+                    if (any(lessThan(nc, ivec3(0))) || any(greaterThanEqual(nc, uSize))) continue;
+                    vec4 n = imageLoad(uCurrent, nc);
+                    nMin = min(nMin, n);
+                    nMax = max(nMax, n);
+                }
+            }
+        } else {
+            // Directional atlas: same direction bin in spatially adjacent probes.
+            // Step ±D in x/y (probe tile stride) preserves bin identity: (coord±D) % D == coord % D.
+            // Step ±1 in z moves to adjacent probe layer, same bin.
+            int D = uDirRes;
+            ivec3 offsets[6] = ivec3[6](
+                ivec3( D, 0, 0), ivec3(-D, 0, 0),
+                ivec3( 0, D, 0), ivec3( 0,-D, 0),
+                ivec3( 0, 0, 1), ivec3( 0, 0,-1)
+            );
+            for (int i = 0; i < 6; ++i) {
+                ivec3 nc = coord + offsets[i];
+                if (any(lessThan(nc, ivec3(0))) || any(greaterThanEqual(nc, uSize))) continue;
+                vec4 n = imageLoad(uCurrent, nc);
+                nMin = min(nMin, n);
+                nMax = max(nMax, n);
+            }
+        }
+
+        // Clamp history to AABB — rejects stale samples outside current neighborhood.
+        his = clamp(his, nMin, nMax);
+    }
+
     imageStore(oHistory, coord, mix(his, cur, uAlpha));
 }
