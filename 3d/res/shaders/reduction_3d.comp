@@ -12,7 +12,7 @@
 
 #version 430 core
 
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;  // Phase 10: 256 threads vs 64 for better GPU occupancy
 
 uniform sampler3D uAtlas;      // per-direction atlas from radiance_3d.comp
 uniform int       uDirRes;     // D — atlas tile side length; D² bins per probe

@@ -63,6 +63,13 @@ uniform vec3      uProbeJitter;    // Phase 9: sub-cell jitter in [-0.5,0.5]^3 p
 // Phase 5b: per-direction atlas write target — (res*D)×(res*D)×res RGBA16F
 layout(rgba16f) uniform image3D oAtlas;
 
+// Phase 10: atlas history for fused in-bake EMA (read-only, bound when uTemporalActive=1).
+// Eliminates the separate temporal_blend.comp dispatch for the atlas.
+layout(rgba16f, binding=1) readonly uniform image3D uAtlasHistory;
+uniform float uTemporalAlpha;   // EMA blend weight (0=keep history, 1=replace)
+uniform int   uTemporalActive;  // 1=fused EMA, 0=plain write
+uniform int   uClampHistory;    // 1=clamp history to neighbor AABB before EMA
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -368,7 +375,34 @@ void main() {
                 rad = upperDir;
             }
 
-            imageStore(oAtlas, atlasTxl, vec4(rad, hit.a));
+            if (uTemporalActive != 0) {
+                vec4 hist = imageLoad(uAtlasHistory, atlasTxl);
+                if (uClampHistory != 0) {
+                    // AABB from 6 adjacent probes' same direction bin in history.
+                    // ±uDirRes in x/y keeps bin identity: (coord ± D) % D == coord % D.
+                    // ±1 in z moves to adjacent probe layer, same bin.
+                    ivec3 atlasMax = ivec3(uVolumeSize.x * uDirRes,
+                                          uVolumeSize.y * uDirRes,
+                                          uVolumeSize.z);
+                    ivec3 nbOff[6] = ivec3[6](
+                        ivec3( uDirRes, 0, 0), ivec3(-uDirRes, 0, 0),
+                        ivec3( 0, uDirRes, 0), ivec3( 0,-uDirRes, 0),
+                        ivec3( 0, 0,  1),      ivec3( 0, 0, -1)
+                    );
+                    vec4 nMin = hist, nMax = hist;
+                    for (int n = 0; n < 6; ++n) {
+                        ivec3 nc = atlasTxl + nbOff[n];
+                        if (any(lessThan(nc, ivec3(0))) || any(greaterThanEqual(nc, atlasMax))) continue;
+                        vec4 nh = imageLoad(uAtlasHistory, nc);
+                        nMin = min(nMin, nh);
+                        nMax = max(nMax, nh);
+                    }
+                    hist = clamp(hist, nMin, nMax);
+                }
+                imageStore(oAtlas, atlasTxl, mix(hist, vec4(rad, hit.a), uTemporalAlpha));
+            } else {
+                imageStore(oAtlas, atlasTxl, vec4(rad, hit.a));
+            }
         }
     }
 }

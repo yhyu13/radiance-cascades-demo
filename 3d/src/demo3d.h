@@ -783,6 +783,13 @@ private:
     /** Phase 9b: seed history textures = current bake on next warm-up rebuild (eliminates dark warmup). */
     bool historyNeedsSeed;
 
+    /** Phase 10: monotonic frame counter for staggered cascade update gating. */
+    uint32_t renderFrameIndex;
+
+    /** Phase 10: max cascade update interval (1=no stagger, 2/4/8=stagger Ci every 2^i frames).
+     *  Cascade i updates when renderFrameIndex % min(1<<i, staggerMaxInterval) == 0. */
+    int staggerMaxInterval;
+
     // =============================================================================
     // Shaders
     // =============================================================================

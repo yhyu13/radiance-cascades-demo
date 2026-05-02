@@ -137,6 +137,8 @@ Demo3D::Demo3D()
     , temporalRebuildCount(0)
     , useHistoryClamp(true)
     , historyNeedsSeed(false)
+    , renderFrameIndex(0)
+    , staggerMaxInterval(8)
     , cascadeC0Res(32)
     , atlasBinDx(0)
     , atlasBinDy(0)
@@ -541,6 +543,9 @@ void Demo3D::render() {
             historyNeedsSeed = true;   // Phase 9b: seed before first blend
             probeJitterIndex = 0;      // reset Halton index
             temporalRebuildCount = 0;  // reset general rebuild counter
+            renderFrameIndex = 0;      // Phase 10: align so renderFrameIndex=0 on first temporal frame,
+                                       // guaranteeing all cascades rebuild (n%2^i==0 for all i when n=0)
+                                       // before historyNeedsSeed is cleared.
         }
     }
     static bool lastProbeJitter = false;
@@ -1110,12 +1115,16 @@ void Demo3D::updateRadianceCascades() {
         probeJitterIndex = 0;
     }
 
-    // Coarse→fine: each level reads the already-written level above it for misses
+    // Coarse→fine: each level reads the already-written level above it for misses.
+    // Phase 10: staggered updates — cascade i rebuilds every min(2^i, staggerMaxInterval) frames.
+    // Coarser cascades change slowly; staleness over a few frames is visually negligible.
     for (int i = cascadeCount - 1; i >= 0; --i) {
-        if (cascades[i].active) {
-            updateSingleCascade(i);
-        }
+        if (!cascades[i].active) continue;
+        int interval = std::min(1 << i, staggerMaxInterval);
+        if ((renderFrameIndex % interval) != 0) continue;
+        updateSingleCascade(i);
     }
+    ++renderFrameIndex;
     historyNeedsSeed = false;  // Phase 9b: cleared after all cascades seeded this rebuild
 }
 
@@ -1171,6 +1180,17 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     // Phase 9: probe jitter — offsets probe world positions by ±0.5 cell for temporal supersampling
     glUniform3fv(glGetUniformLocation(prog, "uProbeJitter"), 1, glm::value_ptr(currentProbeJitter));
 
+    // Phase 10: fused atlas EMA — determine early so upper cascade binding can use same flag.
+    auto tb = shaders.find("temporal_blend.comp");
+    const bool doFusedEMA = useTemporalAccum && tb != shaders.end() &&
+                            c.probeAtlasHistory != 0 && c.probeGridHistory != 0;
+    const float fusedAlpha = historyNeedsSeed ? 1.0f : temporalAlpha;
+    glUniform1i(glGetUniformLocation(prog, "uTemporalActive"), doFusedEMA ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uTemporalAlpha"),  fusedAlpha);
+    glUniform1i(glGetUniformLocation(prog, "uClampHistory"),   useHistoryClamp ? 1 : 0);
+    if (doFusedEMA)
+        glBindImageTexture(1, c.probeAtlasHistory, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA16F);
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
     glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
@@ -1185,13 +1205,21 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     int upperIdx = cascadeIndex + 1;
     if (!disableCascadeMerging &&
         upperIdx < cascadeCount && cascades[upperIdx].active && cascades[upperIdx].probeAtlasTexture != 0) {
+        // Phase 10: when fused EMA is active, probeAtlasHistory holds the accumulated (fresh) atlas
+        // after the handle swap from the upper cascade's last update. Read it as the canonical atlas.
+        GLuint upperAtlas = (doFusedEMA && cascades[upperIdx].probeAtlasHistory != 0)
+                            ? cascades[upperIdx].probeAtlasHistory
+                            : cascades[upperIdx].probeAtlasTexture;
+        GLuint upperGrid  = (doFusedEMA && cascades[upperIdx].probeGridHistory != 0)
+                            ? cascades[upperIdx].probeGridHistory
+                            : cascades[upperIdx].probeGridTexture;
         // Unit 2: directional atlas (Phase 5c texelFetch path)
         glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_3D, cascades[upperIdx].probeAtlasTexture);
+        glBindTexture(GL_TEXTURE_3D, upperAtlas);
         glUniform1i(glGetUniformLocation(prog, "uUpperCascadeAtlas"), 2);
         // Unit 3: isotropic probeGridTexture (Phase 4 fallback when toggle is OFF)
         glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_3D, cascades[upperIdx].probeGridTexture);
+        glBindTexture(GL_TEXTURE_3D, upperGrid);
         glUniform1i(glGetUniformLocation(prog, "uUpperCascade"), 3);
         glUniform1i(glGetUniformLocation(prog, "uHasUpperCascade"), 1);
     } else {
@@ -1221,19 +1249,26 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
 
         glBindImageTexture(0, c.probeGridTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 
-        glDispatchCompute(wg.x, wg.y, wg.z);
+        // Phase 10: local_size changed to 8x8x4=256 threads; use matching workgroup counts.
+        glm::ivec3 wgRed((c.resolution + 7) / 8, (c.resolution + 7) / 8, (c.resolution + 3) / 4);
+        glDispatchCompute(wgRed.x, wgRed.y, wgRed.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
     }
 
-    // Phase 9: temporal blend — mix fresh bake into history buffers.
-    // Atlas history: (res*D)x(res*D)x res — same work groups as bake.
-    // Grid history:  res x res x res     — same work groups as reduction.
-    // Display pass reads from history when useTemporalAccum is ON.
-    auto tb = shaders.find("temporal_blend.comp");
-    if (useTemporalAccum && tb != shaders.end() &&
-        c.probeAtlasHistory != 0 && c.probeGridHistory != 0) {
+    // Phase 10: temporal history update — two paths depending on fused EMA flag.
+    if (doFusedEMA) {
+        // Fused path: bake already wrote EMA-blended result into probeAtlasTexture.
+        // Reduction wrote isotropic average of that into probeGridTexture.
+        // Swap handles so display (and next-frame upper cascade reads) use the fresh data
+        // via probeAtlasHistory / probeGridHistory — no temporal_blend.comp dispatches needed.
+        // historyNeedsSeed is handled automatically: fusedAlpha=1.0 → mix(stale,bake,1)=bake.
+        std::swap(c.probeAtlasTexture, c.probeAtlasHistory);
+        std::swap(c.probeGridTexture,  c.probeGridHistory);
+        if (cascadeIndex == 0) ++temporalRebuildCount;
+    } else if (useTemporalAccum && tb != shaders.end() &&
+               c.probeAtlasHistory != 0 && c.probeGridHistory != 0) {
+        // Non-fused fallback path (temporal ON but fused unavailable): original temporal_blend.comp.
         // Phase 9b: seed history = current on warm-up to eliminate dark startup.
-        // After copy, mix(current, current, alpha) = current regardless of alpha.
         int D    = cascadeDirRes[cascadeIndex];
         int axyz = c.resolution * D;
         if (historyNeedsSeed) {
@@ -1267,7 +1302,6 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
         glDispatchCompute(wg.x, wg.y, wg.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
-        // Phase 9b: count one rebuild per full cascade cycle (C0 is last in coarse→fine order).
         if (cascadeIndex == 0) ++temporalRebuildCount;
     }
 }
@@ -2380,7 +2414,13 @@ void Demo3D::renderSettingsPanel() {
     if (ImGui::Button("Reset Camera")) {
         resetCamera();
     }
-    
+    ImGui::SameLine();
+    if (ImGui::Button("Screenshot [P]"))
+        pendingScreenshot = true;
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Save a PNG screenshot to the tools/ directory (same as pressing P).\n"
+                          "Phase 6a: AI analysis script is also triggered if available.");
+
     ImGui::Separator();
     
     ImGui::Separator();
@@ -2416,7 +2456,10 @@ void Demo3D::renderSettingsPanel() {
     ImGui::Text("GI Bilateral Blur:");
     ImGui::Checkbox("Enable GI Blur##giblur", &useGIBlur);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Depth+normal aware bilateral filter applied to the full frame.\nReduces probe-grid spatial banding without blurring depth/normal edges.\nAdjust Radius, DepthSigma, and NormalSigma to taste.");
+        ImGui::SetTooltip("Depth+normal aware bilateral filter applied to the GI indirect term only\n"
+                          "(modes 0, 3, 6 — direct light is unaffected).\n"
+                          "Reduces probe-grid spatial banding without blurring depth/normal edges.\n"
+                          "Adjust Radius, DepthSigma, and NormalSigma to taste.");
     if (useGIBlur) {
         ImGui::SliderInt("Radius##giblur",         &giBlurRadius,       1, 8);
         ImGui::SliderFloat("DepthSigma##giblur",   &giBlurDepthSigma,   0.005f, 0.5f, "%.3f");
@@ -2787,6 +2830,24 @@ void Demo3D::renderCascadePanel() {
                 "Combined with temporal accumulation, the running average integrates\n"
                 "over a wider spatial footprint, reducing banding.\n"
                 "Has no effect without temporal accumulation.");
+        // Phase 10: stagger control
+        {
+            ImGui::Text("Stagger max interval:");
+            ImGui::SameLine();
+            static const int kStaggerOpts[] = { 1, 2, 4, 8 };
+            for (int s = 0; s < 4; ++s) {
+                if (s > 0) ImGui::SameLine();
+                char lbl[8]; snprintf(lbl, sizeof(lbl), "%d##st%d", kStaggerOpts[s], s);
+                if (ImGui::RadioButton(lbl, staggerMaxInterval == kStaggerOpts[s]))
+                    staggerMaxInterval = kStaggerOpts[s];
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip(
+                    "Max cascade update interval. Cascade i updates every min(2^i, max) frames.\n"
+                    "1 = all cascades every frame (no stagger).\n"
+                    "8 = C0 every frame, C1 every 2nd, C2 every 4th, C3 every 8th.\n"
+                    "Reduces cascade cost ~2x. Use 1 for dynamic lighting scenes.");
+        }
         // Phase 9b: debug readout — rebuild count, EMA fill heuristic, jitter vector
         {
             float fill = 1.0f - std::pow(1.0f - temporalAlpha, (float)temporalRebuildCount);
@@ -3209,6 +3270,82 @@ void Demo3D::renderTutorialPanel() {
             ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
                 "  [5i] Soft shadow  OFF (binary)");
         }
+    }
+
+    ImGui::NewLine();
+
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Phase 6 (complete):");
+    // 6a: screenshot + AI analysis
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [6a] Screenshot  [P] key or Settings button -> tools/  (AI analysis optional)");
+    }
+    // 6b: RenderDoc capture (doc only, no runtime toggle)
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [6b] RenderDoc GPU capture workflow (see doc; no runtime UI)");
+    }
+
+    ImGui::NewLine();
+
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Phase 7 (complete):");
+    // 7: analytic SDF, new render modes, banding analysis
+    {
+        ImVec4 c = useAnalyticRaymarch ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
+        ImGui::TextColored(c, "  [7]  Analytic SDF toggle  %s  (Settings panel)",
+            useAnalyticRaymarch ? "(ON — continuous)" : "(OFF — grid texture)");
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [7]  Mode 7: ray distance heatmap  Mode 8: probe-cell boundary");
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [7]  SDF quantization & banding analysis complete (see phase7 docs)");
+    }
+
+    ImGui::NewLine();
+
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Phase 8 (complete):");
+    // 8: live dirRes slider
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [8]  Live D slider (D=%d -> D^2=%d rays/probe)  (Cascades panel)",
+            dirRes, dirRes * dirRes);
+    }
+
+    ImGui::NewLine();
+
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Phase 9 (complete):");
+    // 9a: temporal accumulation
+    {
+        ImVec4 c = useTemporalAccum ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
+        ImGui::TextColored(c, "  [9a] Temporal accumulation  %s  alpha=%.2f  (Cascades panel)",
+            useTemporalAccum ? "ON" : "OFF", temporalAlpha);
+    }
+    // 9b: history clamp + probe jitter
+    {
+        ImVec4 cClamp  = useHistoryClamp ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
+        ImVec4 cJitter = useProbeJitter  ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
+        ImGui::TextColored(cClamp,  "  [9b] History clamp (TAA)  %s", useHistoryClamp ? "ON" : "OFF");
+        ImGui::SameLine();
+        ImGui::TextColored(cJitter, "  Probe jitter  %s", useProbeJitter ? "ON" : "OFF");
+    }
+    // 9c/9d: GI blur
+    {
+        ImVec4 c = useGIBlur ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
+        ImGui::TextColored(c, "  [9c/9d] Bilateral GI blur  %s  r=%d  (Settings panel, modes 0/3/6)",
+            useGIBlur ? "ON" : "OFF", giBlurRadius);
+    }
+
+    ImGui::NewLine();
+
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Phase 10 (complete):");
+    // 10: staggered cascade updates + fused atlas EMA
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [10] Staggered cascade updates  interval=%d  (Cascades panel -> Temporal)",
+            staggerMaxInterval);
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [10] Fused atlas EMA in bake shader  (eliminates atlas temporal_blend dispatch)");
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [10] Reduction workgroup 4x4x4 -> 8x8x4 (better GPU occupancy)");
     }
 
     ImGui::End();
