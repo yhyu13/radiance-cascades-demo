@@ -481,7 +481,11 @@ public:
         int dimX, int dimY, int dimZ,
         int localSize = 8
     );
-    
+
+    // Phase 12a — CLI auto-close query / setter (used by main3d.cpp)
+    bool isReadyToClose() const { return captureAndAnalysisDone; }
+    void setAutoCloseMode(bool v) { autoCloseAfterCapture = v; }
+
 private:
     // =============================================================================
     // Phase 6a — Screenshot + AI Analysis
@@ -493,7 +497,18 @@ private:
     std::string toolsScript;     // absolute path to analyze_screenshot.py
 
     void initToolsPaths();       // resolve absolute paths from exe location
-    void launchAnalysis(const std::string& imagePath);
+    void launchAnalysis(const std::string& imagePath,
+                        const std::string& statsPath = "");
+
+    // Phase 12a — Auto-capture + probe stats JSON
+    float       autoCaptureDelaySeconds = 5.0f;  // 0.0 = disabled
+    bool        pendingStatsDump        = false;  // write JSON alongside next screenshot
+    std::string statsPathForAnalysis;             // path passed to launchAnalysis()
+    std::string lastAnalysisPath;                 // shown in settings panel
+
+    // --auto-analyze CLI mode: block on analysis then signal the main loop to exit
+    bool        autoCloseAfterCapture  = false;
+    bool        captureAndAnalysisDone = false;
 
     // =============================================================================
     // Scene State
@@ -773,6 +788,20 @@ private:
 
     /** Phase 9b: Halton sequence index — increments when jitter is ON, resets when disabled. */
     uint32_t probeJitterIndex;
+
+    /** Jitter amplitude in probe-cell units. 0.25 → ±0.25 cell (was implicitly ±0.5). */
+    float probeJitterScale;
+
+    /** Wrap Halton index at this N. After N distinct positions the cycle repeats.
+     *  Default 8 — Halton(2,3,5) at indices 0-7 gives good 3-D coverage. */
+    int jitterPatternSize;
+
+    /** Hold each jitter position for this many frames before advancing to the next.
+     *  Lets the EMA integrate each position before moving on. Default 1. */
+    int jitterHoldFrames;
+
+    /** Internal: counts frames remaining in the current jitter hold period. */
+    int jitterHoldCounter;
 
     /** Phase 9b: total temporal blend dispatches since temporal was last enabled (jitter or not). */
     uint32_t temporalRebuildCount;

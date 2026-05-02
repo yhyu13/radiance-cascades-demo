@@ -73,7 +73,7 @@ bool checkRequirements();
 // Main Entry Point
 // =============================================================================
 
-int main() {
+int main(int argc, char* argv[]) {
     /**
      * @brief Application entry point
      * 
@@ -130,7 +130,17 @@ int main() {
     // Step 5: Create demo instance
     std::cout << "[MAIN] Creating 3D demo instance..." << std::endl;
     Demo3D* demo = new Demo3D();
-    
+
+    // --auto-analyze: capture + AI analysis then exit (no user interaction needed)
+    bool autoAnalyze = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--auto-analyze") {
+            autoAnalyze = true;
+            demo->setAutoCloseMode(true);
+            std::cout << "[MAIN] --auto-analyze: will capture, analyze, then exit.\n";
+        }
+    }
+
     // Step 6: Main rendering loop
     std::cout << "[MAIN] Entering main loop." << std::endl;
     
@@ -155,6 +165,10 @@ int main() {
 
             // Phase 6a: capture after 3D, before ImGui (clean 3D-only frame)
             demo->takeScreenshot(/*launchAiAnalysis=*/true);
+
+            // --auto-analyze: exit once capture + analysis are done
+            if (autoAnalyze && demo->isReadyToClose())
+                break;
 
             // Render UI overlay
             rlImGuiBegin();
