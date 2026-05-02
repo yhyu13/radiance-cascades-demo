@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Phase 6a: Visual artifact triage via Claude.
-Usage: python analyze_screenshot.py <image.png> <output_dir>
+Phase 6a / 12a: Visual artifact triage via Claude.
+Usage: python analyze_screenshot.py <image.png> <output_dir> [probe_stats.json]
 Requires: ANTHROPIC_API_KEY env var, pip install anthropic
 Opt-in local developer tool -- not part of CI or branch validation.
 """
@@ -12,13 +12,11 @@ import textwrap
 import datetime
 import anthropic
 
-import os
-#set ANTHROPIC_API_KEY
-#os.environ["ANTHROPIC_API_KEY"] =
-# base url
-#os.environ["ANTHROPIC_BASE_URL"] =
+# load from .env file
+from dotenv import load_dotenv
+load_dotenv()
 
-PROMPT = textwrap.dedent("""
+PROMPT_BASE = textwrap.dedent("""
     You are performing heuristic visual triage on a real-time 3D Cornell Box rendered
     with a radiance cascades global illumination system. The system stores per-direction
     probe radiance in a directional atlas and merges it across 4 cascade levels (C0 near
@@ -53,10 +51,32 @@ PROMPT = textwrap.dedent("""
     Do not speculate about artifacts you cannot see.
 """)
 
+PROMPT_STATS_SUFFIX = textwrap.dedent("""
+    Additional context — current probe statistics:
+    {stats}
 
-def analyze(image_path: str, output_dir: str) -> None:
+    Use the stats to:
+    - Assess cascade convergence (surfPct, anyPct — low means under-sampled probes)
+    - Cross-check luminance variance with visible banding (high variance = spatial structure)
+    - Suggest one concrete parameter change (e.g. temporalAlpha, probeJitterScale, dirRes)
+      based on both the image and the stats.
+""")
+
+
+def analyze(image_path: str, output_dir: str, stats_path: str | None = None) -> None:
     img_bytes = pathlib.Path(image_path).read_bytes()
     b64 = base64.standard_b64encode(img_bytes).decode("utf-8")
+
+    stats_text = ""
+    if stats_path:
+        try:
+            stats_text = pathlib.Path(stats_path).read_text(encoding="utf-8")
+        except OSError as e:
+            print(f"[12a] Warning: could not read stats file: {e}", file=sys.stderr)
+
+    prompt = PROMPT_BASE
+    if stats_text:
+        prompt += PROMPT_STATS_SUFFIX.format(stats=stats_text)
 
     client = anthropic.Anthropic()
     msg = client.messages.create(
@@ -65,7 +85,7 @@ def analyze(image_path: str, output_dir: str) -> None:
         messages=[{"role": "user", "content": [
             {"type": "image",
              "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": PROMPT},
+            {"type": "text", "text": prompt},
         ]}],
     )
     text = msg.content[0].text
@@ -73,22 +93,28 @@ def analyze(image_path: str, output_dir: str) -> None:
     stem = pathlib.Path(image_path).stem
     out = pathlib.Path(output_dir) / (stem + ".md")
     ts = datetime.datetime.now().isoformat(timespec="seconds")
+    header_note = (
+        "Phase 12a triage (image + probe stats)" if stats_text
+        else "Phase 6a triage (image only)"
+    )
     out.write_text(
         f"# AI Visual Triage\n\n"
         f"**Image:** `{image_path}`  \n"
+        f"**Stats:** `{stats_path or 'none'}`  \n"
         f"**Analyzed:** {ts}  \n"
-        f"**Model:** claude-opus-4-7\n"
-        f"**Note:** Heuristic triage only -- geometry-coupled causes stated; "
+        f"**Model:** claude-opus-4-7  \n"
+        f"**Note:** {header_note} — geometry-coupled causes stated; "
         f"software-level root causes require Phase 6b pipeline inspection.\n\n"
         f"---\n\n{text}\n",
         encoding="utf-8",
     )
-    print(f"[6a] Analysis saved: {out}")
+    print(f"[6a/12a] Analysis saved: {out}")
     print(text)
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: analyze_screenshot.py <image.png> <output_dir>")
+        print("Usage: analyze_screenshot.py <image.png> <output_dir> [probe_stats.json]")
         sys.exit(1)
-    analyze(sys.argv[1], sys.argv[2])
+    stats = sys.argv[3] if len(sys.argv) > 3 else None
+    analyze(sys.argv[1], sys.argv[2], stats)

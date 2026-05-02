@@ -20,6 +20,8 @@
 #include <cmath>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <thread>
 #include <vector>
 #include <random>
@@ -129,11 +131,15 @@ Demo3D::Demo3D()
     , useSoftShadow(false)
     , useSoftShadowBake(false)
     , softShadowK(8.0f)
-    , useTemporalAccum(false)
-    , temporalAlpha(0.1f)
-    , useProbeJitter(false)
+    , useTemporalAccum(true)
+    , temporalAlpha(0.05f)
+    , useProbeJitter(true)
     , currentProbeJitter(0.0f)
     , probeJitterIndex(0)
+    , probeJitterScale(0.05f)
+    , jitterPatternSize(4)
+    , jitterHoldFrames(1)
+    , jitterHoldCounter(0)
     , temporalRebuildCount(0)
     , useHistoryClamp(true)
     , historyNeedsSeed(false)
@@ -210,8 +216,8 @@ Demo3D::Demo3D()
     , giIndirectTex(0)
     , giLastW(0)
     , giLastH(0)
-    , useGIBlur(false)
-    , giBlurRadius(3)
+    , useGIBlur(true)
+    , giBlurRadius(8)
     , giBlurDepthSigma(0.05f)
     , giBlurNormalSigma(0.2f)
 {
@@ -527,6 +533,13 @@ void Demo3D::render() {
                   << (blendFraction < 0.01f ? "  (binary — Phase 3 mode)" : "  (blended)") << std::endl;
         lastBlendFrac = blendFraction;
         cascadeReady  = false;
+        // Bake output changed: old EMA history encodes the previous blend fraction.
+        // Reset it so the new bake overwrites history at alpha=1 on the next rebuild
+        // rather than taking 1/alpha frames to converge to the new blend.
+        if (useTemporalAccum) {
+            historyNeedsSeed = true;
+            renderFrameIndex = 0;
+        }
     }
 
     // Phase 9: temporal accumulation rebuild triggers.
@@ -548,19 +561,44 @@ void Demo3D::render() {
                                        // before historyNeedsSeed is cleared.
         }
     }
+    // Jitter position advance — runs here (before the cascade rebuild decision) so we
+    // can set cascadeReady=false only when the position actually changes, not every frame.
+    // updateRadianceCascades() uses currentProbeJitter as already set here.
     static bool lastProbeJitter = false;
     if (useProbeJitter != lastProbeJitter) {
-        lastProbeJitter = useProbeJitter;
+        lastProbeJitter  = useProbeJitter;
+        jitterHoldCounter = 0;
+        if (!useProbeJitter) { currentProbeJitter = glm::vec3(0.0f); probeJitterIndex = 0; }
         cascadeReady = false;
     }
-    if (useTemporalAccum && useProbeJitter) {
-        cascadeReady = false;  // continuous rebuild to accumulate distinct jitter samples
+    if (useProbeJitter) {
+        // Sample at current index first, then check whether to advance.
+        currentProbeJitter = glm::vec3(
+            (halton(probeJitterIndex, 2) - 0.5f) * probeJitterScale,
+            (halton(probeJitterIndex, 3) - 0.5f) * probeJitterScale,
+            (halton(probeJitterIndex, 5) - 0.5f) * probeJitterScale
+        );
+        ++jitterHoldCounter;
+        if (jitterHoldCounter >= jitterHoldFrames) {
+            jitterHoldCounter = 0;
+            probeJitterIndex = (probeJitterIndex + 1) % static_cast<uint32_t>(jitterPatternSize);
+            // Position changed: bake result differs → need a new EMA blend.
+            if (useTemporalAccum)
+                cascadeReady = false;
+        }
     }
 
     // Pass 3: Radiance Cascades (only when SDF or merge flag changes)
     static bool probeDumped = false;
+    static int  readbackSkip = 0;
     if (!cascadeReady) {
-        probeDumped = false;   // ensure readback triggers after this update
+        // Rate-limit atlas readback when jitter is active: the 256^2*32 glGetTexImage
+        // at D=8 downloads ~134 MB and causes a full GPU sync every rebuild → 100 ms spike.
+        // Without jitter every rebuild is scene-driven (rare), so always readback then.
+        if (!useProbeJitter || ++readbackSkip >= 30) {
+            probeDumped  = false;
+            readbackSkip = 0;
+        }
         double t0 = GetTime();
         updateRadianceCascades();
         cascadeTimeMs = (GetTime() - t0) * 1000.0;
@@ -670,6 +708,20 @@ void Demo3D::render() {
         for (int ci = 0; ci < cascadeCount; ++ci)
             std::cout << "  C" << ci << "=" << std::fixed << std::setprecision(5) << probeMeanLum[ci];
         std::cout << std::defaultfloat << std::endl;
+    }
+
+    // Phase 12a: auto-capture on startup after delay
+    {
+        static bool autoCaptured = false;
+        if (!autoCaptured
+                && autoCaptureDelaySeconds > 0.0f
+                && GetTime() > autoCaptureDelaySeconds
+                && cascadeReady) {
+            autoCaptured      = true;
+            pendingScreenshot = true;
+            pendingStatsDump  = true;
+            std::cout << "[12a] Auto-capture triggered at t=" << GetTime() << "s\n";
+        }
     }
 
     // Pass 4: Raymarching (+ optional bilateral GI blur)
@@ -1101,19 +1153,11 @@ void Demo3D::sdfGenerationPass() {
 }
 
 void Demo3D::updateRadianceCascades() {
-    // Phase 9b: Halton(2,3,5) low-discrepancy jitter — fills [-0.5,0.5]^3 more
-    // evenly than uniform RNG over the first N samples, giving faster convergence.
-    if (useProbeJitter) {
-        currentProbeJitter = glm::vec3(
-            halton(probeJitterIndex, 2) - 0.5f,
-            halton(probeJitterIndex, 3) - 0.5f,
-            halton(probeJitterIndex, 5) - 0.5f
-        );
-        ++probeJitterIndex;
-    } else {
-        currentProbeJitter = glm::vec3(0.0f);
-        probeJitterIndex = 0;
-    }
+    // Phase 9b: Halton(2,3,5) low-discrepancy jitter.
+    // Phase 11: wrap at jitterPatternSize (repeating N-tap coverage) + dwell for jitterHoldFrames
+    // before advancing. probeJitterScale controls amplitude (default ±0.25 cell).
+    // currentProbeJitter, probeJitterIndex, and jitterHoldCounter are managed in
+    // update() before this call, so that the rebuild decision can be tied to position changes.
 
     // Coarse→fine: each level reads the already-written level above it for misses.
     // Phase 10: staggered updates — cascade i rebuilds every min(2^i, staggerMaxInterval) frames.
@@ -2420,6 +2464,13 @@ void Demo3D::renderSettingsPanel() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("Save a PNG screenshot to the tools/ directory (same as pressing P).\n"
                           "Phase 6a: AI analysis script is also triggered if available.");
+    ImGui::SliderFloat("Auto-capture delay (s)##ac", &autoCaptureDelaySeconds, 0.0f, 30.0f, "%.1f s");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Phase 12a: 0 = disabled.\n"
+                          "After N seconds AND cascade is ready, captures a screenshot\n"
+                          "+ probe_stats JSON and triggers AI analysis automatically.");
+    if (!lastAnalysisPath.empty())
+        ImGui::TextDisabled("Last analysis: %s", lastAnalysisPath.c_str());
 
     ImGui::Separator();
     
@@ -2783,14 +2834,25 @@ void Demo3D::renderCascadePanel() {
     ImGui::SameLine();
     ImGui::TextDisabled("actual: D*D=%d rays/probe (all cascades)", dirRes * dirRes);
 
-    // Phase 8: live dirRes slider — rebuilds cascades on change
-    ImGui::SliderInt("Dir resolution (D)", &dirRes, 2, 8);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip(
+    // Phase 8: live dirRes — even values only (odd D is degenerate in octahedral encoding)
+    {
+        ImGui::Text("Dir resolution (D):");
+        HelpMarker(
             "Octahedral directional bin count per probe: D*D bins total.\n"
+            "Must be even — odd D produces degenerate bin centers on the octahedral fold.\n"
             "D=4 (default): 16 bins, coarse angular resolution.\n"
             "D=8: 64 bins, 4x finer — costs 4x in BOTH bake and display per frame.\n"
             "Phase 8 diagnostic: run E1 (toggle Directional GI) before raising D.");
+        static const int kDirResOpts[] = { 2, 4, 6, 8 };
+        for (int k = 0; k < 4; ++k) {
+            if (k > 0) ImGui::SameLine();
+            char lbl[8]; snprintf(lbl, sizeof(lbl), "%d##dr%d", kDirResOpts[k], k);
+            if (ImGui::RadioButton(lbl, dirRes == kDirResOpts[k]))
+                dirRes = kDirResOpts[k];
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("D^2=%d bins/probe", dirRes * dirRes);
+    }
 
     // ── Temporal accumulation + probe jitter (Phase 9) ──────────────────────
     ImGui::Separator();
@@ -2825,11 +2887,38 @@ void Demo3D::renderCascadePanel() {
         ImGui::Checkbox("Probe jitter (requires temporal)", &useProbeJitter);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip(
-                "Each rebuild offsets probe world positions by a Halton(2,3,5)\n"
-                "low-discrepancy sub-cell jitter in [-0.5,0.5]^3 cell units.\n"
-                "Combined with temporal accumulation, the running average integrates\n"
-                "over a wider spatial footprint, reducing banding.\n"
-                "Has no effect without temporal accumulation.");
+                "Offsets probe world positions by a Halton(2,3,5) low-discrepancy\n"
+                "sub-cell jitter each dwell period. Combined with temporal accumulation,\n"
+                "the running EMA integrates over a wider spatial footprint, reducing banding.\n"
+                "Has no effect without temporal accumulation.\n\n"
+                "Scale: amplitude in probe-cell units (0.25 = ±0.25 cell, default).\n"
+                "Pattern N: wrap Halton at N. After N distinct positions the cycle repeats.\n"
+                "Dwell: frames to hold each position before advancing (gives EMA time to settle).");
+        if (useProbeJitter) {
+            ImGui::Indent();
+            ImGui::SliderFloat("Scale##jitter", &probeJitterScale, 0.05f, 0.5f, "%.2f cell");
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip(
+                    "Jitter amplitude in probe-cell units.\n"
+                    "0.25 (default) = ±0.25 cell — enough to cover banding without\n"
+                    "large frame-to-frame position jumps that require very low alpha.\n"
+                    "0.5 = ±0.5 cell (original, maximum cell coverage but more ghosting).");
+            ImGui::SliderInt("Pattern N##jitter", &jitterPatternSize, 2, 32);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip(
+                    "Number of distinct Halton positions before the cycle repeats.\n"
+                    "Default 8: indices 0-7 give good 3-D coverage of the probe cell.\n"
+                    "Larger N = more spatial footprint but slower EMA convergence per cycle.\n"
+                    "Recommended: set alpha ≈ 1/N for an unbiased N-tap running average.");
+            ImGui::SliderInt("Dwell (frames/pos)##jitter", &jitterHoldFrames, 1, 8);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip(
+                    "Hold each jitter position for this many frames before advancing.\n"
+                    "1 (default): advance every frame — fastest cycling, most temporal noise.\n"
+                    "4-8: EMA has several frames to integrate each position before moving on,\n"
+                    "reducing per-cycle flickering at the cost of slower banding suppression.");
+            ImGui::Unindent();
+        }
         // Phase 10: stagger control
         {
             ImGui::Text("Stagger max interval:");
@@ -3325,7 +3414,11 @@ void Demo3D::renderTutorialPanel() {
         ImVec4 cJitter = useProbeJitter  ? ImVec4(0.3f, 1, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
         ImGui::TextColored(cClamp,  "  [9b] History clamp (TAA)  %s", useHistoryClamp ? "ON" : "OFF");
         ImGui::SameLine();
-        ImGui::TextColored(cJitter, "  Probe jitter  %s", useProbeJitter ? "ON" : "OFF");
+        if (useProbeJitter)
+            ImGui::TextColored(cJitter, "  Probe jitter  ON  scale=%.2f  N=%d  dwell=%d",
+                probeJitterScale, jitterPatternSize, jitterHoldFrames);
+        else
+            ImGui::TextColored(cJitter, "  Probe jitter  OFF");
     }
     // 9c/9d: GI blur
     {
@@ -3393,27 +3486,89 @@ void Demo3D::takeScreenshot(bool launchAiAnalysis) {
     stbi_flip_vertically_on_write(1);  // GL origin is bottom-left
 
     auto now = std::chrono::system_clock::now().time_since_epoch().count();
-    std::string filename = "frame_" + std::to_string(now) + ".png";
+    std::string stem     = "frame_" + std::to_string(now);
+    std::string filename = stem + ".png";
     std::string path     = screenshotDir + "/" + filename;
 
-    if (stbi_write_png(path.c_str(), w, h, 3, pixels.data(), w * 3)) {
-        std::cout << "[6a] Screenshot saved: " << path << std::endl;
-        if (launchAiAnalysis)
-            launchAnalysis(path);
-    } else {
+    if (!stbi_write_png(path.c_str(), w, h, 3, pixels.data(), w * 3)) {
         std::cerr << "[6a] Screenshot write failed: " << path << std::endl;
+        pendingStatsDump = false;
+        return;
     }
+    std::cout << "[6a] Screenshot saved: " << path << std::endl;
+
+    // Phase 12a: write probe stats JSON alongside the screenshot.
+    // statsToPass is local — it is empty for plain screenshots and only populated here,
+    // preventing statsPathForAnalysis (a member) from leaking into future P-key captures.
+    std::string statsToPass;
+    if (pendingStatsDump) {
+        pendingStatsDump = false;
+        std::ostringstream j;
+        j << "{\n";
+        j << "  \"dirRes\": "          << dirRes         << ",\n";
+        j << "  \"cascadeCount\": "    << cascadeCount   << ",\n";
+        j << "  \"temporalAlpha\": "   << temporalAlpha  << ",\n";
+        j << "  \"probeJitterScale\": "<< probeJitterScale<< ",\n";
+        j << "  \"cascadeTimeMs\": "   << cascadeTimeMs  << ",\n";
+        j << "  \"raymarchTimeMs\": "  << raymarchTimeMs << ",\n";
+        j << "  \"cascades\": [\n";
+        for (int ci = 0; ci < cascadeCount; ++ci) {
+            int tot = probeTotalPerCascade[ci]; if (tot < 1) tot = 1;
+            j << "    {\n";
+            j << "      \"anyPct\": "  << (100.f * probeNonZero[ci]    / tot) << ",\n";
+            j << "      \"surfPct\": " << (100.f * probeSurfaceHit[ci] / tot) << ",\n";
+            j << "      \"skyPct\": "  << (100.f * probeSkyHit[ci]     / tot) << ",\n";
+            j << "      \"meanLum\": " << probeMeanLum[ci]  << ",\n";
+            j << "      \"maxLum\": "  << probeMaxLum[ci]   << ",\n";
+            j << "      \"variance\": "<< probeVariance[ci] << "\n";
+            j << "    }";
+            if (ci < cascadeCount - 1) j << ",";
+            j << "\n";
+        }
+        j << "  ]\n}\n";
+
+        std::string statsPath = screenshotDir + "/probe_stats_" + std::to_string(now) + ".json";
+        std::ofstream sf(statsPath);
+        if (sf) {
+            sf << j.str();
+            statsToPass          = statsPath;
+            statsPathForAnalysis = statsPath;  // member kept for UI display only
+            std::cout << "[12a] Probe stats written: " << statsPath << std::endl;
+        } else {
+            std::cerr << "[12a] Failed to write stats: " << statsPath << std::endl;
+        }
+    }
+
+    if (launchAiAnalysis)
+        launchAnalysis(path, statsToPass);  // statsToPass="" for plain P-key screenshots
 }
 
-void Demo3D::launchAnalysis(const std::string& imagePath) {
-    std::thread([imagePath, this]() {
-        std::string cmd = "python \"" + toolsScript + "\" \""
-                        + imagePath + "\" \""
-                        + analysisDir + "\"";
+void Demo3D::launchAnalysis(const std::string& imagePath, const std::string& statsPath) {
+    namespace fs = std::filesystem;
+    std::string stem = fs::path(imagePath).stem().string();
+    lastAnalysisPath = analysisDir + "/" + stem + ".md";
+
+    std::string cmd = "python \"" + toolsScript + "\" \""
+                    + imagePath + "\" \""
+                    + analysisDir + "\"";
+    if (!statsPath.empty())
+        cmd += " \"" + statsPath + "\"";
+
+    if (autoCloseAfterCapture) {
+        // --auto-analyze mode: run synchronously so the process stays alive for the full
+        // API call, then signal the main loop to exit cleanly.
+        std::cout << "[12a] Running analysis synchronously (auto-close mode)...\n";
         int ret = system(cmd.c_str());
         if (ret != 0)
             std::cerr << "[6a] Analysis script failed (exit " << ret << ")\n";
-    }).detach();
+        captureAndAnalysisDone = true;
+    } else {
+        std::thread([cmd]() {
+            int ret = system(cmd.c_str());
+            if (ret != 0)
+                std::cerr << "[6a] Analysis script failed (exit " << ret << ")\n";
+        }).detach();
+    }
 }
 
 void Demo3D::resetCamera() {
