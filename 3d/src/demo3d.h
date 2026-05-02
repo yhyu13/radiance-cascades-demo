@@ -95,8 +95,14 @@ struct RadianceCascade3D {
     /** OpenGL texture ID for 3D probe grid (isotropic average, written by reduction pass) */
     GLuint probeGridTexture;
 
+    /** Phase 9: temporal history of probeGridTexture (same dims, RGBA16F) */
+    GLuint probeGridHistory;
+
     /** Phase 5b: per-direction D×D tile atlas — (res*D)×(res*D)×res RGBA16F */
     GLuint probeAtlasTexture;
+
+    /** Phase 9: temporal history of probeAtlasTexture (same dims, RGBA16F) */
+    GLuint probeAtlasHistory;
     
     /** Resolution of probe grid (e.g., 32, 64, 128) */
     int resolution;
@@ -738,6 +744,23 @@ private:
      *  Lower k = wider, softer penumbra. Range [1, 16]. Default 8.
      *  k change triggers cascade rebuild only when useSoftShadowBake is true. */
     float softShadowK;
+
+    // =============================================================================
+    // Phase 9: Temporal accumulation + probe jitter
+    // =============================================================================
+
+    /** Master toggle: blend each bake into history. Display reads history. */
+    bool useTemporalAccum;
+
+    /** EMA blend weight: history = mix(history, bake, alpha). 1.0=no accum. */
+    float temporalAlpha;
+
+    /** Per-frame probe jitter: shift probes by random [-0.5,0.5]^3 cell units.
+     *  Only effective when combined with temporal accumulation. */
+    bool useProbeJitter;
+
+    /** Current frame's jitter vector (probe-cell units). Updated each rebuild. */
+    glm::vec3 currentProbeJitter;
 
     // =============================================================================
     // Shaders

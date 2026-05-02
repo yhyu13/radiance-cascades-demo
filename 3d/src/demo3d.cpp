@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <thread>
 #include <vector>
+#include <random>
 
 // raylib already compiles STB_IMAGE_WRITE_IMPLEMENTATION in rtextures.c;
 // include the header here for declarations only (no redefinition).
@@ -52,7 +53,9 @@ VoxelNode::VoxelNode()
 
 RadianceCascade3D::RadianceCascade3D()
     : probeGridTexture(0)
+    , probeGridHistory(0)
     , probeAtlasTexture(0)
+    , probeAtlasHistory(0)
     , resolution(0)
     , cellSize(1.0f)
     , origin(0.0f)
@@ -78,14 +81,10 @@ void RadianceCascade3D::initialize(int res, float cellSz, const glm::vec3& org, 
 }
 
 void RadianceCascade3D::destroy() {
-    if (probeGridTexture) {
-        glDeleteTextures(1, &probeGridTexture);
-        probeGridTexture = 0;
-    }
-    if (probeAtlasTexture) {
-        glDeleteTextures(1, &probeAtlasTexture);
-        probeAtlasTexture = 0;
-    }
+    if (probeGridTexture)  { glDeleteTextures(1, &probeGridTexture);  probeGridTexture  = 0; }
+    if (probeGridHistory)  { glDeleteTextures(1, &probeGridHistory);  probeGridHistory  = 0; }
+    if (probeAtlasTexture) { glDeleteTextures(1, &probeAtlasTexture); probeAtlasTexture = 0; }
+    if (probeAtlasHistory) { glDeleteTextures(1, &probeAtlasHistory); probeAtlasHistory = 0; }
     active = false;
 }
 
@@ -122,6 +121,10 @@ Demo3D::Demo3D()
     , useSoftShadow(false)
     , useSoftShadowBake(false)
     , softShadowK(8.0f)
+    , useTemporalAccum(false)
+    , temporalAlpha(0.1f)
+    , useProbeJitter(false)
+    , currentProbeJitter(0.0f)
     , cascadeC0Res(32)
     , atlasBinDx(0)
     , atlasBinDy(0)
@@ -227,7 +230,8 @@ Demo3D::Demo3D()
     loadShader("sdf_3d.comp");
     loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
     loadShader("radiance_3d.comp");
-    loadShader("reduction_3d.comp");  // Phase 5b-1: atlas → isotropic reduction
+    loadShader("reduction_3d.comp");    // Phase 5b-1: atlas → isotropic reduction
+    loadShader("temporal_blend.comp"); // Phase 9: temporal probe accumulation
     loadShader("inject_radiance.comp");
     loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization (auto-loads .vert)
     loadShader("radiance_debug.frag"); // Phase 1: Radiance cascade debug (auto-loads .vert)
@@ -498,6 +502,26 @@ void Demo3D::render() {
                   << (blendFraction < 0.01f ? "  (binary — Phase 3 mode)" : "  (blended)") << std::endl;
         lastBlendFrac = blendFraction;
         cascadeReady  = false;
+    }
+
+    // Phase 9: temporal accumulation rebuild triggers.
+    // On first enable: warm up history (display switches to reading it immediately).
+    // With jitter ON: rebuild every frame — each frame samples different world positions,
+    // and the EMA integrates them into a wider spatial footprint over ~22 frames.
+    // Without jitter: one warm-up rebuild is enough; accumulating identical samples
+    // converges to the same biased result and wastes GPU time.
+    static bool lastTemporalAccum = false;
+    if (useTemporalAccum != lastTemporalAccum) {
+        lastTemporalAccum = useTemporalAccum;
+        if (useTemporalAccum) cascadeReady = false;  // warm-up on first enable
+    }
+    static bool lastProbeJitter = false;
+    if (useProbeJitter != lastProbeJitter) {
+        lastProbeJitter = useProbeJitter;
+        cascadeReady = false;
+    }
+    if (useTemporalAccum && useProbeJitter) {
+        cascadeReady = false;  // continuous rebuild to accumulate distinct jitter samples
     }
 
     // Pass 3: Radiance Cascades (only when SDF or merge flag changes)
@@ -1043,10 +1067,16 @@ void Demo3D::sdfGenerationPass() {
 }
 
 void Demo3D::updateRadianceCascades() {
-    /**
-     * @brief Update all radiance cascade levels
-     */
-    
+    // Phase 9: generate one jitter vector per rebuild cycle (same for all cascades).
+    // With temporal accumulation, each rebuild samples at a different world position.
+    if (useProbeJitter) {
+        static std::mt19937 rng(std::random_device{}());
+        static std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
+        currentProbeJitter = glm::vec3(dist(rng), dist(rng), dist(rng));
+    } else {
+        currentProbeJitter = glm::vec3(0.0f);
+    }
+
     // Coarse→fine: each level reads the already-written level above it for misses
     for (int i = cascadeCount - 1; i >= 0; --i) {
         if (cascades[i].active) {
@@ -1104,6 +1134,8 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     // 5i: soft shadow in bake shader
     glUniform1i(glGetUniformLocation(prog, "uUseSoftShadowBake"), useSoftShadowBake ? 1 : 0);
     glUniform1f(glGetUniformLocation(prog, "uSoftShadowK"),        softShadowK);
+    // Phase 9: probe jitter — offsets probe world positions by ±0.5 cell for temporal supersampling
+    glUniform3fv(glGetUniformLocation(prog, "uProbeJitter"), 1, glm::value_ptr(currentProbeJitter));
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -1155,6 +1187,35 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
 
         glBindImageTexture(0, c.probeGridTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 
+        glDispatchCompute(wg.x, wg.y, wg.z);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+    }
+
+    // Phase 9: temporal blend — mix fresh bake into history buffers.
+    // Atlas history: (res*D)x(res*D)x res — same work groups as bake.
+    // Grid history:  res x res x res     — same work groups as reduction.
+    // Display pass reads from history when useTemporalAccum is ON.
+    auto tb = shaders.find("temporal_blend.comp");
+    if (useTemporalAccum && tb != shaders.end() &&
+        c.probeAtlasHistory != 0 && c.probeGridHistory != 0) {
+        GLuint tbProg = tb->second;
+        glUseProgram(tbProg);
+        glUniform1f(glGetUniformLocation(tbProg, "uAlpha"), temporalAlpha);
+
+        // Blend directional atlas
+        int D    = cascadeDirRes[cascadeIndex];
+        int axyz = c.resolution * D;
+        glUniform3i(glGetUniformLocation(tbProg, "uSize"), axyz, axyz, c.resolution);
+        glBindImageTexture(0, c.probeAtlasHistory, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
+        glBindImageTexture(1, c.probeAtlasTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA16F);
+        glm::ivec3 wgA = calculateWorkGroups(axyz, axyz, c.resolution, 4);
+        glDispatchCompute(wgA.x, wgA.y, wgA.z);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+        // Blend isotropic grid
+        glUniform3i(glGetUniformLocation(tbProg, "uSize"), c.resolution, c.resolution, c.resolution);
+        glBindImageTexture(0, c.probeGridHistory, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
+        glBindImageTexture(1, c.probeGridTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA16F);
         glDispatchCompute(wg.x, wg.y, wg.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
     }
@@ -1294,7 +1355,11 @@ void Demo3D::raymarchPass() {
     int selC = std::max(0, std::min(selectedCascadeForRender, cascadeCount - 1));
     if (cascades[selC].active && cascades[selC].probeGridTexture != 0) {
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_3D, cascades[selC].probeGridTexture);
+        // Phase 9: read from temporal history when accumulation is active and history exists
+        GLuint gridTex = (useTemporalAccum && cascades[selC].probeGridHistory != 0)
+                         ? cascades[selC].probeGridHistory
+                         : cascades[selC].probeGridTexture;
+        glBindTexture(GL_TEXTURE_3D, gridTex);
         glUniform1i(glGetUniformLocation(prog, "uRadiance"), 1);
     }
     glUniform1i(glGetUniformLocation(prog, "uUseCascade"), useCascadeGI ? 1 : 0);
@@ -1310,19 +1375,24 @@ void Demo3D::raymarchPass() {
     glUniform1i(glGetUniformLocation(prog, "uUseSoftShadow"), useSoftShadow ? 1 : 0);
     glUniform1f(glGetUniformLocation(prog, "uSoftShadowK"),   softShadowK);
 
-    // 5g: bind C0 directional atlas on unit 3 (units 0-2 = SDF/Radiance/Albedo)
+    // 5g: bind selected cascade's directional atlas on unit 3 (units 0-2 = SDF/Radiance/Albedo)
+    // Use selC (not hardcoded 0) so the cascade debug selector works in mode 6.
     // atlasAvailable gates the shader toggle so uUseDirectionalGI=0 is always pushed
     // when the texture is missing -- even if the UI toggle is ON.
     bool atlasAvailable = false;
-    if (cascadeCount > 0 && cascades[0].active && cascades[0].probeAtlasTexture != 0) {
+    if (cascadeCount > 0 && cascades[selC].active && cascades[selC].probeAtlasTexture != 0) {
         glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_3D, cascades[0].probeAtlasTexture);
+        // Phase 9: read from temporal history when accumulation is active and history exists
+        GLuint atlasTex = (useTemporalAccum && cascades[selC].probeAtlasHistory != 0)
+                          ? cascades[selC].probeAtlasHistory
+                          : cascades[selC].probeAtlasTexture;
+        glBindTexture(GL_TEXTURE_3D, atlasTex);
         glUniform1i(glGetUniformLocation(prog, "uDirectionalAtlas"), 3);
-        glm::ivec3 atlasVolSize(cascades[0].resolution);
+        glm::ivec3 atlasVolSize(cascades[selC].resolution);
         glUniform3iv(glGetUniformLocation(prog, "uAtlasVolumeSize"), 1, glm::value_ptr(atlasVolSize));
         glUniform3fv(glGetUniformLocation(prog, "uAtlasGridOrigin"), 1, glm::value_ptr(volumeOrigin));
         glUniform3fv(glGetUniformLocation(prog, "uAtlasGridSize"),   1, glm::value_ptr(volumeSize));
-        glUniform1i(glGetUniformLocation(prog, "uAtlasDirRes"),      cascadeDirRes[0]);
+        glUniform1i(glGetUniformLocation(prog, "uAtlasDirRes"),      cascadeDirRes[selC]);
         atlasAvailable = true;
     }
     glUniform1i(glGetUniformLocation(prog, "uUseDirectionalGI"), (useDirectionalGI && atlasAvailable) ? 1 : 0);
@@ -1439,6 +1509,7 @@ void Demo3D::reloadShaders() {
     loadShader("sdf_analytic.comp");
     loadShader("radiance_3d.comp");
     loadShader("reduction_3d.comp");
+    loadShader("temporal_blend.comp");
     loadShader("inject_radiance.comp");
     loadShader("sdf_debug.frag");
     loadShader("radiance_debug.frag");
@@ -1581,6 +1652,23 @@ void Demo3D::initCascades() {
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glBindTexture(GL_TEXTURE_3D, 0);
+
+        // Phase 9: temporal history atlas — same layout as probeAtlasTexture (zero-initialized)
+        cascades[i].probeAtlasHistory = gl::createTexture3D(
+            atlasXY, atlasXY, probeRes,
+            GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr);
+        glBindTexture(GL_TEXTURE_3D, cascades[i].probeAtlasHistory);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_3D, 0);
+
+        // Phase 9: temporal history for isotropic probe grid — same dims as probeGridTexture
+        cascades[i].probeGridHistory = gl::createTexture3D(
+            probeRes, probeRes, probeRes,
+            GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr);
 
         std::cout << "[Demo3D] Cascade " << i << ": " << probeRes
                   << "^3 probes, D=" << cascD << ", cellSize=" << cellSz
@@ -2467,6 +2555,38 @@ void Demo3D::renderCascadePanel() {
             "D=4 (default): 16 bins, coarse angular resolution.\n"
             "D=8: 64 bins, 4x finer — costs 4x in BOTH bake and display per frame.\n"
             "Phase 8 diagnostic: run E1 (toggle Directional GI) before raising D.");
+
+    // ── Temporal accumulation + probe jitter (Phase 9) ──────────────────────
+    ImGui::Separator();
+    ImGui::Text("Temporal Accumulation (Phase 9):");
+    HelpMarker(
+        "B+C: temporal probe accumulation + stochastic jitter.\n\n"
+        "Without jitter: suppresses stochastic noise only — deterministic probe\n"
+        "positions produce the same biased GI every rebuild, so accumulation\n"
+        "converges to the same biased result (banding unchanged).\n\n"
+        "With jitter ON: each rebuild samples probes at slightly different world\n"
+        "positions. The running average integrates over a wider spatial footprint,\n"
+        "softening the discrete-grid banding without adding probes.\n"
+        "Expected: with alpha=0.1 + jitter ON, rebuild ~30 cycles — bands soften.");
+    ImGui::Checkbox("Temporal accumulation##phase9", &useTemporalAccum);
+    if (useTemporalAccum) {
+        ImGui::SliderFloat("Temporal alpha", &temporalAlpha, 0.01f, 1.0f);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip(
+                "Blend weight for the current bake (0=keep history, 1=replace).\n"
+                "1.0 = no accumulation (same as pre-Phase-9).\n"
+                "0.1 = ~22 rebuilds for old data to fall below 10%% weight.\n"
+                "Recommended: 0.05–0.1 with jitter ON.");
+        ImGui::Checkbox("Probe jitter (requires temporal)", &useProbeJitter);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip(
+                "Each rebuild offsets probe world positions by a random [-0.5,0.5]^3\n"
+                "sub-cell jitter. Combined with temporal accumulation, the running\n"
+                "average integrates over a wider spatial footprint, reducing banding.\n"
+                "Has no effect without temporal accumulation.");
+    } else if (useProbeJitter) {
+        useProbeJitter = false;  // auto-disable jitter when accum is off — it only adds noise alone
+    }
 
     // ── Interval blend (4c) ──────────────────────────────────────────────────
     ImGui::Separator();

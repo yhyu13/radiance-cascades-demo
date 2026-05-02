@@ -58,6 +58,7 @@ uniform int   uUseSoftShadowBake;
 uniform float uSoftShadowK;        // penumbra width, shared with display shader
 uniform int       uDirRes;         // Phase 5a/5e: octahedral bin resolution (D) for this cascade
 uniform int       uUpperDirRes;    // Phase 5e: upper cascade D (== uDirRes when D-scaling is OFF)
+uniform vec3      uProbeJitter;    // Phase 9: sub-cell jitter in [-0.5,0.5]^3 probe-cell units
 
 // Phase 5b: per-direction atlas write target — (res*D)×(res*D)×res RGBA16F
 layout(rgba16f) uniform image3D oAtlas;
@@ -75,7 +76,10 @@ const float INF = 1e10;
 
 vec3 probeToWorld(ivec3 probePos) {
     // Phase 5d: use uProbeCellSize (per-cascade) not uBaseInterval (always C0's 0.125)
-    return uGridOrigin + (vec3(probePos) + 0.5) * uProbeCellSize;
+    // Phase 9: uProbeJitter offsets the sample position within [-0.5,0.5] of the cell.
+    // With temporal accumulation, each rebuild samples at a different world position,
+    // widening the effective spatial footprint without adding probes.
+    return uGridOrigin + (vec3(probePos) + 0.5 + uProbeJitter) * uProbeCellSize;
 }
 
 float sampleSDF(vec3 worldPos) {
@@ -182,7 +186,7 @@ bool inShadow(vec3 hitPos, vec3 lightPos) {
     for (int i = 0; i < 32 && t < dist; ++i) {
         float d = sampleSDF(hitPos + dir * t);
         if (d < 0.002) return true;
-        t += max(d * 0.9, 0.01);
+        t += max(d * 0.9, 0.001);
     }
     return false;
 }
@@ -201,7 +205,7 @@ float softShadowBake(vec3 hitPos, vec3 lightPos, float k) {
         if (d >= INF * 0.5) return 0.0;               // exited volume — unoccluded
         if (d < 0.002)      return 1.0;                // hit geometry — fully in shadow
         res = min(res, k * d / max(t, 0.001));         // cone narrowing accumulation
-        t  += max(d * 0.9, 0.01);
+        t  += max(d * 0.9, 0.001);
     }
     return 1.0 - clamp(res, 0.0, 1.0);
 }
@@ -228,7 +232,8 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
 
         if (dist < 0.002) {
             // Surface hit — compute Lambertian shading with material albedo
-            const float e = 0.06;  // ~1 voxel at 64^3 in 4-unit volume
+            // Normal estimation step: ~1 voxel at 128^3 in 4-unit volume (4/128 = 0.03125)
+            const float e = 0.03;
             vec3 n = normalize(vec3(
                 sampleSDF(pos + vec3(e,0,0)) - sampleSDF(pos - vec3(e,0,0)),
                 sampleSDF(pos + vec3(0,e,0)) - sampleSDF(pos - vec3(0,e,0)),
@@ -248,7 +253,11 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
             return vec4(color, t);
         }
 
-        t += max(dist * 0.9, 0.01);
+        // Phase 8: reduced minimum step 0.01 -> 0.001 (10x finer near surfaces).
+        // Hypothesis tested: 0.01 minimum caused 1cm step snapping -> probe atlas banding.
+        // Result: banding unchanged after this change -- hypothesis eliminated.
+        // Kept at 0.001 for sub-voxel accuracy at 128^3 (voxel = 3.125cm).
+        t += max(dist * 0.9, 0.001);
     }
 
     return vec4(0.0);

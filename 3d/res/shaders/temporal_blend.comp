@@ -1,0 +1,37 @@
+/**
+ * @file temporal_blend.comp
+ * @brief Exponential moving average blend of probe atlas or grid history.
+ *
+ * Phase 9: temporal accumulation for probe-grid spatial aliasing.
+ * Called after each bake+reduction cycle for both the directional atlas
+ * and the isotropic probe grid.
+ *
+ * oHistory = mix(oHistory, uCurrent, uAlpha)
+ *
+ * With probe jitter (uProbeJitter in radiance_3d.comp), each rebuild samples
+ * at slightly different world positions. The accumulated average integrates
+ * over a wider spatial footprint than any single bake, softening the discrete
+ * probe-grid banding without increasing probe count.
+ *
+ * alpha=1.0 → no accumulation (current bake only, same as pre-Phase-9)
+ * alpha=0.1 → ~22 rebuilds for old data to fall below 10% weight
+ */
+
+#version 430 core
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(rgba16f, binding = 0) uniform image3D oHistory;  // R+W: running average
+layout(rgba16f, binding = 1) readonly uniform image3D uCurrent;  // R:   fresh bake output
+
+uniform float uAlpha;   // blend weight for current frame (0=keep history, 1=replace)
+uniform ivec3 uSize;    // texture dimensions for bounds check
+
+void main() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(coord, uSize))) return;
+
+    vec4 cur = imageLoad(uCurrent, coord);
+    vec4 his = imageLoad(oHistory, coord);
+    imageStore(oHistory, coord, mix(his, cur, uAlpha));
+}
