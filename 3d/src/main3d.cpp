@@ -131,13 +131,18 @@ int main(int argc, char* argv[]) {
     std::cout << "[MAIN] Creating 3D demo instance..." << std::endl;
     Demo3D* demo = new Demo3D();
 
-    // --auto-analyze: capture + AI analysis then exit (no user interaction needed)
+    // --auto-analyze:  burst capture + AI analysis then exit
+    // --auto-sequence: sequence capture (N frames) + AI analysis then exit
     bool autoAnalyze = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--auto-analyze") {
             autoAnalyze = true;
             demo->setAutoCloseMode(true);
-            std::cout << "[MAIN] --auto-analyze: will capture, analyze, then exit.\n";
+            std::cout << "[MAIN] --auto-analyze: will burst-capture, analyze, then exit.\n";
+        } else if (std::string(argv[i]) == "--auto-sequence") {
+            autoAnalyze = true;
+            demo->setAutoSequenceMode(true);
+            std::cout << "[MAIN] --auto-sequence: will sequence-capture, analyze, then exit.\n";
         }
     }
 

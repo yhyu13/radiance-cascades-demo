@@ -28,10 +28,24 @@ doc/cluade_plan/AI/
 
 ---
 
-## Reading order
+## Phase index
 
-1. Read `phase6a_screenshot_ai_plan.md` — simpler, implement first
-2. Read `phase6b_renderdoc_ai_plan.md` — builds on 6a patterns
+| Phase | Doc | What it adds |
+|---|---|---|
+| 6a | `phase6a_screenshot_ai_plan.md` | P-key screenshot + single-image Claude triage |
+| 6b | `phase6b_renderdoc_ai_plan.md` | G-key RenderDoc capture + pipeline analysis |
+| 12a | `phase12a_autocapture_impl.md` | Auto-capture delay + probe stats JSON |
+| 12b | `phase12b_burst_capture_impl.md` | Burst state machine: modes 0/3/6 over 3 frames |
+| 13 | `phase13_quality_lift_plan.md` | Jitter retuning + bilateral luminance edge-stop |
+| 14a | `phase14a_multiframe_sequence_capture_impl.md` | N-frame sequence capture for temporal stability analysis |
+| 14b | `phase14b_c0_coverage_analysis.md` | C0 surfPct root cause + `uC0MinRange` fix design (NOT YET IMPLEMENTED) |
+
+## Reading order (new)
+
+1. `phase6a_screenshot_ai_plan.md` — simpler, implement first
+2. `phase6b_renderdoc_ai_plan.md` — builds on 6a patterns
+3. `phase12b_burst_capture_impl.md` — multi-mode burst
+4. `phase14a_multiframe_sequence_capture_impl.md` — temporal sequence
 
 ---
 

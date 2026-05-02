@@ -484,7 +484,8 @@ public:
 
     // Phase 12a — CLI auto-close query / setter (used by main3d.cpp)
     bool isReadyToClose() const { return captureAndAnalysisDone; }
-    void setAutoCloseMode(bool v) { autoCloseAfterCapture = v; }
+    void setAutoCloseMode(bool v)    { autoCloseAfterCapture = v; }
+    void setAutoSequenceMode(bool v) { autoCloseAfterCapture = v; autoSequencePending = v; }
 
 private:
     // =============================================================================
@@ -503,12 +504,32 @@ private:
     // Phase 12a — Auto-capture + probe stats JSON
     float       autoCaptureDelaySeconds = 5.0f;  // 0.0 = disabled
     bool        pendingStatsDump        = false;  // write JSON alongside next screenshot
-    std::string statsPathForAnalysis;             // path passed to launchAnalysis()
+    std::string statsPathForAnalysis;             // path passed to launchBurstAnalysis()
     std::string lastAnalysisPath;                 // shown in settings panel
 
     // --auto-analyze CLI mode: block on analysis then signal the main loop to exit
     bool        autoCloseAfterCapture  = false;
     bool        captureAndAnalysisDone = false;
+    bool        autoSequencePending    = false;  // --auto-sequence: start seq instead of burst
+
+    // Phase 12b — burst state machine
+    enum class BurstState { Idle, CapM0, CapM3, CapM6, Analyze };
+    BurstState  burstState          = BurstState::Idle;
+    int         savedRenderMode     = 0;
+    std::string burstPaths[3];          // [0]=_m0  [1]=_m3  [2]=_m6
+    std::string lastScreenshotPath;     // set by takeScreenshot() on each successful write
+    std::string pendingScreenshotTag;   // suffix inserted before ".png" (_m0/_m3/_m6/"")
+
+    void launchBurstAnalysis();
+
+    // Phase 14a — multi-frame sequence capture (temporal jitter analysis)
+    enum class SeqCapState { Idle, Capturing };
+    SeqCapState              seqCapState   = SeqCapState::Idle;
+    int                      seqFrameCount = 8;   // frames to capture (one jitter cycle)
+    int                      seqFrameIndex = 0;   // next frame index to request
+    std::vector<std::string> seqPaths;            // collected frame paths
+
+    void launchSequenceAnalysis();
 
     // =============================================================================
     // Scene State
@@ -945,6 +966,8 @@ private:
     int   giBlurRadius;
     float giBlurDepthSigma;
     float giBlurNormalSigma;
+    float giBlurLumSigma;       // Phase 13b: luminance edge-stop (0.0 = disabled)
+    float c0MinRange;           // Phase 14b: minimum C0 tMax in world units (0=legacy cellSize)
     
     // =============================================================================
     // Query Objects (Performance)
