@@ -1,9 +1,18 @@
 # Phase 6b — RenderDoc In-Process Capture + Resource Snapshot Analysis
 
-**Date:** 2026-04-30 (revised after Review 02; GPU perf analysis section added 2026-05-03)
-**Goal:** Press `G` in the running app → one GPU frame captured to `.rdc` →
-Python loads the capture, extracts each key texture resource as it exists at the end of
-the captured frame, and sends each to Claude for automated diagnosis.
+**Date:** 2026-04-30 (revised after Review 02; GPU perf analysis section added 2026-05-03)  
+**Status:** NOT YET IMPLEMENTED — design spec only. No C++ or Python code has been
+written for this phase. All code blocks are design intent, not deployed code.
+
+**Goal:** Phase 6b is a **two-component GPU analysis tool**:
+- **(A) Resource snapshot** — extract named 3D textures at end-of-frame for AI visual
+  inspection of atlas content, SDF geometry, and reduction output.
+- **(B) GPU performance timing** — walk all dispatches and draws, report per-pass GPU
+  cost in µs. Added during Phase 14c to address the sub-ms timing unreliability of the
+  app-side `cascadeTimeMs` counter.
+
+Component B is substantially larger than a texture snapshot helper. Together they form a
+mini GPU analysis framework. Component A can be shipped independently of Component B.
 
 ---
 
@@ -21,34 +30,64 @@ by CMake or test runners.
 
 ---
 
-## Problem
+## Problem and capability gaps addressed
 
-Phase 6a catches final-image artifacts but cannot see what went wrong inside the
-pipeline. For example, "indirect is too dark" could mean:
-- The probe atlas wasn't written (bake shader bug)
-- The reduction pass averaged incorrectly
-- The final shader read the wrong texture unit
+Phase 6a/12b/14a cover image-space and temporal analysis well. Phase 6b addresses three
+specific gaps those tools cannot fill:
 
-RenderDoc captures every draw call, every texture state, every compute dispatch in
-a single frame. This plan uses the qrenderdoc Python API to extract the current state of
-each key resource at the end of the frame and send each to Claude for diagnosis.
+1. **Reliable per-pass GPU timing** — `cascadeTimeMs` in probe_stats is unreliable below
+   ~1ms (GPU timer variance dominates). RenderDoc GPU timestamps are nanosecond-precision
+   and per-dispatch. This is the primary Phase 14c open question: how much does extending
+   C0/C1 tMax actually cost in GPU µs?
+
+2. **Pipeline-internal texture inspection** — e.g., whether the C1 probe atlas has
+   populated directional bins across the full probe grid (not just the aggregated surfPct).
+   The final rendered frame cannot expose this.
+
+3. **Atlas-level hypothesis validation** — e.g., "are open-air probe bins writing zero
+   alpha or the sky-sentinel?" cannot be determined from the rendered output or the
+   surfPct scalar metric alone.
+
+Phase 6b does **not** replace or subsume the sequence capture tool. Its diagnostic reach
+is narrower: end-of-frame resource state only.
 
 ### Limitation: resource snapshot, not event-walking
 
-The analysis reads resource state at the end of the captured frame. It does not walk
-draw/dispatch events or attribute a resource's contents to a specific pipeline pass.
-A future extension could use `controller.SetFrameEvent(eventId, True)` before each
-texture save to read intermediate resource state — but that requires event traversal
-and is a meaningful step beyond the current scope.
+The analysis reads resource state at the end of the captured frame. Bugs invisible to
+this approach:
+- **Transient intermediate corruption** — garbage written by one pass and overwritten by
+  a later pass before frame end
+- **Pass-ordering errors** — the final texture is correct but produced by the wrong route
+- **Frame-to-frame drift** — use the sequence capture tool (Phase 14a) for those
+
+Event walking (`controller.SetFrameEvent(eventId, True)` before each texture save to
+read intermediate resource state) is a future extension beyond the current scope.
 
 ---
 
-## Prerequisites
+## Prerequisites and labeling maintenance cost
 
 - RenderDoc installed at `C:\Program Files\RenderDoc\`
   - `renderdoc.dll` — in-process capture DLL
   - `renderdoccmd.exe` — CLI tool (provides Python runtime)
   - `renderdoc_app.h` — public-domain capture API header
+
+Labeling is **not a one-time prerequisite — it is an ongoing maintenance cost**.
+The Python script matches resources and dispatches by string name. If labels drift from
+code reality, the automation degrades silently: timing rows fall back to "Dispatch N",
+resource lookups return "not found", and the output looks plausible but is wrong.
+
+Rules to maintain:
+- Texture labels (`glObjectLabel(GL_TEXTURE, ...)`) must be updated if a texture is
+  renamed or replaced.
+- Program labels (`glObjectLabel(GL_PROGRAM, ...)`) must be updated if a shader file is
+  renamed. The label and the `PASS_KEYWORDS` dict key in the Python script must change
+  together in the same commit.
+- Adding a new cascade dispatch without a keyword entry produces an unlabeled row with
+  no compile-time warning — only a runtime `[6b WARNING]` print.
+
+The Python script prints `[6b WARNING] Dispatch {eventId} unrecognized: {name}` for any
+dispatch that does not match a PASS_KEYWORDS entry, making labeling drift visible.
 
 ---
 
@@ -334,6 +373,9 @@ def collect_gpu_timing(controller) -> list[dict]:
                     if kw in (a.name or "").lower():
                         label = human
                         break
+                if label == a.name:  # no keyword matched
+                    print(f"[6b WARNING] Dispatch {a.eventId} unrecognized: {a.name!r} "
+                          f"— add to PASS_KEYWORDS or update glObjectLabel")
                 rows.append({
                     "event_id":    a.eventId,
                     "name":        a.name or "(unnamed)",
