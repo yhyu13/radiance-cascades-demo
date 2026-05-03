@@ -968,6 +968,7 @@ private:
     float giBlurNormalSigma;
     float giBlurLumSigma;       // Phase 13b: luminance edge-stop (0.0 = disabled)
     float c0MinRange;           // Phase 14b: minimum C0 tMax in world units (0=legacy cellSize)
+    float c1MinRange;           // Phase 14c: minimum C1 tMax in world units (0=legacy 0.5wu)
     
     // =============================================================================
     // Query Objects (Performance)

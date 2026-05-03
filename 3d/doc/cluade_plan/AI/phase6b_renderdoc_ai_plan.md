@@ -1,6 +1,6 @@
 # Phase 6b — RenderDoc In-Process Capture + Resource Snapshot Analysis
 
-**Date:** 2026-04-30 (revised after Review 02)
+**Date:** 2026-04-30 (revised after Review 02; GPU perf analysis section added 2026-05-03)
 **Goal:** Press `G` in the running app → one GPU frame captured to `.rdc` →
 Python loads the capture, extracts each key texture resource as it exists at the end of
 the captured frame, and sends each to Claude for automated diagnosis.
@@ -286,6 +286,78 @@ Known artifact types:
 Describe artifacts by name and location. If clean, say so.
 Rate quality: Poor / Fair / Good / Excellent."""
 
+# ---------------------------------------------------------------------------
+# GPU performance analysis — walk all compute dispatches, collect GPU duration.
+# Each dispatch's duration is in nanoseconds (0 if GPU timing unavailable).
+# Dispatches are named by their source shader program (via glObjectLabel on
+# the program) or fall back to "Dispatch N".
+# ---------------------------------------------------------------------------
+
+# Radiance cascades pass order within a single frame (stagger varies which
+# cascades are actually dispatched each frame):
+#   For each active cascade (C3→C0):
+#     [voxelize.comp] — only on scene change
+#     [sdf_analytic.comp or sdf_3d.comp] — once per frame (if dirty)
+#     [radiance_3d.comp] — cascade bake (per active cascade)
+#     [reduction_3d.comp] — atlas→grid reduction (per active cascade)
+#     [temporal_blend.comp] — EMA blend atlas + grid (if temporal ON, non-fused)
+#   [inject_radiance.comp] — indirect radiance injection
+#   [raymarch.frag] — final raymarching pass
+#   [gi_blur.frag] — GI bilateral blur pass
+
+PASS_KEYWORDS = {
+    "voxelize":        "Voxelization",
+    "sdf_analytic":    "SDF (analytic)",
+    "sdf_3d":          "SDF (voxel)",
+    "radiance_3d":     "Cascade bake",
+    "reduction_3d":    "Cascade reduction",
+    "temporal_blend":  "Temporal EMA blend",
+    "inject_radiance": "Radiance injection",
+    "raymarch":        "Raymarching",
+    "gi_blur":         "GI blur",
+}
+
+def collect_gpu_timing(controller) -> list[dict]:
+    """Walk all actions and collect GPU timing for compute dispatches and draws."""
+    rows = []
+    def walk(actions):
+        for a in actions:
+            # rd.ActionFlags.Dispatch is set on compute dispatches;
+            # rd.ActionFlags.Drawcall is set on rasterization draws.
+            is_dispatch = bool(a.flags & rd.ActionFlags.Dispatch)
+            is_draw     = bool(a.flags & rd.ActionFlags.Drawcall)
+            if is_dispatch or is_draw:
+                duration_us = a.duration / 1000.0 if a.duration > 0 else None
+                # Map action name → human pass label (keyword match on program name)
+                label = a.name
+                for kw, human in PASS_KEYWORDS.items():
+                    if kw in (a.name or "").lower():
+                        label = human
+                        break
+                rows.append({
+                    "event_id":    a.eventId,
+                    "name":        a.name or "(unnamed)",
+                    "label":       label,
+                    "duration_us": duration_us,
+                    "type":        "dispatch" if is_dispatch else "draw",
+                })
+            walk(a.children)
+    walk(controller.GetRootActions())
+    return rows
+
+def format_perf_table(rows: list[dict]) -> str:
+    """Render a markdown table of per-pass GPU timing."""
+    lines = ["| Pass | Type | GPU time (µs) |",
+             "|---|---|---|"]
+    total_us = 0.0
+    for r in rows:
+        dur = f"{r['duration_us']:.1f}" if r['duration_us'] is not None else "N/A"
+        if r['duration_us']:
+            total_us += r['duration_us']
+        lines.append(f"| {r['label']} | {r['type']} | {dur} |")
+    lines.append(f"| **Total** | | **{total_us:.1f}** |")
+    return "\n".join(lines)
+
 def tex_slice_to_b64(controller, res_id, z_slice=0) -> str | None:
     """Save one Z-slice of a 3D texture as PNG and return base64."""
     try:
@@ -359,18 +431,36 @@ def main():
     controller = cap.OpenCapture(rd.ReplayOptions(), None)
     client     = anthropic.Anthropic()
 
+    # Collect GPU timing before seeking to end (timing walk uses root actions)
+    timing_rows = collect_gpu_timing(controller)
+
     # Seek to last event so all resources reflect their final frame state
-    drawcalls = controller.GetDrawcalls()
-    if drawcalls:
-        controller.SetFrameEvent(drawcalls[-1].eventId, True)
+    root_actions = controller.GetRootActions()
+    def last_event(actions):
+        eid = 0
+        for a in actions:
+            eid = max(eid, a.eventId, last_event(a.children))
+        return eid
+    last_eid = last_event(root_actions)
+    if last_eid:
+        controller.SetFrameEvent(last_eid, True)
 
     ts   = datetime.datetime.now().isoformat(timespec="seconds")
     stem = pathlib.Path(cap_path).stem
-    report = [f"# RenderDoc Resource Snapshot Analysis\n\n"
+    report = [f"# RenderDoc Resource Snapshot + GPU Performance Analysis\n\n"
               f"**Capture:** `{cap_path}`  \n"
               f"**Analyzed:** {ts}  \n"
               f"**Model:** claude-opus-4-7\n"
-              f"**Note:** Resource snapshot analysis — state at end of captured frame.\n\n---\n"]
+              f"**Note:** Resource snapshot (state at end of frame) + per-dispatch GPU timing.\n\n---\n"]
+
+    # GPU performance table (before visual analysis)
+    if timing_rows:
+        report.append("## GPU Performance (per dispatch/draw)\n\n"
+                      + format_perf_table(timing_rows) + "\n\n"
+                      + "> GPU duration = 0 or N/A means the driver did not expose timing "
+                        "for that event. Enable GPU timing in RenderDoc settings if all entries show N/A.\n")
+    else:
+        report.append("## GPU Performance\n*No dispatch/draw events found in capture.*\n")
 
     for (name, label, stage_prompt) in STAGES:
         print(f"[6b] Analyzing: {label}")
@@ -410,6 +500,63 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+---
+
+## GPU performance analysis design
+
+RenderDoc's Python API exposes per-event GPU timing via `ActionDescription.duration`
+(nanoseconds, 0 if GPU timing is disabled or unsupported). The script walks
+`controller.GetRootActions()` recursively and collects all compute dispatches
+(`ActionFlags.Dispatch`) and rasterization draws (`ActionFlags.Drawcall`).
+
+### Pass identification
+
+Dispatch events are matched against `PASS_KEYWORDS` (substring match on action name,
+which RenderDoc derives from the compute program label set via `glObjectLabel(GL_PROGRAM, ...)`
+or falls back to a generic "Dispatch N").
+
+**Required C++ glObjectLabel calls for program objects** (not just textures):
+```cpp
+// After linking each compute program (in loadShaders or similar):
+glObjectLabel(GL_PROGRAM, shaderProg, -1, "voxelize.comp");
+glObjectLabel(GL_PROGRAM, shaderProg, -1, "radiance_3d.comp");  // etc.
+```
+Without program labels, RenderDoc names dispatches "Dispatch N" and keyword matching
+degrades to sequential ordering.
+
+### Output: GPU performance table (Phase 14c relevance)
+
+The timing table directly answers the performance question raised in Phase 14b/14c:
+_"How much does extending C0/C1 tMax actually cost in GPU time?"_
+
+Expected cascade bake rows (one per active cascade per frame, stagger permitting):
+```
+| Cascade bake (C3) | dispatch | ~Xµs |
+| Cascade reduction (C3) | dispatch | ~Xµs |
+| Cascade bake (C2)     | dispatch | ~Xµs |
+...
+| Cascade bake (C0) | dispatch | ~Xµs |   ← highest with c0MinRange=1.0
+| Cascade bake (C1) | dispatch | ~Xµs |   ← raised by c1MinRange=1.0
+```
+
+### GPU timing availability
+
+GPU timing is driver- and capture-mode-dependent. On NVIDIA with OpenGL:
+- Timestamp queries are available (GL_ARB_timer_query)
+- RenderDoc collects them if "Allow GPU timing" is enabled in RenderDoc settings
+- If `duration=0` for all events: enable via RenderDoc → Tools → Settings →
+  "Allow GPU timing" checkbox, then recapture
+
+### glObjectLabel for compute programs
+
+Compute programs need labels at link time, not bind time. Label each in the shader
+loader immediately after `glLinkProgram`:
+```cpp
+glLinkProgram(prog);
+glObjectLabel(GL_PROGRAM, prog, -1, shaderName.c_str());  // "radiance_3d.comp", etc.
+```
+This is separate from texture labels and is only needed for dispatch identification.
 
 ---
 
@@ -475,3 +622,7 @@ path after capture.
 | Python script runs | Console: `[6b] Analysis saved: ...pipeline.md` within ~30s |
 | `.md` content | Per-stage sections with artifact descriptions; no "Resource not found" if labels applied |
 | Can also open `.rdc` manually | RenderDoc GUI opens and shows all passes |
+| GPU timing present in report | `## GPU Performance` table shows non-zero µs values |
+| GPU timing all zero | Enable "Allow GPU timing" in RenderDoc → Tools → Settings, recapture |
+| Dispatch names resolved | Table shows "Cascade bake", "Cascade reduction" etc., not "Dispatch N" |
+| Phase 14c validation | C0 and C1 bake costs both elevated vs C2/C3 baseline |

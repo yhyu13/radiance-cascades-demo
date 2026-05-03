@@ -33,12 +33,13 @@ doc/cluade_plan/AI/
 | Phase | Doc | What it adds |
 |---|---|---|
 | 6a | `phase6a_screenshot_ai_plan.md` | P-key screenshot + single-image Claude triage |
-| 6b | `phase6b_renderdoc_ai_plan.md` | G-key RenderDoc capture + pipeline analysis |
+| 6b | `phase6b_renderdoc_ai_plan.md` | G-key RenderDoc capture + pipeline analysis + GPU perf timing (NOT YET IMPLEMENTED) |
 | 12a | `phase12a_autocapture_impl.md` | Auto-capture delay + probe stats JSON |
 | 12b | `phase12b_burst_capture_impl.md` | Burst state machine: modes 0/3/6 over 3 frames |
 | 13 | `phase13_quality_lift_plan.md` | Jitter retuning + bilateral luminance edge-stop |
 | 14a | `phase14a_multiframe_sequence_capture_impl.md` | N-frame sequence capture for temporal stability analysis |
-| 14b | `phase14b_c0_coverage_analysis.md` | C0 surfPct root cause + `uC0MinRange` fix design (NOT YET IMPLEMENTED) |
+| 14b | `phase14b_c0_coverage_analysis.md` | C0 surfPct root cause + `uC0MinRange` fix — IMPLEMENTED + VALIDATED 2026-05-03 |
+| 14c | `phase14c_c1_coverage_fix.md` | C1 surfPct fix: generalize min-range — IMPLEMENTED + VALIDATED 2026-05-03 |
 
 ## Reading order (new)
 
