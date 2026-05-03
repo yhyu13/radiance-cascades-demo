@@ -21,9 +21,9 @@ uniform int   uCascadeIndex;
 uniform int   uCascadeCount;
 uniform float uBaseInterval;   // C0's cellSize (0.125) -- always used for tMin/tMax formula
 uniform float uProbeCellSize;  // this cascade's cellSize for probeToWorld()
-// Phase 14b: minimum tMax for C0 in world units. 0 = legacy (tMax=cellSize).
-// Extends C0 ray reach beyond cellSize so interior probes can hit scene walls.
-uniform float uC0MinRange;
+// Phase 14c: minimum tMax for the current cascade (wu). 0 = legacy formula.
+// Applied per-dispatch; C++ passes c0MinRange for C0, c1MinRange for C1, etc.
+uniform float uCnMinRange;
 // Phase 5d: upper-cascade spatial scale.
 // 0=no upper; 1=co-located (same index); 2=non-co-located (trilinear 8-neighbor)
 uniform int   uUpperToCurrentScale;
@@ -288,11 +288,11 @@ void main() {
     float tMin, tMax;
     if (uCascadeIndex == 0) {
         tMin = 0.02;
-        tMax = (uC0MinRange > 0.0) ? max(d, uC0MinRange) : d;
+        tMax = (uCnMinRange > 0.0) ? max(d, uCnMinRange) : d;
     } else {
         float f = pow(4.0, float(uCascadeIndex - 1));
         tMin = f * d;
-        tMax = f * 4.0 * d;
+        tMax = (uCnMinRange > 0.0) ? max(f * 4.0 * d, uCnMinRange) : f * 4.0 * d;
     }
 
     float blendWidth = (tMax - tMin) * uBlendFraction;

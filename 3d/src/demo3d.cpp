@@ -222,6 +222,7 @@ Demo3D::Demo3D()
     , giBlurNormalSigma(0.2f)
     , giBlurLumSigma(0.4f)           // Phase 13b: stops within-plane tonal blur
     , c0MinRange(1.0f)               // Phase 14b: C0 tMax min (wu); 0=legacy cellSize=0.125
+    , c1MinRange(1.0f)               // Phase 14c: C1 tMax min (wu); 0=legacy 0.5wu
 {
     /**
      * @brief Construct 3D demo and initialize all resources
@@ -1302,9 +1303,11 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     // In co-located mode both are 0.125; in non-co-located they diverge.
     glUniform1f(glGetUniformLocation(prog, "uBaseInterval"),  cascades[0].cellSize);  // always 0.125
     glUniform1f(glGetUniformLocation(prog, "uProbeCellSize"), c.cellSize);             // per-cascade
-    // Phase 14b: C0 minimum ray reach; passed only for C0, zero-out for all others.
-    glUniform1f(glGetUniformLocation(prog, "uC0MinRange"),
-                (cascadeIndex == 0) ? c0MinRange : 0.0f);
+    // Phase 14c: per-cascade minimum ray reach (wu); 0 = legacy formula.
+    float cnMinRange = (cascadeIndex == 0) ? c0MinRange
+                     : (cascadeIndex == 1) ? c1MinRange
+                     : 0.0f;
+    glUniform1f(glGetUniformLocation(prog, "uCnMinRange"), cnMinRange);
 
     // Phase 5d: upper-cascade scale factor for upperProbePos = probePos / scale.
     // 0 = no upper cascade; 1 = co-located (same index); 2 = non-co-located (halved index).
@@ -2817,14 +2820,17 @@ void Demo3D::renderCascadePanel() {
         ImGui::SameLine();
         ImGui::TextDisabled("baseInterval=%.4fm", volumeSize.x / float(cascadeC0Res));
     }
-    // Phase 14b: C0 minimum ray reach experiment
+    // Phase 14b/14c: per-cascade minimum ray reach
     ImGui::SliderFloat("C0 min range##c0mr", &c0MinRange, 0.0f, 2.0f, "%.2f wu");
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Phase 14b experiment: minimum C0 ray reach in world units.\n"
-                          "0 = legacy (tMax=cellSize=0.125wu, surfPct~30%%).\n"
-                          "0.5 = extends C0 to cover Cornell box interior (hypothesis: surfPct>65%%).\n"
-                          "Higher values raise surfPct but increase C0 bake cost.\n"
-                          "Changing requires rebuild of cascades (hold ~1s).");
+        ImGui::SetTooltip("Minimum C0 ray reach (wu). 0=legacy cellSize=0.125wu.\n"
+                          "1.0 (default) raises C0 surfPct to ~98%% and eliminates\n"
+                          "near-field hit/miss oscillation on colored walls.");
+    ImGui::SliderFloat("C1 min range##c1mr", &c1MinRange, 0.0f, 4.0f, "%.2f wu");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Minimum C1 ray reach (wu). 0=legacy 0.5wu.\n"
+                          "1.0 (default) raises C1 surfPct from 75%% to ~100%%\n"
+                          "and eliminates outer-wall convergence drift.");
 
     // Spatial trilinear merge — only meaningful in non-co-located mode
     {
@@ -3672,12 +3678,18 @@ void Demo3D::takeScreenshot(bool launchAiAnalysis) {
         statsPathForAnalysis.clear();  // clear before write; failed write leaves it empty
         std::ostringstream j;
         j << "{\n";
-        j << "  \"dirRes\": "          << dirRes         << ",\n";
-        j << "  \"cascadeCount\": "    << cascadeCount   << ",\n";
-        j << "  \"temporalAlpha\": "   << temporalAlpha  << ",\n";
-        j << "  \"probeJitterScale\": "<< probeJitterScale<< ",\n";
-        j << "  \"cascadeTimeMs\": "   << cascadeTimeMs  << ",\n";
-        j << "  \"raymarchTimeMs\": "  << raymarchTimeMs << ",\n";
+        j << "  \"dirRes\": "           << dirRes          << ",\n";
+        j << "  \"cascadeCount\": "     << cascadeCount    << ",\n";
+        j << "  \"temporalAlpha\": "    << temporalAlpha   << ",\n";
+        j << "  \"probeJitterScale\": " << probeJitterScale << ",\n";
+        j << "  \"jitterPatternSize\": "<< jitterPatternSize<< ",\n";
+        j << "  \"jitterHoldFrames\": " << jitterHoldFrames << ",\n";
+        j << "  \"c0MinRange\": "       << c0MinRange       << ",\n";
+        j << "  \"c1MinRange\": "       << c1MinRange       << ",\n";
+        j << "  \"baseRes\": "          << cascadeC0Res     << ",\n";
+        j << "  \"volumeSize\": "       << volumeSize.x     << ",\n";
+        j << "  \"cascadeTimeMs\": "    << cascadeTimeMs    << ",\n";
+        j << "  \"raymarchTimeMs\": "   << raymarchTimeMs   << ",\n";
         j << "  \"cascades\": [\n";
         for (int ci = 0; ci < cascadeCount; ++ci) {
             int tot = probeTotalPerCascade[ci]; if (tot < 1) tot = 1;
