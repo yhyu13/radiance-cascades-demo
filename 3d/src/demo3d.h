@@ -26,6 +26,11 @@
 #include <map>
 #include <vector>
 #include <memory>
+#include <thread>
+
+#ifdef _WIN32
+#include "rdoc_helper.h"
+#endif
 #include "config.h"
 #include "raylib.h"
 #include "imgui.h"
@@ -487,6 +492,12 @@ public:
     void setAutoCloseMode(bool v)    { autoCloseAfterCapture = v; }
     void setAutoSequenceMode(bool v) { autoCloseAfterCapture = v; autoSequencePending = v; }
 
+    // Phase 6b — RenderDoc GPU frame capture (called from main3d.cpp main loop)
+    void beginRdocFrameIfPending();
+    void endRdocFrameIfPending();
+    void setAutoRdocMode(float delaySeconds) { autoRdocDelaySeconds = delaySeconds; }
+    bool isSkippingUI() const { return skipUIRendering; }
+
 private:
     // =============================================================================
     // Phase 6a — Screenshot + AI Analysis
@@ -500,6 +511,21 @@ private:
     void initToolsPaths();       // resolve absolute paths from exe location
     void launchAnalysis(const std::string& imagePath,
                         const std::string& statsPath = "");
+
+    // =============================================================================
+    // Phase 6b — RenderDoc In-Process GPU Capture
+    // =============================================================================
+
+#ifdef _WIN32
+    RENDERDOC_API_1_6_0* rdoc = nullptr;
+#endif
+    bool        pendingRdocCapture    = false;
+    std::string rdocCaptureDir;           // "doc/cluade_plan/AI/captures"
+    float       autoRdocDelaySeconds  = 0.0f;  // 0=disabled; fires once after this many seconds
+    bool        autoRdocFired         = false;  // latch: only fire once per session
+
+    void initRenderDoc();
+    void launchRdocAnalysis(const std::string& capturePath);
 
     // Phase 12a — Auto-capture + probe stats JSON
     float       autoCaptureDelaySeconds = 5.0f;  // 0.0 = disabled

@@ -33,7 +33,7 @@ doc/cluade_plan/AI/
 | Phase | Doc | What it adds |
 |---|---|---|
 | 6a | `phase6a_screenshot_ai_plan.md` | P-key screenshot + single-image Claude triage |
-| 6b | `phase6b_renderdoc_ai_plan.md` | G-key RenderDoc capture + pipeline analysis + GPU perf timing (NOT YET IMPLEMENTED) |
+| 6b | `phase6b_renderdoc_ai_plan.md` / `phase6b_impl.md` | G-key RenderDoc capture + pipeline analysis + GPU perf timing — IMPLEMENTED 2026-05-03 |
 | 12a | `phase12a_autocapture_impl.md` | Auto-capture delay + probe stats JSON |
 | 12b | `phase12b_burst_capture_impl.md` | Burst state machine: modes 0/3/6 over 3 frames |
 | 13 | `phase13_quality_lift_plan.md` | Jitter retuning + bilateral luminance edge-stop |

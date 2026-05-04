@@ -1,8 +1,11 @@
 # Phase 6b — RenderDoc In-Process Capture + Resource Snapshot Analysis
 
 **Date:** 2026-04-30 (revised after Review 02; GPU perf analysis section added 2026-05-03)  
-**Status:** NOT YET IMPLEMENTED — design spec only. No C++ or Python code has been
-written for this phase. All code blocks are design intent, not deployed code.
+**Status:** IMPLEMENTED 2026-05-03 — see `phase6b_impl.md` for implementation record.
+C++ integration complete; G-key + `--auto-rdoc` capture working; `analyze_renderdoc.py`
+deployed. First live capture validated (`rdoc_frame_capture.rdc` 24MB). Full Python
+texture/timing analysis requires `renderdoc` module in qrenderdoc env; thumbnail-based
+final-frame analysis confirmed working.
 
 **Goal:** Phase 6b is a **two-component GPU analysis tool**:
 - **(A) Resource snapshot** — extract named 3D textures at end-of-frame for AI visual

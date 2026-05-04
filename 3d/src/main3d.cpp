@@ -111,6 +111,20 @@ int main(int argc, char* argv[]) {
     std::cout << "  Version: " << VERSION_STAGE << VERSION << std::endl;
     std::cout << "========================================" << std::endl;
     
+    // Phase 6b: pre-load RenderDoc DLL BEFORE the GL context is created.
+    // RenderDoc must hook into OpenGL at context creation time; loading after
+    // InitWindow() means capture calls are no-ops.
+    // If renderdoc.dll is not installed this silently returns false — no effect.
+    {
+#ifdef _WIN32
+        RENDERDOC_API_1_6_0* rdoc_preload = nullptr;
+        if (rdoc_load_api(&rdoc_preload))
+            std::cout << "[6b] RenderDoc DLL pre-loaded (before GL context).\n";
+        else
+            std::cout << "[6b] RenderDoc DLL not found (pre-load); capture disabled.\n";
+#endif
+    }
+
     // Step 2: Initialize application
     if (!initializeApplication()) {
         std::cerr << "[ERROR] Application initialization failed." << std::endl;
@@ -133,6 +147,7 @@ int main(int argc, char* argv[]) {
 
     // --auto-analyze:  burst capture + AI analysis then exit
     // --auto-sequence: sequence capture (N frames) + AI analysis then exit
+    // --auto-rdoc:     RenderDoc GPU capture after 8s warm-up (stays open; G also works)
     bool autoAnalyze = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--auto-analyze") {
@@ -143,6 +158,9 @@ int main(int argc, char* argv[]) {
             autoAnalyze = true;
             demo->setAutoSequenceMode(true);
             std::cout << "[MAIN] --auto-sequence: will sequence-capture, analyze, then exit.\n";
+        } else if (std::string(argv[i]) == "--auto-rdoc") {
+            demo->setAutoRdocMode(8.0f);
+            std::cout << "[MAIN] --auto-rdoc: will capture RenderDoc frame after 8s warm-up.\n";
         }
     }
 
@@ -155,10 +173,13 @@ int main(int argc, char* argv[]) {
     while (!WindowShouldClose()) {
         // Process input
         demo->processInput();
-        
+
         // Update simulation
         demo->update();
-        
+
+        // Phase 6b: start RenderDoc frame capture if queued by G key
+        demo->beginRdocFrameIfPending();
+
         // Render frame
         BeginDrawing();
             ClearBackground(BLACK);
@@ -175,10 +196,12 @@ int main(int argc, char* argv[]) {
             if (autoAnalyze && demo->isReadyToClose())
                 break;
 
-            // Render UI overlay
-            rlImGuiBegin();
-                demo->renderUI();
-            rlImGuiEnd();
+            // Render UI overlay (suppressed when capturing clean frame for analysis)
+            if (!demo->isSkippingUI()) {
+                rlImGuiBegin();
+                    demo->renderUI();
+                rlImGuiEnd();
+            }
             
             // Handle window resize
             if (screenWidth != GetScreenWidth() || screenHeight != GetScreenHeight()) {
@@ -191,8 +214,11 @@ int main(int argc, char* argv[]) {
             DrawFPS(10, 10);
             
         EndDrawing();
+
+        // Phase 6b: end RenderDoc frame capture and launch analysis
+        demo->endRdocFrameIfPending();
     }
-    
+
     // Step 7: Cleanup
     std::cout << "[MAIN] Cleaning up..." << std::endl;
     delete demo;
