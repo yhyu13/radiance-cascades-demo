@@ -60,6 +60,7 @@ set(SOURCES_3D
     src/demo3d.cpp
     src/gl_helpers.cpp
     src/analytic_sdf.cpp  # Analytic SDF primitives for Phase 0
+    src/rdoc_helper.cpp   # Phase 6b: RenderDoc DLL loading (isolated from raylib.h)
 )
 
 set(HEADERS_3D
@@ -84,6 +85,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${PROJECT_SOURCE_DIR}/../lib/imgui"
     "${PROJECT_SOURCE_DIR}/../lib/raylib/src"
     "${PROJECT_SOURCE_DIR}/include"
+    "${PROJECT_SOURCE_DIR}/lib/renderdoc"
     ${OPENGL_INCLUDE_DIR}
     ${GLEW_INCLUDE_DIRS}
 )

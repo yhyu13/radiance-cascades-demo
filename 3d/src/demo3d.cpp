@@ -14,6 +14,9 @@
  */
 
 #include "demo3d.h"
+// Note: <windows.h> is intentionally NOT included here — it conflicts with raylib.h
+// via winuser.h (CloseWindow / ShowCursor overload clash). Windows API calls for
+// RenderDoc DLL loading are isolated in rdoc_helper.cpp.
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
@@ -241,6 +244,9 @@ Demo3D::Demo3D()
     // Phase 6a: resolve tool paths from exe location (works regardless of CWD)
     initToolsPaths();
 
+    // Phase 6b: load RenderDoc in-process API (no-op if RenderDoc not installed)
+    initRenderDoc();
+
     std::cout << "========================================" << std::endl;
     std::cout << "[Demo3D] Initializing 3D Radiance Cascades" << std::endl;
     std::cout << "========================================" << std::endl;
@@ -383,6 +389,20 @@ void Demo3D::processInput() {
         std::cout << "[6a] Screenshot queued (captured at next render point)." << std::endl;
     }
 
+    // Phase 6b: G = GPU frame capture via RenderDoc
+    if (IsKeyPressed(KEY_G)) {
+#ifdef _WIN32
+        if (rdoc) {
+            pendingRdocCapture = true;
+            std::cout << "[6b] RenderDoc capture queued for next frame." << std::endl;
+        } else {
+            std::cout << "[6b] RenderDoc not loaded — capture unavailable." << std::endl;
+        }
+#else
+        std::cout << "[6b] RenderDoc capture only supported on Windows." << std::endl;
+#endif
+    }
+
     // Basic camera controls would go here
     // For quick start, rely on Raylib's built-in camera handling in main3d.cpp
 }
@@ -397,6 +417,20 @@ void Demo3D::update() {
     // so that the sdfReady flag reset is properly chained after voxelizationPass.
     // Calling voxelizationPass() here would clear sceneDirty before render() sees it,
     // preventing sdfReady from being reset and leaving the SDF texture stale.
+
+    // Phase 6b: auto-capture after warm-up delay (--auto-rdoc mode)
+    // Hides UI one frame before capture so the thumbnail shows the clean 3D scene.
+#ifdef _WIN32
+    if (autoRdocDelaySeconds > 0.0f && !autoRdocFired && rdoc) {
+        if (time >= autoRdocDelaySeconds - 0.1f)
+            skipUIRendering = true;  // hide ImGui one frame before capture
+        if (time >= autoRdocDelaySeconds) {
+            pendingRdocCapture = true;
+            autoRdocFired = true;
+            std::cout << "[6b] Auto-capture triggered (t=" << time << "s)\n";
+        }
+    }
+#endif
 }
 
 void Demo3D::render() {
@@ -1248,10 +1282,10 @@ void Demo3D::sdfGenerationPass() {
         // Dispatch compute shader
         glm::ivec3 workGroups = calculateWorkGroups(
             volumeResolution, volumeResolution, volumeResolution, 8);
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "sdf_analytic");
         glDispatchCompute(workGroups.x, workGroups.y, workGroups.z);
-        
-        // Ensure writes are visible
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        glPopDebugGroup();
 
         std::cout << "[Demo3D] Analytic SDF generation complete." << std::endl;
     } else {
@@ -1394,8 +1428,10 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glBindImageTexture(0, c.probeAtlasTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 
     glm::ivec3 wg = calculateWorkGroups(c.resolution, c.resolution, c.resolution, 4);
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "radiance_3d");
     glDispatchCompute(wg.x, wg.y, wg.z);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+    glPopDebugGroup();
 
     // Phase 5b-1: reduction — average D² atlas bins per probe → isotropic probeGridTexture
     // This keeps raymarch.frag's display path (texture(uRadiance, uvw).rgb) valid.
@@ -1413,8 +1449,10 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
 
         // Phase 10: local_size changed to 8x8x4=256 threads; use matching workgroup counts.
         glm::ivec3 wgRed((c.resolution + 7) / 8, (c.resolution + 7) / 8, (c.resolution + 3) / 4);
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "reduction_3d");
         glDispatchCompute(wgRed.x, wgRed.y, wgRed.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        glPopDebugGroup();
     }
 
     // Phase 10: temporal history update — two paths depending on fused EMA flag.
@@ -1453,16 +1491,20 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
         glBindImageTexture(0, c.probeAtlasHistory, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
         glBindImageTexture(1, c.probeAtlasTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA16F);
         glm::ivec3 wgA = calculateWorkGroups(axyz, axyz, c.resolution, 4);
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "temporal_blend");
         glDispatchCompute(wgA.x, wgA.y, wgA.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        glPopDebugGroup();
 
         // Blend isotropic grid — uDirRes = 0 (cardinal 3D neighborhood)
         glUniform3i(glGetUniformLocation(tbProg, "uSize"),   c.resolution, c.resolution, c.resolution);
         glUniform1i(glGetUniformLocation(tbProg, "uDirRes"), 0);
         glBindImageTexture(0, c.probeGridHistory, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
         glBindImageTexture(1, c.probeGridTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA16F);
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "temporal_blend");
         glDispatchCompute(wg.x, wg.y, wg.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        glPopDebugGroup();
 
         if (cascadeIndex == 0) ++temporalRebuildCount;
     }
@@ -1673,7 +1715,9 @@ void Demo3D::raymarchPass() {
     glBindVertexArray(debugQuadVAO);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "raymarch");
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    glPopDebugGroup();
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
@@ -1767,7 +1811,9 @@ void Demo3D::giBlurPass() {
     glBindVertexArray(debugQuadVAO);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "gi_blur");
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    glPopDebugGroup();
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
@@ -1860,6 +1906,9 @@ bool Demo3D::loadShader(const std::string& shaderName) {
         return false;
     }
     
+    // Phase 6b: label program for RenderDoc dispatch identification
+    glObjectLabel(GL_PROGRAM, program, -1, shaderName.c_str());
+
     shaders[shaderName] = program;
     std::cout << "[Demo3D] Shader loaded successfully: " << shaderName << std::endl;
     return true;
@@ -1946,6 +1995,14 @@ void Demo3D::createVolumeBuffers() {
         GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr
     );
     
+    // Phase 6b: label volume textures for RenderDoc resource identification
+    glObjectLabel(GL_TEXTURE, voxelGridTexture,        -1, "voxelGridTexture");
+    glObjectLabel(GL_TEXTURE, sdfTexture,              -1, "sdfTexture");
+    glObjectLabel(GL_TEXTURE, albedoTexture,           -1, "albedoTexture");
+    glObjectLabel(GL_TEXTURE, directLightingTexture,   -1, "directLightingTexture");
+    glObjectLabel(GL_TEXTURE, prevFrameTexture,        -1, "prevFrameTexture");
+    glObjectLabel(GL_TEXTURE, currentRadianceTexture,  -1, "currentRadianceTexture");
+
     // Create framebuffers (minimal - we'll use compute shaders mostly)
     glGenFramebuffers(1, &voxelizationFBO);
     glGenFramebuffers(1, &sdfFBO);
@@ -2042,6 +2099,13 @@ void Demo3D::initCascades() {
         cascades[i].probeGridHistory = gl::createTexture3D(
             probeRes, probeRes, probeRes,
             GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr);
+
+        // Phase 6b: label cascade textures for RenderDoc identification
+        std::string pfx = "cascade" + std::to_string(i);
+        glObjectLabel(GL_TEXTURE, cascades[i].probeAtlasTexture,  -1, (pfx + "_probeAtlas").c_str());
+        glObjectLabel(GL_TEXTURE, cascades[i].probeAtlasHistory,  -1, (pfx + "_probeAtlasHistory").c_str());
+        glObjectLabel(GL_TEXTURE, cascades[i].probeGridTexture,   -1, (pfx + "_probeGrid").c_str());
+        glObjectLabel(GL_TEXTURE, cascades[i].probeGridHistory,   -1, (pfx + "_probeGridHistory").c_str());
 
         std::cout << "[Demo3D] Cascade " << i << ": " << probeRes
                   << "^3 probes, D=" << cascD << ", cellSize=" << cellSz
@@ -3618,6 +3682,102 @@ void Demo3D::onResize() {
     glViewport(0, 0, width, height);
     
     std::cout << "[Demo3D] Window resized to " << width << "x" << height << std::endl;
+}
+
+// =============================================================================
+// Phase 6b — RenderDoc in-process capture
+// =============================================================================
+
+void Demo3D::initRenderDoc() {
+#ifdef _WIN32
+    namespace fs = std::filesystem;
+    // Walk up from exe to find project root (same logic as initToolsPaths)
+    fs::path root = fs::weakly_canonical(fs::path(GetApplicationDirectory()));
+    for (int i = 0; i < 4; i++) {
+        if (fs::exists(root / "doc")) break;
+        root = root.parent_path();
+    }
+    rdocCaptureDir = (root / "doc" / "cluade_plan" / "AI" / "captures").string();
+
+    // rdoc_load_api() is in rdoc_helper.cpp (isolated from raylib.h / winuser.h)
+    if (!rdoc_load_api(&rdoc)) {
+        std::cout << "[6b] RenderDoc DLL not found or API init failed — GPU capture disabled.\n";
+        rdoc = nullptr;
+        return;
+    }
+    fs::create_directories(rdocCaptureDir);
+    std::string capTemplate = rdocCaptureDir + "/rdoc_frame";
+    rdoc->SetCaptureFilePathTemplate(capTemplate.c_str());
+    rdoc->MaskOverlayBits(eRENDERDOC_Overlay_None, eRENDERDOC_Overlay_None);
+    std::cout << "[6b] RenderDoc in-process API loaded OK. Press G to capture.\n";
+#endif
+}
+
+void Demo3D::beginRdocFrameIfPending() {
+#ifdef _WIN32
+    if (pendingRdocCapture && rdoc)
+        rdoc->StartFrameCapture(nullptr, nullptr);
+#endif
+}
+
+void Demo3D::endRdocFrameIfPending() {
+#ifdef _WIN32
+    if (!pendingRdocCapture || !rdoc) return;
+    rdoc->EndFrameCapture(nullptr, nullptr);
+    pendingRdocCapture = false;
+
+    uint32_t n = rdoc->GetNumCaptures();
+    char capPath[512]; uint32_t pathLen = sizeof(capPath); uint64_t ts;
+    if (rdoc->GetCapture(n - 1, capPath, &pathLen, &ts)) {
+        std::string path(capPath, pathLen > 0 ? pathLen - 1 : 0);
+        std::cout << "[6b] Capture saved: " << path << std::endl;
+        launchRdocAnalysis(path);
+    }
+#endif
+}
+
+void Demo3D::launchRdocAnalysis(const std::string& capturePath) {
+    namespace fs = std::filesystem;
+    // Resolve analysisDir to absolute — qrenderdoc.exe runs from its install dir,
+    // so relative paths like "doc/cluade_plan/AI/analysis" would resolve there instead.
+    std::string outDir = fs::absolute(fs::path(analysisDir)).string();
+    std::string toolsDir = fs::path(toolsScript).parent_path().string();
+    std::string extractPath = (fs::path(toolsDir) / "rdoc_extract.py").string();
+    std::string analyzePath = (fs::path(toolsDir) / "analyze_renderdoc.py").string();
+
+    // Two-step pipeline (both inherit RDOC_CAPTURE / RDOC_OUTDIR env vars):
+    //   Step 1: qrenderdoc.exe --py rdoc_extract.py
+    //           Opens the .rdc via the renderdoc Python API, extracts texture slices
+    //           and GPU timing to <outDir>/<stem>_manifest.json + <stem>_<tex>.png.
+    //   Step 2: python analyze_renderdoc.py
+    //           Reads the manifest, calls Claude for visual analysis, writes _pipeline.md.
+    //
+    // qrenderdoc.exe embeds Python 3.6 (has renderdoc module, no anthropic).
+    // Regular Python has anthropic (no renderdoc module).
+    // sys.exit(0) in rdoc_extract.py prevents qrenderdoc's Qt GUI from opening.
+    std::thread([capturePath, outDir, extractPath, analyzePath]() {
+        std::string envPrefix =
+            "set \"RDOC_CAPTURE=" + capturePath + "\""
+            " && set \"RDOC_OUTDIR=" + outDir + "\"";
+
+        // Step 1: extract via qrenderdoc (blocks until sys.exit(0) in rdoc_extract.py)
+        std::string extractCmd =
+            envPrefix
+            + " && \"C:/Program Files/RenderDoc/qrenderdoc.exe\" --py \"" + extractPath + "\"";
+        std::cout << "[6b] Running rdoc_extract.py via qrenderdoc...\n";
+        int r1 = system(extractCmd.c_str());
+        if (r1 != 0)
+            std::cerr << "[6b] rdoc_extract.py failed (exit " << r1 << ") — timing/textures skipped\n";
+
+        // Step 2: analyze with Claude (reads manifest written by step 1)
+        std::string analyzeCmd =
+            envPrefix
+            + " && python \"" + analyzePath + "\"";
+        std::cout << "[6b] Running analyze_renderdoc.py...\n";
+        int r2 = system(analyzeCmd.c_str());
+        if (r2 != 0)
+            std::cerr << "[6b] analyze_renderdoc.py failed (exit " << r2 << ")\n";
+    }).detach();
 }
 
 void Demo3D::initToolsPaths() {
