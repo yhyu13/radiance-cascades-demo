@@ -370,6 +370,12 @@ def main():
     if last_eid:
         controller.SetFrameEvent(last_eid, True)
 
+    # Diagnostic: list cascade-related resources RenderDoc can see in this frame
+    log("[extract] Cascade resources visible in capture:")
+    for r in controller.GetResources():
+        if "cascade" in r.name.lower() or "probe" in r.name.lower():
+            log("[extract]   name={!r}  id={}".format(r.name, r.resourceId))
+
     # Extract texture slices
     manifest = {
         "cap_path":   cap_path,
