@@ -47,9 +47,9 @@ Important consequence:
 - one C1 probe spans a `2 x 2 x 2` block of C0 probes
 - one C2 probe spans a `2 x 2 x 2` block of C1 probes
 
-So the “parent block” relation is `8`, not `4`.
+So the "parent block" relation is `8`, not `4`.
 
-Why people sometimes think “4”:
+Why people sometimes think "4":
 
 - ShaderToy is effectively working in a 2D surface parameterization
 - `2 x 2 = 4` there
@@ -140,7 +140,7 @@ The full 3D analogue of ShaderToy's merge is:
 6. blend those 8 directional samples
 7. optionally apply visibility weighting per upper candidate
 
-That is the true “8-neighbor” version.
+That is the true "8-neighbor" version.
 
 ---
 
@@ -163,7 +163,7 @@ vec3 upperGrid = (worldPos - upperOrigin) / upperCellSize - 0.5;
 Why `-0.5`:
 
 - integer upper probe index `i` corresponds to center position `(i + 0.5) * upperCellSize`
-- subtracting `0.5` converts world position into “probe-center space”
+- subtracting `0.5` converts world position into "probe-center space"
 
 So:
 
@@ -317,8 +317,8 @@ The branch no longer stops at one parent probe, but it still stops short of the 
 
 Your understanding is correct after one 2D-to-3D correction:
 
-- not “1 upper to 4 lower”
-- but “1 upper centered over 8 lower”
+- not "1 upper to 4 lower"
+- but "1 upper centered over 8 lower"
 
 And your stronger challenge is also correct:
 

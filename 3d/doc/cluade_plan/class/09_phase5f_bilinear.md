@@ -4,6 +4,11 @@
 bilinear blending fixes, and why the implementation requires manual 4-sample math
 instead of using the GPU sampler.
 
+> **Current code note (2026-05):** This page documents Phase 5f at D=4 (16 bins).
+> The current default is D=8 (64 bins); each bin spans ~22° rather than ~36°,
+> so bin-boundary banding is reduced but bilinear blending is still active and correct.
+> The 4-sample math and GL_NEAREST atlas requirement are unchanged.
+
 ---
 
 ## The artifact: bin-boundary banding

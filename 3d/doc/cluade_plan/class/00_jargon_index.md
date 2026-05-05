@@ -96,13 +96,14 @@ The fundamental unit = 0.125 m = 4 m / 32 probes.
 Each cascade's tMax = d × 4^i.
 
 **Ray interval**
-The [tMin, tMax] range for one cascade level:
+The [tMin, tMax] range for one cascade level. With default `c0MinRange=1.0` and `c1MinRange=1.0`:
 ```
-C0: [0.02,  0.125] m
-C1: [0.125, 0.500] m
+C0: [0.020, 1.000] m   ← tMax extended by c0MinRange
+C1: [0.125, 1.000] m   ← tMax extended by c1MinRange; tMin unchanged
 C2: [0.500, 2.000] m
 C3: [2.000, 8.000] m
 ```
+Legacy (c0MinRange=0, c1MinRange=0): C0=[0.02,0.125], C1=[0.125,0.500].
 A probe only raymarchs within its interval. Hits outside that range belong to another level.
 
 **Merge**
@@ -142,8 +143,8 @@ A small patch of the sphere assigned an integer index.
 All rays within that patch share the same bin.
 
 **D (direction resolution)**
-The side length of the bin grid. D=4 means a 4×4=16-bin grid covers the full sphere.
-Each bin covers roughly 36° of solid angle at D=4.
+The side length of the bin grid. D=8 (default at C0) means an 8×8=64-bin grid covers the full sphere.
+Each bin covers roughly 22° at D=8 (36° at D=4). With D-scaling ON, upper cascades use D=16.
 
 **Octahedral encoding**
 A way to map the full sphere (3D) onto a flat square (2D) using "fold the sphere like origami."
@@ -191,13 +192,13 @@ Written by the reduction pass (5b-1). Read by `raymarch.frag` for the isotropic 
 The directional GI path (Phase 5g) bypasses this texture and reads `probeAtlasTexture` directly.
 
 **probeAtlasTexture**
-The directional atlas texture — 128×128×32 RGBA16F at D=4 — storing one radiance value per
+The directional atlas texture — 256×256×32 RGBA16F at C0 (D=8) — storing one radiance value per
 direction bin per probe. Written by the cascade bake compute shader. The Phase 5g directional
-GI path reads this directly from the final renderer, integrating bins weighted by the surface
-normal's hemisphere. → see `12_phase5g_directional_gi`
+GI path reads the **selected cascade** atlas (`cascades[selC].probeAtlasTexture`) from the final renderer.
+→ see `12_phase5g_directional_gi`
 
 **Directional GI path (Phase 5g)**
-The optional final-renderer code path that reads the C0 `probeAtlasTexture` instead of the
+The optional final-renderer code path that reads the **selected cascade atlas** (`selC`) instead of the
 isotropic `probeGridTexture`. Performs cosine-weighted hemisphere integration over D² bins per
 probe and manual 8-probe trilinear spatial blending. Excludes back-facing bins, giving more
 directionally correct indirect light than the isotropic average. → see `12_phase5g_directional_gi`
@@ -290,3 +291,147 @@ Every toggle that changes bake output must set this to false.
 
 **`[F]` key**
 Keyboard shortcut cycling through `radianceVisualizeMode` 0→6→0.
+
+---
+
+## Temporal Accumulation (Phase 9)
+
+**EMA (Exponential Moving Average)**
+Blending formula: `history = mix(history, bake, alpha)`.
+With `alpha=0.05`, each new bake contributes 5% weight; history carries 95%.
+After ~60 frames the history has converged to the steady-state answer.
+
+**probeGridHistory / probeAtlasHistory**
+Companion textures (same dims, RGBA16F) that hold the accumulated history for
+`probeGridTexture` and `probeAtlasTexture` respectively. Each cascade level has both.
+
+**temporal_blend.comp**
+Fallback EMA blend shader. Runs only when history textures are not yet allocated
+(first frame after a cascade resize). The default path is **fused EMA**: the blend is
+embedded inside `radiance_3d.comp`, so no separate `temporal_blend.comp` dispatch is needed.
+
+**temporalAlpha**
+EMA blend weight. Default 0.05. Lower = smoother but slower convergence.
+Must balance jitter pattern size and hold time.
+
+**Probe jitter**
+Shifting each probe's world position by a sub-cell offset before each bake.
+With temporal accumulation this sub-pixel samples the field, trading noise for
+smooth convergence over 16 frames instead of 1.
+
+**probeJitterScale**
+Jitter amplitude in probe-cell units. Default 0.06 (≈ ±6% of cell width).
+Smaller than old ±0.25 to keep each sample close to the true probe center.
+
+**Halton sequence**
+Low-discrepancy sequence that distributes samples evenly.
+We use Halton(2,3,5) for the three jitter axes so 8 samples fill the cell
+uniformly rather than clustering.
+
+**jitterPatternSize**
+Wrap index for the Halton sequence. Default 8 → 8 distinct positions per cycle.
+After index 7, the sequence repeats from 0.
+
+**jitterHoldFrames**
+How many frames to hold each jitter position before advancing.
+Default 2 → 8 positions × 2 frames = 16-frame cycle.
+
+**History clamp (useHistoryClamp)**
+TAA-style ghost rejection: before the EMA blend, clamp `history` to the AABB
+of current-bake neighbor values. Prevents outdated radiance from persisting
+after a light or geometry change. Default ON.
+
+**historyNeedsSeed**
+When true, the next temporal dispatch seeds history = current bake (bypasses EMA).
+Set automatically when temporal is re-enabled to skip the dark warm-up ramp.
+
+**temporalRebuildCount**
+Total EMA dispatches since temporal was last enabled. Used for diagnostics.
+
+---
+
+## Staggered Cascade Updates (Phase 10)
+
+**renderFrameIndex**
+Monotonic frame counter, incremented every `render()` call.
+
+**staggerMaxInterval**
+Maximum allowed cascade update interval. Default 8.
+Cascade `i` updates when `renderFrameIndex % min(1<<i, staggerMaxInterval) == 0`.
+With `jitterHoldFrames=2` the bake trigger fires every 2 render frames:
+- C0: every bake trigger (≈ every 2 render frames)
+- C1: every 2 bake triggers (≈ every 4 render frames)
+- C2: every 4 bake triggers (≈ every 8 render frames)
+- C3: every 8 bake triggers (≈ every 16 render frames)
+
+**staggerMaxInterval=1**
+Disables staggering — all cascades update every frame (useful for debugging).
+
+---
+
+## GI Blur (Phase 9c/13b)
+
+**giFBO**
+Framebuffer with 3 linear-space color attachments:
+- [0] `giDirectTex` — direct lighting from `raymarch.frag` location=0
+- [1] `giGBufferTex` — packed normal (×0.5+0.5) + linearDepth, location=1
+- [2] `giIndirectTex` — indirect/GI from `raymarch.frag` location=2
+
+**gi_blur.frag**
+Bilateral blur shader applied to `giIndirectTex` using `giGBufferTex` for edge weights.
+Output composites blurred indirect onto unblurred direct.
+
+**Edge stops**
+Gaussian weights that suppress blur across boundaries:
+- Depth: `exp(-|Δd| / depthSigma)` — stops at depth breaks
+- Normal: `exp(-|1 − dot(N₁,N₂)| / normalSigma)` — stops at normal breaks
+- Luminance (Phase 13b): `exp(-|ΔY| / lumSigma)` — stops within-surface tonal leakage
+
+**giBlurLumSigma**
+Luminance edge-stop sigma. Default 0.4. Set to 0 to disable luminance stopping.
+Phase 13b addition to prevent dark indirect from bleeding into bright regions
+and vice versa on co-planar surfaces.
+
+---
+
+## Range Scaling (Phase 14b/c)
+
+**c0MinRange**
+Minimum C0 tMax in world units. Default 1.0. 0 = legacy (tMax = cellSize = 0.125m).
+With the default, C0 probes see light up to 1.0m away instead of 0.125m.
+
+**c1MinRange**
+Minimum C1 tMax in world units. Default 1.0. 0 = legacy (0.5wu).
+Extends C1 reach so it blends smoothly with C0's extended range.
+
+**Legacy interval**
+The original tMax formula: `tMax_C0 = cellSize = volumeSize / cascadeC0Res`.
+At 32³ this is 4.0 / 32 = 0.125m — very short for most scenes.
+
+---
+
+## Capture Pipeline (Phase 6/12)
+
+**pendingScreenshot**
+Flag set when the user requests a screenshot. Cleared by `takeScreenshot()` once written.
+
+**BurstState { Idle, CapM0, CapM3, CapM6, Analyze }**
+State machine for burst capture: cycles renderMode through 0→3→6, saving one PNG per mode,
+then launches multi-image AI analysis (`analyze_screenshot.py`).
+
+**SeqCapState { Idle, Capturing }**
+State machine for sequence capture: captures `seqFrameCount` (default 8) frames,
+one per jitter position, then launches temporal-jitter analysis.
+
+**--auto-analyze**
+CLI flag: runs burst capture + AI analysis then exits (`setAutoCloseMode(true)`).
+
+**--auto-sequence**
+CLI flag: runs sequence capture + AI analysis then exits (`setAutoSequenceMode(true)`).
+
+**--auto-rdoc**
+CLI flag: triggers RenderDoc GPU frame capture 8 seconds after launch (`setAutoRdocMode(8.0f)`).
+
+**RenderDoc in-process API**
+Accessed via `RENDERDOC_API_1_6_0*`. Must be loaded before `InitWindow()` (before the
+GL context is created) so RenderDoc can hook into OpenGL at context creation time.

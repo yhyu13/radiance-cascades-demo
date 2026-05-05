@@ -3,6 +3,11 @@
 **Purpose:** Understand how per-direction radiance is stored in the atlas texture and
 why GL_NEAREST is required.
 
+> **Current code note (2026-05):** This page documents Phase 5b as introduced.
+> The current default uses D=8 (not D=4), giving 64 bins per probe.
+> Atlas layout and GL_NEAREST requirement are unchanged.
+> See [10 Configuration](10_c0_resolution_and_configuration.md) for current defaults.
+
 ---
 
 ## The problem Phase 5b solves

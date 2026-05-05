@@ -112,18 +112,19 @@ the `uUseDirectionalGI` toggle.
 
 ## Texture unit assignment
 
-`sampleDirectionalGI()` reads `uDirectionalAtlas` — the C0 `probeAtlasTexture` bound
-on texture unit 3:
+`sampleDirectionalGI()` reads `uDirectionalAtlas` — the **selected cascade** atlas
+(`cascades[selC].probeAtlasTexture`) bound on texture unit 3, where
+`selC = clamp(selectedCascadeForRender, 0, cascadeCount-1)`:
 
 | Unit | Uniform | Contents |
 |---|---|---|
 | 0 | `uSDF` | Signed distance field volume |
-| 1 | `uRadiance` | Isotropic probe grid (selected cascade, `probeGridTexture`) |
+| 1 | `uRadiance` | Isotropic probe grid (`cascades[selC].probeGridTexture`) |
 | 2 | `uAlbedo` | Albedo volume |
-| 3 | `uDirectionalAtlas` | C0 directional atlas (`probeAtlasTexture`) |
+| 3 | `uDirectionalAtlas` | Selected cascade atlas (`cascades[selC].probeAtlasTexture`) |
 
-Only C0's atlas is read. Phase 5g always uses C0 regardless of which cascade level is
-selected in the cascade dropdown — that dropdown controls unit 1 (`uRadiance`) only.
+Both unit 1 and unit 3 are bound from the same `selC` cascade. The cascade dropdown
+controls both the isotropic grid and the directional atlas simultaneously.
 
 ---
 

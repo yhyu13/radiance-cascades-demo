@@ -89,7 +89,18 @@ Scaled-D view:
 
 So scaled D tries to give far cascades more directional resolution than near cascades.
 
-In the current codebase, the implemented scaled path is:
+In the current codebase, the implemented scaled path is a formula:
+
+- cascade `i` uses `min(16, dirRes << i)`
+
+With the current constructor default `dirRes=8`, that means:
+
+- C0: `D=8`
+- C1: `D=16`
+- C2: `D=16`
+- C3: `D=16`
+
+With `dirRes=4`, it becomes the older teaching example:
 
 - C0: `D=4`
 - C1: `D=8`

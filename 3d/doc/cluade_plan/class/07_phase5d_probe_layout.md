@@ -5,12 +5,21 @@ physical sense, and why the visibility check inside Phase 5d is currently inert.
 
 ---
 
-## Co-located (default): all cascades at the same grid positions
+## Co-located vs non-co-located — which is default?
 
-In the default co-located mode, every cascade level uses the same 32³ probe grid.
+**Current default: non-co-located** (`useColocatedCascades = false`).
+
+Co-located mode (all cascades at the same 32³ grid) is **not** the default. It is
+available as a debugging toggle.
+
+---
+
+## Co-located: all cascades at the same grid positions
+
+In co-located mode, every cascade level uses the same 32³ probe grid.
 Probe (5, 3, 7) in C0 sits at exactly the same world position as probe (5, 3, 7) in C1, C2, C3.
 
-**Advantage:** Simple. `upperProbePos = probePos`. No spatial offset to compute.
+**Advantage:** Simple. `upperProbePos = probePos`. No spatial offset to compute. Upper cascade trilinear displacement is 0, so spatial approximation error is zero.
 **Disadvantage:** Wastes compute. C3 covers [2, 8 m]. Placing 32³ = 32,768 probes that
 densely across the whole volume for a 2–8 m band is overkill — far-field illumination
 varies slowly and doesn't need 12.5 cm probe spacing.
@@ -224,8 +233,9 @@ The current Phase 5d check fires once and zeroes the entire upper contribution. 
 design assigns a visibility weight to each of the 8 corners and renormalizes. Zeroing
 globally discards 7 potentially unoccluded neighbors — worse than ignoring the check.
 
-**We do not implement spatial trilinear.** We read only the single nearest upper probe.
-Co-located mode sidesteps the gap entirely: displacement = 0, all 8 neighbors are the same.
+**Spatial trilinear IS implemented** (`useSpatialTrilinear = true`, ON by default). The 8-corner
+blend described above is the live code path. Co-located mode sidesteps the need for it (displacement = 0,
+all 8 neighbors coincide), but non-co-located (the default) requires and uses it.
 
 | Question | Answer |
 |---|---|
@@ -233,9 +243,9 @@ Co-located mode sidesteps the gap entirely: displacement = 0, all 8 neighbors ar
 | Our 3D ratio | 1:8 (3D: one upper covers 2×2×2 lower) |
 | Centering correct? | Yes — proven algebraically via `+0.5` convention |
 | Centering enough? | No — spatial **trilinear** across 8 upper neighbors also needed |
-| Do we have spatial trilinear? | No. Single nearest probe only. Known gap. |
+| Do we have spatial trilinear? | **Yes** — `useSpatialTrilinear=true`, ON by default |
 | Visibility weighting | Structurally wrong (global zero); should be per-neighbor weighted sum |
-| When does gap not matter? | Co-located mode: displacement = 0 |
+| When does gap not matter? | Co-located mode: displacement = 0, all 8 corners the same |
 
 ---
 
