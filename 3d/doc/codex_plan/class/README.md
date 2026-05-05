@@ -2,6 +2,8 @@
 
 This folder is a low-jargon, linear explanation of the 3D radiance-cascades branch.
 
+Last synced against the local codebase: 2026-05-05.
+
 Use this reading order:
 
 1. `00_jargon_index.md`
@@ -15,27 +17,30 @@ Use this reading order:
 9. `08_phase5_final_renderer_directional_and_shadows.md`
 10. `09_current_code_map.md`
 11. `10_phase5d_trilinear_upper_lookup.md`
+12. `11_phase6_to_14_latest_systems.md`
+13. `12_current_debug_workflow.md`
 
 If you only need the shortest path:
 
 1. Read `01_big_picture.md`
 2. Read `04_phase3_four_cascades.md`
 3. Read `06_phase5_directional_atlas.md`
-4. Read `08_phase5_final_renderer_directional_and_shadows.md`
-5. Skim `00_jargon_index.md` when a term is unclear
+4. Read `11_phase6_to_14_latest_systems.md`
+5. Read `12_current_debug_workflow.md`
+6. Skim `00_jargon_index.md` when a term is unclear
 
 What this set tries to do:
 
 - explain what problem each phase was solving
 - explain why the next phase was needed
 - translate the branch jargon into plain language
-- connect the current Phase 5 implementation back to the early simpler phases
+- connect the current Phase 14 / RenderDoc-era implementation back to the early simpler phases
 
 What this set does not try to do:
 
 - preserve every historical experiment
 - copy every claim from `doc/cluade_plan`
-- present Phase 5 as fully runtime-validated
+- present every visual-quality claim as fully runtime-validated
 
 This is a teaching set, not a source of truth for validation status. For raw history, see:
 

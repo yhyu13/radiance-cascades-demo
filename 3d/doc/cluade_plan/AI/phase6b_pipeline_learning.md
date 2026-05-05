@@ -122,8 +122,11 @@ else:
 
 Fix in C++ before launching:
 ```cpp
-std::string outDir = std::filesystem::absolute(std::filesystem::path(analysisDir)).string();
+std::string outDir = std::filesystem::absolute(std::filesystem::path(rdocAnalysisDir)).string();
 ```
+
+`rdocCaptureDir` = `tools/captures/` (where `.rdc` files are saved).  
+`rdocAnalysisDir` = `tools/analysis/` (where extract PNGs, manifest, and pipeline.md are written).
 
 ### 4.4 `sys.exit()` does NOT terminate qrenderdoc
 
@@ -300,7 +303,7 @@ C++: rdoc->StartFrameCapture(nullptr, nullptr)
         │
         ▼  (after EndDrawing)
 C++: rdoc->EndFrameCapture(nullptr, nullptr)
-     rdoc->GetCapture(n-1, capPath, ...) → e.g. "captures/rdoc_frame_1.rdc"
+     rdoc->GetCapture(n-1, capPath, ...) → e.g. "tools/captures/rdoc_frame_1.rdc"
      launchRdocAnalysis(capPath) — spawns detached thread:
         │
         ├─ system("set RDOC_CAPTURE=<abs_path> && set RDOC_OUTDIR=<abs_path>"
@@ -368,9 +371,10 @@ C++: rdoc->EndFrameCapture(nullptr, nullptr)
 
 | Gap | Workaround / fix path |
 |---|---|
-| Dispatch names still `glDispatchCompute()` on old captures | Rebuild, take new capture — debug groups only apply from next run |
+| Dispatch names still `glDispatchCompute()` on old captures | ~~Resolved~~ — all 6 pass types wrapped in `glPushDebugGroup`; take a new capture |
 | GPU timing N/A on some machines | RenderDoc → Tools → Settings → "Allow GPU timing"; GPU counter ID 1 = `GPU Duration` on NVIDIA/OpenGL |
 | C1 probe atlas coverage ~78-82% not ~100% | Phase 14c regression; investigate tMax or coverage computation |
 | Probe grid analysis sometimes generic (not image-specific) | PNG file very small (1KB) when z_slice=0 was used; fixed with mid-z selection |
 | `glObjectLabel(GL_PROGRAM, ...)` not surfaced in `a.name` | Use `glPushDebugGroup` wrapping instead; program labels still visible in RenderDoc GUI |
-| qrenderdoc hangs if only `--auto-rdoc`, not `--auto-analyze` | User must keep window open ~30s; future: add progress indicator or poll for manifest |
+| `--auto-analyze` exits before `--auto-rdoc` fires | Burst capture fires at ~5s; RDC at 8s. Run with `--auto-rdoc` only; kill process after ~90s |
+| Paths hardcoded to old `doc/.../captures` dir | ~~Resolved~~ — both dirs now under `tools/captures` and `tools/analysis` |

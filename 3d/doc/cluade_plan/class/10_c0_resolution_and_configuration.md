@@ -108,12 +108,12 @@ Every combination of the three main toggles is valid (some have caveats):
 
 | C0Res | Co-located | D-scaling | Notes |
 |---|---|---|---|
-| 32 | ON | OFF | Default. 16 MB VRAM. |
+| 32 | OFF | ON | **Default.** ~7 MB VRAM. Non-co-located + D4/D8/D16/D16. |
+| 32 | ON | OFF | 16 MB VRAM. Simpler layout, all levels at 32³. |
 | 32 | ON | ON | 148 MB VRAM. C3 has 256 bins. |
-| 32 | OFF | OFF | 5 MB VRAM. Non-co-located spatial layout. |
-| 32 | OFF | ON | 7 MB VRAM. Best memory + quality balance. |
-| 16 | ON | OFF | 4 MB. Coarser spatial. Faster bake. |
-| 64 | ON | OFF | 128 MB. Very fine spatial. Slow bake. |
+| 32 | OFF | OFF | 5 MB VRAM. Non-co-located, fixed D=8. |
+| 16 | OFF | ON | ~2 MB. Coarser spatial. Faster bake. |
+| 64 | OFF | ON | ~56 MB. Very fine spatial. Slow bake. |
 | 8 | OFF | OFF | C3=1³ degenerate. Do not use. |
 
 The Cascade panel's hierarchy table shows the actual dimensions derived from all toggles:
@@ -145,21 +145,27 @@ The `cascadeReady` flag is set to false by any toggle that changes bake output:
 
 ---
 
-## Summary of all Phase 5 toggles and what they control
+## Summary of all toggles and what they control
 
-| Toggle | What it changes | Cascade rebuild? | Visual effect |
-|---|---|---|---|
-| Directional merge (5c) | Per-direction vs isotropic upper cascade lookup | Yes | Color bleeding accuracy |
-| Directional bilinear (5f) | 4-sample blend vs nearest-bin snap | Yes | Smoothness at bin boundaries |
-| Co-located (5d) | All N³ vs halving-per-level probe layout | Yes (reinit) | Probe spatial density per level |
-| D-scaling (5e) | Same D vs growing D per level | Yes (reinit) | Directional resolution for far cascades |
-| C0 resolution | Base probe count, sets baseInterval | Yes (reinit) | Spatial density + interval widths |
-| Shadow ray (5h) | Binary SDF shadow in direct term | No | Hard shadow in direct lighting |
-| Soft shadow display (5i-A) | Cone soft shadow in direct term | No | Soft penumbra in direct lighting |
-| Soft shadow bake (5i-B1) | Cone soft shadow baked into probe radiance | Yes | Soft shadow boundaries in indirect GI |
-| Soft shadow k (5i) | Penumbra width for both display and bake | Yes (if bake ON) | Shadow softness; low=wide, high=binary |
-| Directional GI (5g) | Cosine-weighted atlas sampling vs isotropic average | No | Directional contrast in indirect GI |
+| Toggle | Default | What it changes | Rebuild? | Visual effect |
+|---|---|---|---|---|
+| Directional merge (5c) | ON | Per-direction vs isotropic upper cascade lookup | Yes | Color bleeding accuracy |
+| Directional bilinear (5f) | ON | 4-sample blend vs nearest-bin snap | Yes | Smoothness at bin boundaries |
+| Co-located (5d) | **OFF** | All N³ vs halving-per-level probe layout | reinit | Probe spatial density per level |
+| D-scaling (5e) | **ON** | Same D vs growing D per level | reinit | Directional resolution for far cascades |
+| C0 resolution | 32 | Base probe count, sets baseInterval | reinit | Spatial density + interval widths |
+| Shadow ray (5h) | ON | Binary SDF shadow in direct term | No | Hard shadow in direct lighting |
+| Soft shadow display (5i-A) | OFF | Cone soft shadow in direct term | No | Soft penumbra in direct lighting |
+| Soft shadow bake (5i-B1) | OFF | Cone soft shadow baked into probe radiance | Yes | Soft shadow boundaries in indirect GI |
+| Soft shadow k (5i) | 8.0 | Penumbra width for both display and bake | Yes (bake) | Shadow softness; low=wide, high=binary |
+| Directional GI (5g) | ON | Cosine-weighted atlas sampling vs isotropic average | No | Directional contrast in indirect GI |
+| Temporal accum (9) | ON | EMA history blend per probe | No | Noise reduction over 16-frame cycle |
+| Probe jitter (9) | ON | Sub-cell probe position shift each rebuild | No | Sub-probe sampling coverage |
+| History clamp (9b) | ON | TAA-style AABB ghost rejection before EMA | No | Prevents stale radiance from persisting |
+| GI blur (9c) | ON | Bilateral blur on indirect output | No | Spatially smooth indirect GI |
+| Stagger max interval (10) | 8 | Max frames between cascade updates | No | Bake cost reduction for upper cascades |
+| c0MinRange (14b) | 1.0wu | Minimum C0 tMax override | No | C0 near-field reach |
+| c1MinRange (14c) | 1.0wu | Minimum C1 tMax override | No | C1 mid-field reach |
 
-**Rebuild column** notes: "reinit" means cascade textures are destroyed and re-created
-(atlas dimensions change). "Yes" means only `cascadeReady = false` (re-bake same textures).
-"No" means the toggle only affects the final renderer pass — no bake work at all.
+**Rebuild column** notes: "reinit" = textures destroyed and re-created (atlas dims change).
+"Yes" = `cascadeReady = false` (re-bake same textures). "No" = renderer-only change, no bake.

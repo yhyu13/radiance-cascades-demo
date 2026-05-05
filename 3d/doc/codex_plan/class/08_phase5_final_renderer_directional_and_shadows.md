@@ -5,7 +5,7 @@ Up to Phase 5f, most of the branch's complexity lived in the probe bake.
 But the final screen shader also changed in important ways after that:
 
 - it gained a real direct-shadow path
-- it gained a directional-GI path that can read the C0 atlas directly
+- it gained a directional-GI path that can read a cascade atlas directly
 - and it gained an optional soft-shadow approximation
 
 This note explains that side of Phase 5.
@@ -56,7 +56,7 @@ Problem:
 
 Fix:
 
-- add a second final-render path that reads the C0 directional atlas
+- add a second final-render path that reads the selected cascade's directional atlas
 - for each visible surface hit:
   - find the nearby probes
   - for each probe, integrate the atlas bins over the surface normal's hemisphere
@@ -65,12 +65,12 @@ Fix:
 This means the final renderer now has two indirect-light modes:
 
 - isotropic: read `uRadiance`
-- directional: read the C0 atlas with cosine-weighted hemisphere integration
+- directional: read the selected cascade atlas with cosine-weighted hemisphere integration
 
 Important caveat:
 
-- the directional path always uses the C0 atlas idea
-- it is not the same as "pick whichever isotropic cascade was selected in the UI"
+- the startup default selects C0
+- the current UI selector can inspect another cascade for both isotropic and directional GI
 
 ## Phase 5i: soft-shadow approximation
 

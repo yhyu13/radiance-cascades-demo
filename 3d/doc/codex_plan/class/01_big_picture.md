@@ -33,13 +33,18 @@ That gives the branch a natural phase progression:
 3. Phase 3: stack 4 cascades so probes can cover near and far distances
 4. Phase 4: clean up obvious quality and debugging problems
 5. Phase 5: stop treating all directions the same, because that isotropic shortcut is the main remaining quality limit
+6. Phase 6: make visual and GPU-pipeline diagnosis reproducible with screenshots and RenderDoc
+7. Phase 7-8: add stronger diagnostic views and live directional-resolution control
+8. Phase 9-10: use temporal accumulation, jitter, history clamping, and staggered updates to trade time for smoother probe results
+9. Phase 12-14: make capture workflows richer, tune temporal/blur defaults, and fix C0/C1 coverage gaps with minimum ray reach
 
 The main conceptual jump is this:
 
 - Early phases store one average light color per probe.
 - Phase 5 stores one light color per direction per probe.
+- Later phases stop changing the basic transport model as much and focus on making it observable, smoother, and more stable over time.
 
-Everything before Phase 5 exists so Phase 5 has a stable base to build on.
+Everything before Phase 5 exists so Phase 5 has a stable base to build on. Everything after Phase 5 mostly exists to diagnose, smooth, and tune that directional-cascade renderer.
 
 ## What the final image path does
 
@@ -64,10 +69,14 @@ Most of the complex Phase 3-5 work is happening in the probe baking system.
 But in the latest codebase the final screen renderer also has important Phase 5 logic:
 
 - a hard shadow ray for direct light
-- an optional directional-GI path that reads the C0 atlas directly
+- an optional directional-GI path that reads the selected cascade's atlas directly
 - an optional soft-shadow approximation
+- an optional GI blur pass that blurs the indirect term while preserving depth and normal edges
 
-So by the end of Phase 5, both systems matter.
+So in the current codebase both systems matter:
+
+- the probe bake produces atlas/grid textures, and can accumulate them over time
+- the final renderer chooses how to consume those textures, isolate debug views, and optionally blur the indirect result
 
 ## The shortest mental model
 
@@ -79,6 +88,21 @@ Use this model if you get lost:
 4. Different cascade levels cover different ray-distance bands.
 5. Higher cascades fill in the far-field answer for lower cascades.
 6. Phase 5 upgrades that fill-in from "one average color" to "the color for this exact direction."
-7. The final renderer can now either read the isotropic reduced grid or a directional C0-atlas-based GI answer.
+7. The final renderer can now either read the isotropic reduced grid or a directional atlas-based GI answer.
+8. Temporal accumulation and jitter repeatedly rebake nearby probe positions and blend them into history.
+9. Debug/capture tools let the branch compare final, indirect, GI-only, probe-boundary, and GPU-pipeline views instead of guessing from one image.
 
 Everything else is optimization, debugging, or cleanup around that core.
+
+## Current defaults to know
+
+The constructor defaults now bias toward the more advanced path:
+
+- non-co-located cascades are on
+- directional merge, directional bilinear, spatial trilinear, direct shadow rays, and directional GI are on
+- temporal accumulation, history clamp, probe jitter, staggered updates, and GI blur are on
+- `dirRes=8`, and scaled D uses `min(16, dirRes << cascadeIndex)`
+- C0 and C1 both have `1.0` world-unit minimum ray reach
+- environment fill and soft-shadow approximations are off
+
+Some older UI/help text still reflects earlier defaults, so treat `Demo3D::Demo3D()` as the source of truth for current startup behavior.

@@ -81,7 +81,27 @@
       "Bash(echo \"qrenderdoc PID=$!\")",
       "Bash(python D:/GitRepo-My/radiance-cascades-demo/3d/tools/analyze_renderdoc.py)",
       "WebFetch(domain:renderdoc.org)",
-      "Bash(echo \"PID=$!\")"
+      "Bash(echo \"PID=$!\")",
+      "Bash(git commit -m '[Claude] Phase 6b: RenderDoc AI analysis pipeline *)",
+      "Bash(cmake --build build --config Release --target demo3d)",
+      "Bash(start RadianceCascades3D.exe --auto-rdoc 10 --auto-analyze)",
+      "PowerShell(Get-Process \"RadianceCascades3D\" -ErrorAction SilentlyContinue)",
+      "PowerShell(cd \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\"; $job = Start-Job -ScriptBlock { & \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\\\\RadianceCascades3D.exe\" \"--auto-rdoc\" \"10\" \"--auto-analyze\" 2>&1 }; Start-Sleep 90; $out = Receive-Job $job; Stop-Job $job; Remove-Job $job; $out | Select-Object -Last 40)",
+      "PowerShell(cd \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; $job = Start-Job -ScriptBlock { Set-Location \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; & \".\\\\build\\\\RadianceCascades3D.exe\" \"--auto-rdoc\" \"10\" \"--auto-analyze\" 2>&1 }; Start-Sleep 90; $out = Receive-Job $job; Stop-Job $job -ErrorAction SilentlyContinue; Remove-Job $job -ErrorAction SilentlyContinue; $out | Select-Object -Last 60)",
+      "PowerShell(cd \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; $job = Start-Job -ScriptBlock { Set-Location \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; & \".\\\\build\\\\RadianceCascades3D.exe\" \"--auto-rdoc\" 2>&1 }; Start-Sleep 90; $out = Receive-Job $job; Stop-Job $job -ErrorAction SilentlyContinue; Remove-Job $job -ErrorAction SilentlyContinue; Write-Output \"=== STDOUT ===\"; $out | Select-Object -Last 30)",
+      "PowerShell(Get-Process \"qrenderdoc\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process \"python\" -ErrorAction SilentlyContinue)",
+      "Bash(python3 -c ' *)",
+      "PowerShell($m = Get-Content \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\analysis\\\\rdoc_frame_capture_manifest.json\" | ConvertFrom-Json; $m.timing | ForEach-Object { \"$\\($_.event_id\\)  name=$\\($_.name\\)  label=$\\($_.label\\)  us=$\\($_.duration_us\\)\" })",
+      "PowerShell(cd \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; $env:RDOC_CAPTURE = \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\captures\\\\rdoc_frame_capture.rdc\"; $env:RDOC_OUTDIR = \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\analysis\"; & \"C:\\\\Program Files\\\\RenderDoc\\\\qrenderdoc.exe\" --py \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\rdoc_extract.py\"; Write-Output \"qrenderdoc done\")",
+      "Bash(Get-ChildItem -Path \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\doc\\\\cluade_plan\\\\class\" -File)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(cd \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; $proc = Start-Process -FilePath \".\\\\build\\\\RadianceCascades3D.exe\" -ArgumentList \"--auto-rdoc\" -WorkingDirectory \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\" -PassThru -WindowStyle Minimized; Write-Output \"Started PID $\\($proc.Id\\)\"; Start-Sleep 120; $proc.Kill\\(\\); Write-Output \"Killed after 120s\")",
+      "PowerShell(cd \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; $proc = Start-Process -FilePath \".\\\\build\\\\RadianceCascades3D.exe\" -ArgumentList \"--auto-rdoc\" -WorkingDirectory \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\" -PassThru; Write-Output \"Started PID $\\($proc.Id\\)\"; Start-Sleep 120; if \\(-not $proc.HasExited\\) { $proc.Kill\\(\\); Write-Output \"Killed after 120s\" } else { Write-Output \"Already exited with code $\\($proc.ExitCode\\)\" })",
+      "PowerShell(cd \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; $logfile = \"tools\\\\rdoc_launch_test.log\"; $proc = Start-Process -FilePath \".\\\\build\\\\RadianceCascades3D.exe\" -ArgumentList \"--auto-rdoc\" -WorkingDirectory \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\" -RedirectStandardOutput $logfile -NoNewWindow -PassThru; Start-Sleep 20; if \\(-not $proc.HasExited\\) { $proc.Kill\\(\\) }; Start-Sleep 3; Get-Content $logfile | Select-String \"\\\\[6b\\\\]\" | Format-List)",
+      "PowerShell(cd \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\"; $logfile = \"tools\\\\rdoc_launch_test.log\"; $proc = Start-Process -FilePath \".\\\\build\\\\RadianceCascades3D.exe\" -ArgumentList \"--auto-rdoc\" -WorkingDirectory \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\" -RedirectStandardOutput $logfile -NoNewWindow -PassThru; Start-Sleep 20; if \\(-not $proc.HasExited\\) { $proc.Kill\\(\\) }; Start-Sleep 3; Get-Content $logfile | Select-String \"\\\\[6b\\\\]\" | Select-Object -ExpandProperty Line)",
+      "PowerShell($m = Get-Content \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\analysis\\\\rdoc_frame_frame435_manifest.json\" | ConvertFrom-Json; $m.timing | ForEach-Object { \"$\\($_.event_id\\)  name=$\\($_.name\\)  label=$\\($_.label\\)  us=$\\($_.duration_us\\)\" })",
+      "PowerShell(python \"D:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\rdoc_extract.py\" 2>&1)"
     ]
   }
 }

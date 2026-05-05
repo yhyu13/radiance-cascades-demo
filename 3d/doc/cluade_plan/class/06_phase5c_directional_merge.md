@@ -3,6 +3,12 @@
 **Purpose:** Understand what changes when a ray that misses reads the upper cascade
 by direction bin instead of by probe average.
 
+> **Current code note (2026-05):** This page documents the directional merge as introduced.
+> The current default is non-co-located probes (C0=32³, C1=16³, …) with spatial trilinear
+> upper lookup across 8 neighbors (`useSpatialTrilinear=true`). The isotropic merge
+> described here is the legacy path; directional merge with bilinear (Phase 5f) is the default.
+> See [07 Probe Layout](07_phase5d_probe_layout.md) for the non-co-located spatial trilinear detail.
+
 ---
 
 ## What isotropic merge does (the old way)
