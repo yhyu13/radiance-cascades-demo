@@ -143,10 +143,14 @@ def _resolve_action_name(a, sd_file):
 def collect_gpu_timing(controller, sd_file=None):
     rows = []
 
-    def walk(actions):
+    def walk(actions, depth=0):
         for a in actions:
             is_dispatch = bool(a.flags & rd.ActionFlags.Dispatch)
             is_draw = bool(a.flags & rd.ActionFlags.Drawcall)
+            name_dbg = _resolve_action_name(a, sd_file)
+            log("[tree] {} eid={} flags={:#x} disp={} draw={} name={!r} children={}".format(
+                "  "*depth, a.eventId, int(a.flags), int(is_dispatch), int(is_draw),
+                name_dbg, len(a.children)))
             if is_dispatch or is_draw:
                 # `duration` existed in RenderDoc <1.30; newer builds require counter queries.
                 raw_dur = getattr(a, "duration", None)
@@ -169,7 +173,7 @@ def collect_gpu_timing(controller, sd_file=None):
                     "duration_us": duration_us,
                     "type":        "dispatch" if is_dispatch else "draw",
                 })
-            walk(a.children)
+            walk(a.children, depth+1)
 
     walk(controller.GetRootActions())
     return rows
@@ -227,6 +231,8 @@ def try_fetch_gpu_counters(controller):
             timing[r.eventId] = val_us
 
         log("[extract] GPU counters: {} events timed.".format(len(timing)))
+        for eid, us in sorted(timing.items()):
+            log("[extract] FetchCounter eid={} us={:.2f}".format(eid, us))
         return timing
     except Exception as e:
         log("[extract] GPU counter fetch failed: {}".format(e))

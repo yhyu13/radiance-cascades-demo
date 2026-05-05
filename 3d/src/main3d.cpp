@@ -174,11 +174,12 @@ int main(int argc, char* argv[]) {
         // Process input
         demo->processInput();
 
+        // Phase 6b: set forceCascadeRebuild + TriggerCapture BEFORE update() so cascades
+        // dispatch in the same frame that RenderDoc captures.
+        demo->beginRdocFrameIfPending();
+
         // Update simulation
         demo->update();
-
-        // Phase 6b: start RenderDoc frame capture if queued by G key
-        demo->beginRdocFrameIfPending();
 
         // Render frame
         BeginDrawing();

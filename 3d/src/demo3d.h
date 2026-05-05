@@ -519,8 +519,12 @@ private:
 #ifdef _WIN32
     RENDERDOC_API_1_6_0* rdoc = nullptr;
 #endif
-    bool        pendingRdocCapture    = false;
-    std::string rdocCaptureDir;           // "doc/cluade_plan/AI/captures"
+    bool        pendingRdocCapture      = false;  // set by G key / timer → triggers TriggerCapture
+    bool        rdocCaptureWaiting     = false;  // set after TriggerCapture → poll for file
+    bool        forceCascadeRebuild    = false;  // set by beginRdocFrameIfPending → forces cascade dispatch in captured frame
+    uint32_t    rdocCaptureCountBefore  = 0;     // GetNumCaptures() snapshot before trigger
+    std::string rdocCaptureDir;                  // "tools/captures" — where .rdc files are saved
+    std::string rdocAnalysisDir;                 // "tools/analysis" — where extract PNGs / pipeline.md go
     float       autoRdocDelaySeconds  = 0.0f;  // 0=disabled; fires once after this many seconds
     bool        autoRdocFired         = false;  // latch: only fire once per session
 
