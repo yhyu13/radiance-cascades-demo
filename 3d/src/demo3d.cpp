@@ -3725,6 +3725,7 @@ void Demo3D::beginRdocFrameIfPending() {
     if (pendingRdocCapture && rdoc && !rdocCaptureWaiting) {
         rdocCaptureCountBefore  = rdoc->GetNumCaptures();
         forceCascadeRebuild     = true;  // ensure cascades dispatch in this captured frame
+        renderFrameIndex        = 0;     // reset stagger so ALL cascades run (0 % any == 0)
         rdoc->TriggerCapture();
         pendingRdocCapture  = false;
         rdocCaptureWaiting  = true;
