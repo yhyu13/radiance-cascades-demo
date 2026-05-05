@@ -625,10 +625,11 @@ void Demo3D::render() {
         }
     }
 
-    // Pass 3: Radiance Cascades (only when SDF or merge flag changes)
+    // Pass 3: Radiance Cascades (only when SDF or merge flag changes, or forced by RenderDoc capture)
     static bool probeDumped = false;
     static int  readbackSkip = 0;
-    if (!cascadeReady) {
+    if (!cascadeReady || forceCascadeRebuild) {
+        forceCascadeRebuild = false;
         // Rate-limit atlas readback when jitter is active: the 256^2*32 glGetTexImage
         // at D=8 downloads ~134 MB and causes a full GPU sync every rebuild → 100 ms spike.
         // Without jitter every rebuild is scene-driven (rare), so always readback then.
@@ -3697,7 +3698,8 @@ void Demo3D::initRenderDoc() {
         if (fs::exists(root / "doc")) break;
         root = root.parent_path();
     }
-    rdocCaptureDir = (root / "doc" / "cluade_plan" / "AI" / "captures").string();
+    rdocCaptureDir  = (root / "tools" / "captures").string();
+    rdocAnalysisDir = (root / "tools" / "analysis").string();
 
     // rdoc_load_api() is in rdoc_helper.cpp (isolated from raylib.h / winuser.h)
     if (!rdoc_load_api(&rdoc)) {
@@ -3706,6 +3708,7 @@ void Demo3D::initRenderDoc() {
         return;
     }
     fs::create_directories(rdocCaptureDir);
+    fs::create_directories(rdocAnalysisDir);
     std::string capTemplate = rdocCaptureDir + "/rdoc_frame";
     rdoc->SetCaptureFilePathTemplate(capTemplate.c_str());
     rdoc->MaskOverlayBits(eRENDERDOC_Overlay_None, eRENDERDOC_Overlay_None);
@@ -3715,18 +3718,29 @@ void Demo3D::initRenderDoc() {
 
 void Demo3D::beginRdocFrameIfPending() {
 #ifdef _WIN32
-    if (pendingRdocCapture && rdoc)
-        rdoc->StartFrameCapture(nullptr, nullptr);
+    // TriggerCapture() captures the next presented frame (next SwapBuffers),
+    // which includes both update() cascade dispatches AND render() passes.
+    // More robust than Start/EndFrameCapture(null,null): that API fails when
+    // called before BeginDrawing() because RenderDoc needs a window association.
+    if (pendingRdocCapture && rdoc && !rdocCaptureWaiting) {
+        rdocCaptureCountBefore  = rdoc->GetNumCaptures();
+        forceCascadeRebuild     = true;  // ensure cascades dispatch in this captured frame
+        rdoc->TriggerCapture();
+        pendingRdocCapture  = false;
+        rdocCaptureWaiting  = true;
+        std::cout << "[6b] TriggerCapture() called (captures next frame).\n";
+    }
 #endif
 }
 
 void Demo3D::endRdocFrameIfPending() {
 #ifdef _WIN32
-    if (!pendingRdocCapture || !rdoc) return;
-    rdoc->EndFrameCapture(nullptr, nullptr);
-    pendingRdocCapture = false;
-
+    if (!rdocCaptureWaiting || !rdoc) return;
+    // Poll — capture appears after the next SwapBuffers; may take 1-2 frames.
     uint32_t n = rdoc->GetNumCaptures();
+    if (n <= rdocCaptureCountBefore) return;  // not ready yet
+    rdocCaptureWaiting = false;
+
     char capPath[512]; uint32_t pathLen = sizeof(capPath); uint64_t ts;
     if (rdoc->GetCapture(n - 1, capPath, &pathLen, &ts)) {
         std::string path(capPath, pathLen > 0 ? pathLen - 1 : 0);
@@ -3738,9 +3752,9 @@ void Demo3D::endRdocFrameIfPending() {
 
 void Demo3D::launchRdocAnalysis(const std::string& capturePath) {
     namespace fs = std::filesystem;
-    // Resolve analysisDir to absolute — qrenderdoc.exe runs from its install dir,
-    // so relative paths like "doc/cluade_plan/AI/analysis" would resolve there instead.
-    std::string outDir = fs::absolute(fs::path(analysisDir)).string();
+    // Use absolute path — qrenderdoc.exe runs from its install dir so relative paths resolve there.
+    std::string outDir = fs::absolute(fs::path(rdocAnalysisDir)).string();
+    fs::create_directories(fs::path(rdocAnalysisDir));
     std::string toolsDir = fs::path(toolsScript).parent_path().string();
     std::string extractPath = (fs::path(toolsDir) / "rdoc_extract.py").string();
     std::string analyzePath = (fs::path(toolsDir) / "analyze_renderdoc.py").string();
