@@ -522,6 +522,7 @@ private:
     bool        pendingRdocCapture      = false;  // set by G key / timer → triggers TriggerCapture
     bool        rdocCaptureWaiting     = false;  // set after TriggerCapture → poll for file
     bool        forceCascadeRebuild    = false;  // set by beginRdocFrameIfPending → forces cascade dispatch in captured frame
+    uint32_t    rdocForceRebuildCount  = 0;     // sustain forceCascadeRebuild+renderFrameIndex=0 for N frames (covers TriggerCapture's 1-frame delay)
     uint32_t    rdocCaptureCountBefore  = 0;     // GetNumCaptures() snapshot before trigger
     std::string rdocCaptureDir;                  // "tools/captures" — where .rdc files are saved
     std::string rdocAnalysisDir;                 // "tools/analysis" — where extract PNGs / pipeline.md go

@@ -628,8 +628,15 @@ void Demo3D::render() {
     // Pass 3: Radiance Cascades (only when SDF or merge flag changes, or forced by RenderDoc capture)
     static bool probeDumped = false;
     static int  readbackSkip = 0;
+    // Sustain forceCascadeRebuild+renderFrameIndex=0 across TriggerCapture's 1-frame delay:
+    // TriggerCapture() captures the NEXT frame, so we must sustain the flags for 2 frames.
+    if (rdocForceRebuildCount > 0) {
+        forceCascadeRebuild = true;
+        renderFrameIndex    = 0;
+    }
     if (!cascadeReady || forceCascadeRebuild) {
         forceCascadeRebuild = false;
+        if (rdocForceRebuildCount > 0) --rdocForceRebuildCount;
         // Rate-limit atlas readback when jitter is active: the 256^2*32 glGetTexImage
         // at D=8 downloads ~134 MB and causes a full GPU sync every rebuild → 100 ms spike.
         // Without jitter every rebuild is scene-driven (rare), so always readback then.
@@ -3724,7 +3731,8 @@ void Demo3D::beginRdocFrameIfPending() {
     // called before BeginDrawing() because RenderDoc needs a window association.
     if (pendingRdocCapture && rdoc && !rdocCaptureWaiting) {
         rdocCaptureCountBefore  = rdoc->GetNumCaptures();
-        forceCascadeRebuild     = true;  // ensure cascades dispatch in this captured frame
+        forceCascadeRebuild     = true;  // ensure cascades dispatch in this frame
+        rdocForceRebuildCount   = 2;     // sustain for 2 frames: this one + the captured frame
         renderFrameIndex        = 0;     // reset stagger so ALL cascades run (0 % any == 0)
         rdoc->TriggerCapture();
         pendingRdocCapture  = false;
