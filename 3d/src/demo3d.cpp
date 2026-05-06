@@ -2153,7 +2153,9 @@ void Demo3D::setScene(int sceneType) {
     
     currentScene = sceneType;
     sceneDirty = true;
-    
+    useOBJMesh = false;
+    currentOBJPath.clear();
+
     // Phase 0: Set up analytic SDF if enabled
     if (analyticSDFEnabled) {
         analyticSDF.clear();
@@ -3445,7 +3447,7 @@ void Demo3D::renderTutorialPanel() {
         std::cout << "[Demo3D] Switched to: Simplified Sponza" << std::endl;
     }
 
-    if (ImGui::Button(useOBJMesh ? "[ACTIVE] Cornell Box (OBJ)" : "Cornell Box (OBJ)")) {
+    if (ImGui::Button(useOBJMesh && currentOBJPath == "cornell" ? "[ACTIVE] Cornell Box (OBJ)" : "Cornell Box (OBJ)")) {
         if (loadOBJMesh("res/scene/cornell_box.obj")) {
             std::cout << "[Demo3D] Loaded real Cornell Box mesh from OBJ!" << std::endl;
         } else {
@@ -3453,11 +3455,21 @@ void Demo3D::renderTutorialPanel() {
         }
     }
 
+    if (ImGui::Button(useOBJMesh && currentOBJPath == "sponza" ? "[ACTIVE] Sponza (OBJ)" : "Sponza (OBJ)")) {
+        if (loadOBJMesh("res/scene/sponza.obj")) {
+            std::cout << "[Demo3D] Loaded Sponza OBJ mesh!" << std::endl;
+        } else {
+            std::cerr << "[ERROR] Failed to load Sponza OBJ!" << std::endl;
+        }
+    }
+
     ImGui::NewLine();
     {
         const char* names[] = { "Empty Room", "Cornell Box", "Simplified Sponza" };
-        if (useOBJMesh)
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Active: Cornell Box (OBJ)");
+        if (useOBJMesh) {
+            const char* objName = (currentOBJPath == "sponza") ? "Sponza (OBJ)" : "Cornell Box (OBJ)";
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Active: %s", objName);
+        }
         else if (currentScene >= 0 && currentScene < 3)
             ImGui::Text("Active: %s", names[currentScene]);
     }
@@ -4101,7 +4113,8 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     
     sceneDirty = true;
     useOBJMesh = true;
-    
+    currentOBJPath = (filename.find("sponza") != std::string::npos) ? "sponza" : "cornell";
+
     std::cout << "[Demo3D] OBJ mesh loaded and voxelized successfully!" << std::endl;
     return true;
 }
