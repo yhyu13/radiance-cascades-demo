@@ -619,6 +619,9 @@ private:
     
     /** Whether to use loaded OBJ mesh instead of analytic primitives */
     bool useOBJMesh;
+
+    /** Which OBJ was last loaded: "cornell" or "sponza" */
+    std::string currentOBJPath;
     
     // =============================================================================
     // SDF Debug Visualization (Phase 0)

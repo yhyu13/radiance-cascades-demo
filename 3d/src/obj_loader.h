@@ -46,12 +46,18 @@ public:
      * @return true if successful
      */
     bool load(const std::string& filename) {
+        vertices.clear();
+        normals.clear();
+        texcoords.clear();
+        faces.clear();
+        faceMaterials.clear();
+
         std::ifstream file(filename);
         if (!file.is_open()) {
             std::cerr << "[OBJLoader] Failed to open file: " << filename << std::endl;
             return false;
         }
-        
+
         std::cout << "[OBJLoader] Loading: " << filename << std::endl;
         
         std::string line;
