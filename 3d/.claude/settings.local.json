@@ -146,7 +146,10 @@
       "PowerShell($c = [System.IO.File]::ReadAllText\\(\"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\app_run_step3_cornell.log\", [System.Text.Encoding]::Unicode\\); \\($c -split \"`n\" | Where-Object { $_ -match \"OBJ committed|Mesh SDF|generateMeshSDF: |Voxelize complete|Analytic SDF|sdfGenerationPass|--exit-frames reached|ERROR\" }\\) -join \"`n\")",
       "PowerShell($s = [System.IO.File]::ReadAllText\\(\"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\app_run_step3_sponza_shot.log\", [System.Text.Encoding]::Unicode\\); \\($s -split \"`n\" | Where-Object { $_ -match \"screenshot|TakeScreenshot|exit-frames reached|OBJ committed|Mesh SDF\" }\\) -join \"`n\")",
       "PowerShell(Set-Location \"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\"; $out = cmake --build . --config Release 2>&1; \\($out | Select-String -Pattern \"warning [A-Z]\\\\d{4}\" -SimpleMatch:$false | Measure-Object\\).Count; \\($out | Select-Object -Last 4\\))",
-      "PowerShell(Set-Location \"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\"; $out = cmake --build . --config Release 2>&1; $errs = \\($out | Select-String -Pattern \"error \" -SimpleMatch:$false | Measure-Object\\).Count; $warns = \\($out | Select-String -Pattern \"warning [A-Z]\\\\d{4}\" -SimpleMatch:$false | Measure-Object\\).Count; Write-Host \"errors=$errs warnings=$warns\"; \\($out | Select-Object -Last 2\\))"
+      "PowerShell(Set-Location \"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\"; $out = cmake --build . --config Release 2>&1; $errs = \\($out | Select-String -Pattern \"error \" -SimpleMatch:$false | Measure-Object\\).Count; $warns = \\($out | Select-String -Pattern \"warning [A-Z]\\\\d{4}\" -SimpleMatch:$false | Measure-Object\\).Count; Write-Host \"errors=$errs warnings=$warns\"; \\($out | Select-Object -Last 2\\))",
+      "PowerShell(Set-Location \"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\"; $out = cmake --build . --config Release 2>&1; \\($out | Select-String -Pattern \"warning C4701\" | Measure-Object\\).Count; \\($out | Select-Object -Last 2\\))",
+      "Bash(awk -F: '$1>=2350 && $1<=2400 {print} $1>=4350 && $1<=4520 {print}')",
+      "Bash(awk -F: '$1>=4350 && $1<=4520 {print}')"
     ]
   }
 }

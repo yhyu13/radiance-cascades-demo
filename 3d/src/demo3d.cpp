@@ -218,6 +218,7 @@ Demo3D::Demo3D()
     , ambientColor(1.0f, 1.0f, 1.0f)
     , indirectMixFactor(0.7f)
     , indirectBrightness(1.3f)
+    , lightPosition(0.0f, 0.8f, 0.0f)   // Step 4 (4b ext): default = Cornell-Box-tuned position
     , useSparseVoxels(USE_SPARSE_VOXELS_DEFAULT)
     , useTemporalReprojection(true)
     , adaptiveStepSize(true)
@@ -1353,6 +1354,28 @@ bool Demo3D::generateMeshSDF() {
         return false;
     }
 
+    // codex 08 F7 — confirm the halfExtent margin keeps the boundary slice empty.
+    // If any of the 6 boundary slices contains seeds, surface voxels touch the
+    // volume edge and trilinear sampling near the boundary will read into a
+    // 1-voxel-thick "wall" of zero distance. Bump halfExtent margin if non-zero.
+    {
+        int boundarySeeds = 0;
+        const int N1 = N - 1;
+        for (int z = 0; z < N; ++z)
+        for (int y = 0; y < N; ++y)
+        for (int x = 0; x < N; ++x) {
+            if (x == 0 || x == N1 || y == 0 || y == N1 || z == 0 || z == N1) {
+                if (meshVoxelData[(z*N2 + y*N + x) * 4 + 3] > 0) ++boundarySeeds;
+            }
+        }
+        std::cout << "[Demo3D] Boundary-slice surface seeds: " << boundarySeeds
+                  << " (target=0; >0 means surface voxels touch volume edge)\n";
+        if (boundarySeeds > 0) {
+            std::cerr << "[WARN] " << boundarySeeds
+                      << " surface seeds on volume boundary; consider larger halfExtent margin\n";
+        }
+    }
+
     // 2-4. Three separable axis sweeps. All scratch (rowBuf + edt1d v/z/d)
     //      preallocated once — zero heap allocations across 49,152 row sweeps at N=128.
     std::vector<float> rowBuf(N);
@@ -1605,7 +1628,7 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glm::ivec3 upperVolRes(upperRes);
     glUniform3iv(glGetUniformLocation(prog, "uUpperVolumeSize"), 1, glm::value_ptr(upperVolRes));
     glUniform1i(glGetUniformLocation(prog, "uUseSpatialTrilinear"), useSpatialTrilinear ? 1 : 0);
-    glUniform3f(glGetUniformLocation(prog, "uLightPos"),   0.0f, 0.8f, 0.0f);
+    glUniform3fv(glGetUniformLocation(prog, "uLightPos"),  1, glm::value_ptr(lightPosition));
     glUniform3f(glGetUniformLocation(prog, "uLightColor"), 1.0f, 0.95f, 0.85f);
     glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
     glUniform3fv(glGetUniformLocation(prog, "uSkyColor"),  1, glm::value_ptr(skyColor));
@@ -1860,7 +1883,7 @@ void Demo3D::raymarchPass() {
     glUniform1i(glGetUniformLocation(prog, "uRenderMode"), raymarchRenderMode);
 
     // Direct light: near the ceiling (Cornell Box inner room spans y=[-1,1], ceiling at y=1.0)
-    glm::vec3 lightPos(0.0f, 0.8f, 0.0f);
+    glm::vec3 lightPos = lightPosition;   // Step 4 (4b ext): per-scene light from member
     glm::vec3 lightColor(1.0f, 0.95f, 0.85f);
     glUniform3fv(glGetUniformLocation(prog, "uLightPos"), 1, glm::value_ptr(lightPos));
     glUniform3fv(glGetUniformLocation(prog, "uLightColor"), 1, glm::value_ptr(lightColor));
@@ -2394,12 +2417,19 @@ void Demo3D::setScene(int sceneType) {
     meshVoxelData.shrink_to_fit();
     meshSDFReady = false;
 
-    // Step 3 (3c, F2): scene-switch invariant — reseed temporal cascade history so the
+    // Step 3 (3c, F2): scene-switch invariant -- reseed temporal cascade history so the
     // previous scene's history doesn't EMA-blend into the new one. Without this, mode 0
     // can ghost the old scene's lighting into the new scene for many frames.
     historyNeedsSeed     = true;
     renderFrameIndex     = 0;
     temporalRebuildCount = 0;
+
+    // Step 4 (codex 09 F1): reset lightPosition to the analytic-scene default.
+    // Without this, switching from Sponza OBJ (light at (0, 0.5, 0)) into an
+    // analytic Cornell scene leaks the Sponza light position into Cornell.
+    lightPosition = glm::vec3(0.0f, 0.8f, 0.0f);
+    std::cout << "[Demo3D] setScene(" << sceneType << "): lightPosition reset to ("
+              << lightPosition.x << "," << lightPosition.y << "," << lightPosition.z << ")\n";
 
     // Phase 0: Set up analytic SDF if enabled
     if (analyticSDFEnabled) {
@@ -4350,10 +4380,23 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
         return false;
     }
     
-    objLoader.normalize();
+    // Step 4 (4a, codex 08 F2): per-OBJ normalization scale.
+    //   Cornell: 1.0 (legacy [-1,1] -- unchanged baseline for clean regression).
+    //   Sponza : 1.9 (fills the [-2,2] SDF volume with 5% boundary margin -> ~3.6x
+    //                 surface-area increase, expected ~136K seeds vs Step 3's 38K).
+    //   objKind is computed early from filename so the commit block at the bottom
+    //   stays atomic (currentOBJPath is still assigned there).
+    const std::string objKind = (filename.find("sponza") != std::string::npos) ? "sponza" : "cornell";
+    float halfExtent = 1.0f;
+    if (objKind == "sponza") {
+        halfExtent = 1.9f;
+    }
+    objLoader.normalize(halfExtent);
+    std::cout << "[Demo3D] OBJ normalized to halfExtent=" << halfExtent
+              << " (volume halfSize=" << (volumeSize.x * 0.5f) << ", objKind=" << objKind << ")\n";
 
     // Step 3 (3a, F5): stage voxelization in a local vector. Previous mesh state
-    // (meshVoxelData, useOBJMesh, etc.) is untouched until commit at the end —
+    // (meshVoxelData, useOBJMesh, etc.) is untouched until commit at the end --
     // so a failed voxelization preserves whatever was on screen.
     std::vector<uint8_t> newVoxelData;
     objLoader.voxelize(volumeResolution, newVoxelData, volumeOrigin, volumeSize);
@@ -4374,7 +4417,7 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     glBindTexture(GL_TEXTURE_3D, 0);
 
     // Commit. All scene-switch invariants set together:
-    //  - meshSDFReady=false → Step 3b's branch in sdfGenerationPass() will rebake.
+    //  - meshSDFReady=false -> Step 3b's branch in sdfGenerationPass() will rebake.
     //  - useAnalyticRaymarch=false (3d, F3): final raymarch shader has a separate
     //    analytic toggle (uUseAnalyticSDF) that, if true, ignores uSDF and draws the
     //    Cornell Box analytic primitives. Force off here so the mesh actually shows.
@@ -4392,5 +4435,88 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
 
     std::cout << "[Demo3D] OBJ committed (" << currentOBJPath
               << "); SDF will be baked next frame\n";
+
+    // Step 4 (4b, codex 08 F3): per-OBJ camera preset, with SDF-alpha-sample
+    // validation against the freshly committed meshVoxelData. The raw alpha
+    // mask is the binary "voxel touches surface" indicator from Step 1's
+    // voxelizer -- sampling it at the candidate camera voxel reveals whether
+    // the preset places the camera inside a marked column/wall.
+    {
+        glm::vec3 camPosCandidate(0.0f);
+        glm::vec3 camTargetCandidate(0.0f);
+        float     camFovyCandidate = 60.0f;
+        glm::vec3 lightPosCandidate(0.0f, 0.8f, 0.0f);   // Step 4 (4b ext)
+        bool      hasPreset = false;
+
+        if (objKind == "sponza") {
+            // Sponza atrium: X is the long axis, Y is up, Z is transverse
+            // (confirmed via local mesh bounds). After halfExtent=1.9 the
+            // normalized bounds are X=+/-1.9, Y=+/-0.795, Z=+/-1.169.
+            //
+            // Camera placement: outside +X end of volume (X=3.5 > volume max 2.0)
+            // looking back along -X axis. Mirrors Cornell's "outside-looking-in"
+            // pattern that works reliably with the current raymarch shader.
+            // First-attempt inside-atrium camera at (1.6, 0.1, 0) produced
+            // black mode 0/1/4 -- primary rays didn't terminate on the
+            // conservative-band UDF for this view. Outside camera is more
+            // reliable for first visibility.
+            camPosCandidate    = glm::vec3( 3.5f, 0.5f, 0.0f);
+            camTargetCandidate = glm::vec3( 0.0f, 0.0f, 0.0f);
+            camFovyCandidate   = 60.0f;
+            // Light INSIDE the atrium (Y=+0.5 < ceiling Y=+0.795). The default
+            // Y=+0.8 was just above the Sponza ceiling so direct light couldn't
+            // reach the interior.
+            lightPosCandidate  = glm::vec3(0.0f, 0.5f, 0.0f);
+            hasPreset = true;
+        } else if (objKind == "cornell") {
+            // Cornell Box closed mesh -- camera outside, Step 3 baseline.
+            camPosCandidate    = glm::vec3(0.0f, 0.0f, 4.0f);
+            camTargetCandidate = glm::vec3(0.0f, 0.0f, 0.0f);
+            camFovyCandidate   = 60.0f;
+            lightPosCandidate  = glm::vec3(0.0f, 0.8f, 0.0f);   // unchanged
+            hasPreset = true;
+        }
+
+        if (hasPreset) {
+            // codex 09 F2: alpha-sample only makes sense for INSIDE-volume cameras.
+            // For outside cameras (uvw outside [0,1]^3), clamping silently to the
+            // nearest boundary voxel turns "alpha=0" into "boundary voxel is empty",
+            // which is not what we wanted to verify. Skip the check and log it.
+            glm::vec3 uvw = (camPosCandidate - volumeOrigin) / volumeSize;
+            bool insideVolume =
+                uvw.x >= 0.0f && uvw.x <= 1.0f &&
+                uvw.y >= 0.0f && uvw.y <= 1.0f &&
+                uvw.z >= 0.0f && uvw.z <= 1.0f;
+            if (insideVolume) {
+                glm::ivec3 voxel = glm::ivec3(uvw * float(volumeResolution));
+                voxel = glm::clamp(voxel, glm::ivec3(0), glm::ivec3(volumeResolution - 1));
+                int idx = (voxel.z * volumeResolution + voxel.y) * volumeResolution + voxel.x;
+                uint8_t alphaAtCam = meshVoxelData[idx * 4 + 3];
+                std::cout << "[Demo3D] Camera preset validation (inside volume): pos=("
+                          << camPosCandidate.x << "," << camPosCandidate.y << "," << camPosCandidate.z
+                          << ") voxel=(" << voxel.x << "," << voxel.y << "," << voxel.z
+                          << ") alpha=" << int(alphaAtCam) << "\n";
+                if (alphaAtCam > 0) {
+                    std::cerr << "[WARN] Proposed camera position lies inside a marked surface voxel; "
+                                 "view will start inside geometry. Adjust the preset.\n";
+                }
+            } else {
+                std::cout << "[Demo3D] Camera preset validation: pos=("
+                          << camPosCandidate.x << "," << camPosCandidate.y << "," << camPosCandidate.z
+                          << ") OUTSIDE SDF volume (uvw=(" << uvw.x << "," << uvw.y << "," << uvw.z
+                          << ")); alpha check skipped, relying on ray-box intersection at march time\n";
+            }
+
+            camera.position = camPosCandidate;
+            camera.target   = camTargetCandidate;
+            camera.up       = glm::vec3(0.0f, 1.0f, 0.0f);
+            camera.fovy     = camFovyCandidate;
+            lightPosition   = lightPosCandidate;     // Step 4 (4b ext)
+            std::cout << "[Demo3D] Camera positioned for " << objKind
+                      << ": fovy=" << camera.fovy
+                      << "; light=(" << lightPosition.x << "," << lightPosition.y << "," << lightPosition.z << ")\n";
+        }
+    }
+
     return true;
 }

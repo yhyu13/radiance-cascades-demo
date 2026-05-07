@@ -946,6 +946,12 @@ private:
     
     /** Indirect lighting brightness multiplier */
     float indirectBrightness;
+
+    /** Step 4 (4b ext): per-scene light position. Was hardcoded to (0, 0.8, 0)
+     *  for Cornell Box. Sponza needs a light inside its [-0.795, 0.795] Y range
+     *  (the hardcoded Y=0.8 was just above Sponza's ceiling — explained the
+     *  black mode-4 capture). loadOBJMesh() updates this per OBJ. */
+    glm::vec3 lightPosition;
     
     // =============================================================================
     // Performance & Quality
