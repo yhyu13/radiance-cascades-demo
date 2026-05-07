@@ -148,21 +148,62 @@ int main(int argc, char* argv[]) {
     // --auto-analyze:  burst capture + AI analysis then exit
     // --auto-sequence: sequence capture (N frames) + AI analysis then exit
     // --auto-rdoc:     RenderDoc GPU capture after 8s warm-up (stays open; G also works)
-    bool autoAnalyze = false;
+    // --load-obj=NAME: load OBJ mesh (cornell|sponza) once at startup (Step 2/3 testing)
+    // --exit-frames=N: quit after rendering N frames (CI-friendly Step 2 verification)
+    bool        autoAnalyze   = false;
+    std::string loadObjName;
+    std::string screenshotPath;
+    int         exitAfterFrames = 0;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--auto-analyze") {
+        std::string arg = argv[i];
+        if (arg == "--auto-analyze") {
             autoAnalyze = true;
             demo->setAutoCloseMode(true);
             std::cout << "[MAIN] --auto-analyze: will burst-capture, analyze, then exit.\n";
-        } else if (std::string(argv[i]) == "--auto-sequence") {
+        } else if (arg == "--auto-sequence") {
             autoAnalyze = true;
             demo->setAutoSequenceMode(true);
             std::cout << "[MAIN] --auto-sequence: will sequence-capture, analyze, then exit.\n";
-        } else if (std::string(argv[i]) == "--auto-rdoc") {
+        } else if (arg == "--auto-rdoc") {
             demo->setAutoRdocMode(8.0f);
             std::cout << "[MAIN] --auto-rdoc: will capture RenderDoc frame after 8s warm-up.\n";
+        } else if (arg.rfind("--load-obj=", 0) == 0) {
+            loadObjName = arg.substr(11);
+            std::cout << "[MAIN] --load-obj=" << loadObjName << ": will load at startup.\n";
+        } else if (arg.rfind("--exit-frames=", 0) == 0) {
+            exitAfterFrames = std::atoi(arg.substr(14).c_str());
+            std::cout << "[MAIN] --exit-frames=" << exitAfterFrames << ": will quit after N frames.\n";
+        } else if (arg.rfind("--screenshot=", 0) == 0) {
+            screenshotPath = arg.substr(13);
+            std::cout << "[MAIN] --screenshot=" << screenshotPath << ": will capture last frame.\n";
+        } else if (arg.rfind("--render-mode=", 0) == 0) {
+            int m = std::atoi(arg.substr(14).c_str());
+            demo->setRenderMode(m);
+            std::cout << "[MAIN] --render-mode=" << m << "\n";
+        } else if (arg.rfind("--inject-bake-failures=", 0) == 0) {
+            int n = std::atoi(arg.substr(23).c_str());
+            demo->setInjectBakeFailures(n);
+            std::cout << "[MAIN] --inject-bake-failures=" << n
+                      << " (codex 07 F1: forces N synthetic generateMeshSDF failures)\n";
         }
     }
+
+    if (!loadObjName.empty()) {
+        std::string path;
+        if (loadObjName == "sponza")       path = "res/scene/sponza.obj";
+        else if (loadObjName == "cornell") path = "res/scene/cornell_box.obj";
+        else {
+            std::cerr << "[MAIN] --load-obj=" << loadObjName
+                      << ": unknown name (expected 'sponza' or 'cornell'). Aborting.\n";
+            delete demo;
+            CloseWindow();
+            return 1;
+        }
+        if (!demo->loadOBJMesh(path)) {
+            std::cerr << "[MAIN] --load-obj failed for " << path << "\n";
+        }
+    }
+    int frameCounter = 0;
 
     // Step 6: Main rendering loop
     std::cout << "[MAIN] Entering main loop." << std::endl;
@@ -213,8 +254,17 @@ int main(int argc, char* argv[]) {
             
             // Display FPS counter
             DrawFPS(10, 10);
-            
+
         EndDrawing();
+
+        if (exitAfterFrames > 0 && ++frameCounter >= exitAfterFrames) {
+            if (!screenshotPath.empty()) {
+                TakeScreenshot(screenshotPath.c_str());
+                std::cout << "[MAIN] --screenshot saved: " << screenshotPath << "\n";
+            }
+            std::cout << "[MAIN] --exit-frames reached (" << frameCounter << "), quitting.\n";
+            break;
+        }
 
         // Phase 6b: end RenderDoc frame capture and launch analysis
         demo->endRdocFrameIfPending();

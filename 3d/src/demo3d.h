@@ -254,11 +254,13 @@ public:
     
     /**
      * @brief Signed Distance Field generation
-     * 
+     *
      * Computes 3D SDF from voxel grid using jump flooding algorithm extended to 3D.
      * Runs as compute shader on GPU.
+     * Step 3 (codex 07 F1): returns true on success, false on mesh-bake failure.
+     * Caller (render loop) only flips its `sdfReady` flag on true.
      */
-    void sdfGenerationPass();
+    bool sdfGenerationPass();
     
     /**
      * @brief Update all radiance cascade levels
@@ -487,6 +489,12 @@ public:
         int localSize = 8
     );
 
+    // codex 07 F2/F3 — let main3d.cpp set initial render mode for headless captures
+    void setRenderMode(int m) { raymarchRenderMode = m; }
+
+    // codex 07 F1 — let main3d.cpp inject bake failures via CLI for runtime test of the bool-return retry path
+    void setInjectBakeFailures(int n) { injectBakeFailures = n; }
+
     // Phase 12a — CLI auto-close query / setter (used by main3d.cpp)
     bool isReadyToClose() const { return captureAndAnalysisDone; }
     void setAutoCloseMode(bool v)    { autoCloseAfterCapture = v; }
@@ -622,6 +630,20 @@ private:
 
     /** Which OBJ was last loaded: "cornell" or "sponza" */
     std::string currentOBJPath;
+
+    // Step 2: Mesh SDF (CPU EDT bake from OBJ voxelization)
+    /** OBJ surface voxels (RGBA8, volumeResolution^3); set by loadOBJMesh, consumed by generateMeshSDF. */
+    std::vector<uint8_t> meshVoxelData;
+    /** True after generateMeshSDF() successfully baked sdfTexture/albedoTexture for the current mesh. */
+    bool meshSDFReady = false;
+    /** Step 2 v2: bake conservative UDF from meshVoxelData into sdfTexture + propagated albedoTexture.
+     *  Returns false on validation/upload failure; caller (Step 3) sets meshSDFReady on success. */
+    bool generateMeshSDF();
+
+    /** codex 07 F1 test hook: when > 0, generateMeshSDF returns false this many times
+     *  before behaving normally. Used by --inject-bake-failures=N to verify the render
+     *  loop's failure-retry path. Default 0 (no injection). */
+    int  injectBakeFailures = 0;
     
     // =============================================================================
     // SDF Debug Visualization (Phase 0)

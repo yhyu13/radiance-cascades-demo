@@ -46,17 +46,18 @@ public:
      * @return true if successful
      */
     bool load(const std::string& filename) {
-        vertices.clear();
-        normals.clear();
-        texcoords.clear();
-        faces.clear();
-        faceMaterials.clear();
-
         std::ifstream file(filename);
         if (!file.is_open()) {
             std::cerr << "[OBJLoader] Failed to open file: " << filename << std::endl;
             return false;
         }
+
+        // Clear only after a successful open so a failed load preserves existing data.
+        vertices.clear();
+        normals.clear();
+        texcoords.clear();
+        faces.clear();
+        faceMaterials.clear();
 
         std::cout << "[OBJLoader] Loading: " << filename << std::endl;
         
@@ -273,40 +274,42 @@ private:
     }
     
     /**
-     * @brief Voxelize a single triangle using barycentric sampling
+     * @brief Voxelize a single triangle using closest-point distance (Ericson §5.1.5).
+     *        Bbox is expanded by half-diagonal of a voxel so axis-aligned surfaces
+     *        (Sponza walls/floors/ceilings) are captured correctly.
      */
     void voxelizeTriangle(const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2,
                          const glm::vec3& color, int resolution, std::vector<uint8_t>& grid,
                          const glm::vec3& gridOrigin, const glm::vec3& gridSize,
                          float voxelSize, int& voxelsFilled) const {
-        // Calculate triangle bounding box
-        glm::vec3 minPt = glm::min(v0, glm::min(v1, v2));
-        glm::vec3 maxPt = glm::max(v0, glm::max(v1, v2));
-        
-        // Convert to voxel coordinates
+        // Half-diagonal of a voxel: a point within this distance of the triangle
+        // surface is considered "on" the surface.
+        const float threshold = voxelSize * glm::sqrt(3.0f) * 0.5f;
+
+        // Expand bbox by threshold so voxels adjacent to flat surfaces are tested.
+        glm::vec3 minPt = glm::min(v0, glm::min(v1, v2)) - threshold;
+        glm::vec3 maxPt = glm::max(v0, glm::max(v1, v2)) + threshold;
+
         glm::ivec3 minVox = worldToVoxel(minPt, gridOrigin, gridSize, resolution);
         glm::ivec3 maxVox = worldToVoxel(maxPt, gridOrigin, gridSize, resolution);
-        
-        // Clamp to grid bounds
         minVox = glm::clamp(minVox, glm::ivec3(0), glm::ivec3(resolution - 1));
         maxVox = glm::clamp(maxVox, glm::ivec3(0), glm::ivec3(resolution - 1));
-        
-        // Sample each voxel in bounding box
+
         for (int z = minVox.z; z <= maxVox.z; ++z) {
             for (int y = minVox.y; y <= maxVox.y; ++y) {
                 for (int x = minVox.x; x <= maxVox.x; ++x) {
-                    // Convert voxel center to world space
-                    glm::vec3 worldPos = voxelToWorld(glm::ivec3(x, y, z), 
+                    glm::vec3 worldPos = voxelToWorld(glm::ivec3(x, y, z),
                                                      gridOrigin, gridSize, resolution);
-                    
-                    // Check if point is inside triangle (using barycentric test)
-                    if (pointInTriangle(worldPos, v0, v1, v2)) {
+                    glm::vec3 closest = closestPointOnTriangle(worldPos, v0, v1, v2);
+                    if (glm::length(worldPos - closest) <= threshold) {
                         int idx = ((z * resolution + y) * resolution + x) * 4;
-                        grid[idx + 0] = static_cast<uint8_t>(color.r * 255.0f);
-                        grid[idx + 1] = static_cast<uint8_t>(color.g * 255.0f);
-                        grid[idx + 2] = static_cast<uint8_t>(color.b * 255.0f);
-                        grid[idx + 3] = 255;  // Fully opaque
-                        voxelsFilled++;
+                        if (grid[idx + 3] == 0) {  // first writer wins; no double-count
+                            grid[idx + 0] = static_cast<uint8_t>(color.r * 255.0f);
+                            grid[idx + 1] = static_cast<uint8_t>(color.g * 255.0f);
+                            grid[idx + 2] = static_cast<uint8_t>(color.b * 255.0f);
+                            grid[idx + 3] = 255;
+                            voxelsFilled++;
+                        }
                     }
                 }
             }
@@ -332,35 +335,40 @@ private:
     }
     
     /**
-     * @brief Test if a point lies within a triangle (2D projection test)
+     * @brief Closest point on triangle abc to point p (Ericson Real-Time Collision Detection §5.1.5).
+     *        Works correctly for degenerate (axis-aligned) triangles unlike a 2D projection test.
      */
-    bool pointInTriangle(const glm::vec3& p, const glm::vec3& a, 
-                        const glm::vec3& b, const glm::vec3& c) const {
-        // Use barycentric technique
-        // Project to dominant plane to avoid degeneracy
-        glm::vec3 normal = glm::cross(b - a, c - a);
-        int axis = 0;
-        if (std::abs(normal.y) > std::abs(normal[axis])) axis = 1;
-        if (std::abs(normal.z) > std::abs(normal[axis])) axis = 2;
-        
-        // Project to 2D
-        float pa[2], pb[2], pc[2], pp[2];
-        int idx1 = (axis + 1) % 3;
-        int idx2 = (axis + 2) % 3;
-        
-        pa[0] = a[idx1]; pa[1] = a[idx2];
-        pb[0] = b[idx1]; pb[1] = b[idx2];
-        pc[0] = c[idx1]; pc[1] = c[idx2];
-        pp[0] = p[idx1]; pp[1] = p[idx2];
-        
-        // Barycentric coordinates
-        float denom = (pb[1] - pc[1]) * (pa[0] - pc[0]) + (pc[0] - pb[0]) * (pa[1] - pc[1]);
-        if (std::abs(denom) < 1e-6f) return false;
-        
-        float u = ((pb[1] - pc[1]) * (pp[0] - pc[0]) + (pc[0] - pb[0]) * (pp[1] - pc[1])) / denom;
-        float v = ((pc[1] - pa[1]) * (pp[0] - pc[0]) + (pa[0] - pc[0]) * (pp[1] - pc[1])) / denom;
-        float w = 1.0f - u - v;
-        
-        return (u >= 0.0f && v >= 0.0f && w >= 0.0f);
+    glm::vec3 closestPointOnTriangle(const glm::vec3& p,
+                                     const glm::vec3& a,
+                                     const glm::vec3& b,
+                                     const glm::vec3& c) const {
+        glm::vec3 ab = b - a, ac = c - a, ap = p - a;
+        float d1 = glm::dot(ab, ap), d2 = glm::dot(ac, ap);
+        if (d1 <= 0.0f && d2 <= 0.0f) return a;
+
+        glm::vec3 bp = p - b;
+        float d3 = glm::dot(ab, bp), d4 = glm::dot(ac, bp);
+        if (d3 >= 0.0f && d4 <= d3) return b;
+
+        float vc = d1 * d4 - d3 * d2;
+        if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+            return a + (d1 / (d1 - d3)) * ab;
+
+        glm::vec3 cp = p - c;
+        float d5 = glm::dot(ab, cp), d6 = glm::dot(ac, cp);
+        if (d6 >= 0.0f && d5 <= d6) return c;
+
+        float vb = d5 * d2 - d1 * d6;
+        if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+            return a + (d2 / (d2 - d6)) * ac;
+
+        float va = d3 * d6 - d5 * d4;
+        if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+            return b + ((d4 - d3) / ((d4 - d3) + (d5 - d6))) * (c - b);
+
+        float sum = va + vb + vc;
+        if (std::abs(sum) < 1e-12f) return a;  // degenerate/zero-area triangle
+        float denom = 1.0f / sum;
+        return a + ab * (vb * denom) + ac * (vc * denom);
     }
 };
