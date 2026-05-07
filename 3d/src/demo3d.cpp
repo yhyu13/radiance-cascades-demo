@@ -28,6 +28,9 @@
 #include <thread>
 #include <vector>
 #include <random>
+#include <cassert>
+#include <utility>
+#include <limits>
 
 // raylib already compiles STB_IMAGE_WRITE_IMPLEMENTATION in rtextures.c;
 // include the header here for declarations only (no redefinition).
@@ -41,6 +44,58 @@ static float halton(uint32_t idx, uint32_t base) {
     float f = 1.0f, r = 0.0f;
     while (idx > 0) { f /= base; r += f * (idx % base); idx /= base; }
     return r;
+}
+
+// =============================================================================
+// Step 2: Felzenszwalb separable EDT (1D parabola sweep)
+// File-scope helper — pure function, no Demo3D state. Caller passes scratch
+// buffers (v, z, d) sized n / n+1 / n so the helper does ZERO heap allocations
+// per call (codex F3 — was 49152 calls × 3 allocs at N=128).
+// =============================================================================
+namespace {
+    constexpr float EDT_INF = 1e18f;
+
+    // In-place 1D Euclidean distance transform on `f` (length n).
+    // Input  f[i] = squared distance to nearest seed in voxel-index units (0 = seed, INF = empty).
+    // Output f[i] = squared distance from i to nearest seed along this axis.
+    // Scratch buffers must satisfy: v.size() >= n, z.size() >= n+1, d.size() >= n.
+    static void edt1d(std::vector<float>& f, int n,
+                      std::vector<int>& v, std::vector<float>& z, std::vector<float>& d) {
+        // Skip rows with no seed yet — leaves them as INF for the next axis pass.
+        bool anyFinite = false;
+        for (int i = 0; i < n; ++i) if (f[i] < EDT_INF) { anyFinite = true; break; }
+        if (!anyFinite) return;
+
+        int k = 0;
+        v[0] = 0;
+        z[0] = -EDT_INF;
+        z[1] =  EDT_INF;
+
+        for (int q = 1; q < n; ++q) {
+            float s;
+            while (true) {
+                int   r     = v[k];
+                // q != r by construction → denom is 2*(q - v[k]) and never zero.
+                float s_num = (f[q] + float(q) * float(q)) - (f[r] + float(r) * float(r));
+                s = s_num / (2.f * float(q - r));
+                if (s > z[k]) break;
+                if (--k < 0) { k = 0; break; }
+            }
+            ++k;
+            v[k]     = q;
+            z[k]     = s;
+            z[k + 1] = EDT_INF;
+        }
+
+        k = 0;
+        for (int q = 0; q < n; ++q) {
+            while (z[k + 1] < float(q)) ++k;
+            float diff = float(q - v[k]);
+            d[q] = diff * diff + f[v[k]];
+        }
+        // Copy scratch back into f (cannot std::move — caller reuses d).
+        for (int i = 0; i < n; ++i) f[i] = d[i];
+    }
 }
 
 // =============================================================================
@@ -452,10 +507,15 @@ void Demo3D::render() {
     static bool lastMergeFlag = false;
     if (!sdfReady) {
         double t0 = GetTime();
-        sdfGenerationPass();
-        sdfTimeMs    = (GetTime() - t0) * 1000.0;
-        sdfReady     = true;
-        cascadeReady = false;  // SDF changed → cascade stale
+        // codex 07 F1: only flip sdfReady on success. On mesh-bake failure,
+        // sdfReady stays false → next frame retries the bake. cascadeReady is
+        // also left untouched so we don't invalidate cascades on a failed bake.
+        bool ok = sdfGenerationPass();
+        sdfTimeMs = (GetTime() - t0) * 1000.0;
+        if (ok) {
+            sdfReady     = true;
+            cascadeReady = false;  // SDF changed → cascade stale
+        }
     }
     if (disableCascadeMerging != lastMergeFlag) {
         lastMergeFlag = disableCascadeMerging;
@@ -1247,14 +1307,185 @@ void Demo3D::renderLightingDebugUI() {
     ImGui::End();
 }
 
-void Demo3D::sdfGenerationPass() {
+// =============================================================================
+// Step 2: Mesh SDF bake — Felzenszwalb separable EDT on CPU.
+// Reads meshVoxelData (RGBA8, alpha = surface marker), writes sdfTexture (R32F)
+// and propagates albedo into albedoTexture (RGBA8). Produces a CONSERVATIVE UDF:
+// after subtracting one half-voxel-diagonal radius and clamping at 0, the result
+// reads ~0 across the surface band so the existing shader hit thresholds
+// (EPSILON in raymarch.frag, 0.002 in radiance_3d.comp) can land on it, and it
+// never overestimates true triangle distance — sphere-trace safe.
+// =============================================================================
+bool Demo3D::generateMeshSDF() {
+    // codex 07 F1 test hook — fail synthetically to exercise the render-loop retry path.
+    if (injectBakeFailures > 0) {
+        --injectBakeFailures;
+        std::cerr << "[INJECT] generateMeshSDF: synthetic failure ("
+                  << injectBakeFailures << " remaining)\n";
+        return false;
+    }
+
+    const int   N        = volumeResolution;
+    const int   N2       = N * N;
+    const int   N3       = N * N * N;
+    const float voxelSz  = volumeSize.x / float(N);
+
+    // Validate input
+    if (meshVoxelData.size() != size_t(N3) * 4) {
+        std::cerr << "[ERROR] generateMeshSDF: meshVoxelData size " << meshVoxelData.size()
+                  << " != expected " << (size_t(N3) * 4) << " (N=" << N << ")\n";
+        return false;
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    // 1. Seed grid: 0 at occupied (alpha > 0), INF elsewhere.
+    std::vector<float> sq(N3, EDT_INF);
+    int seedCount = 0;
+    for (int i = 0; i < N3; ++i) {
+        if (meshVoxelData[i * 4 + 3] > 0) {
+            sq[i] = 0.f;
+            ++seedCount;
+        }
+    }
+    if (seedCount == 0) {
+        std::cerr << "[ERROR] generateMeshSDF: zero seeds — voxelization produced no surface voxels\n";
+        return false;
+    }
+
+    // 2-4. Three separable axis sweeps. All scratch (rowBuf + edt1d v/z/d)
+    //      preallocated once — zero heap allocations across 49,152 row sweeps at N=128.
+    std::vector<float> rowBuf(N);
+    std::vector<int>   scratchV(N);
+    std::vector<float> scratchZ(N + 1);
+    std::vector<float> scratchD(N);
+    for (int z = 0; z < N; ++z)
+    for (int y = 0; y < N; ++y) {
+        for (int x = 0; x < N; ++x) rowBuf[x] = sq[z*N2 + y*N + x];
+        edt1d(rowBuf, N, scratchV, scratchZ, scratchD);
+        for (int x = 0; x < N; ++x) sq[z*N2 + y*N + x] = rowBuf[x];
+    }
+    for (int z = 0; z < N; ++z)
+    for (int x = 0; x < N; ++x) {
+        for (int y = 0; y < N; ++y) rowBuf[y] = sq[z*N2 + y*N + x];
+        edt1d(rowBuf, N, scratchV, scratchZ, scratchD);
+        for (int y = 0; y < N; ++y) sq[z*N2 + y*N + x] = rowBuf[y];
+    }
+    for (int y = 0; y < N; ++y)
+    for (int x = 0; x < N; ++x) {
+        for (int z = 0; z < N; ++z) rowBuf[z] = sq[z*N2 + y*N + x];
+        edt1d(rowBuf, N, scratchV, scratchZ, scratchD);
+        for (int z = 0; z < N; ++z) sq[z*N2 + y*N + x] = rowBuf[z];
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    // 5. Convert squared-voxel distances → conservative world-space UDF.
+    //    Subtract half-diagonal so the band is hittable by existing thresholds
+    //    and never overestimates after the subtraction.
+    const float surfaceRadius = voxelSz * std::sqrt(3.0f) * 0.5f;
+    std::vector<float> sdfData(N3);
+    for (int i = 0; i < N3; ++i) {
+        float d = std::sqrt(sq[i]) * voxelSz - surfaceRadius;
+        sdfData[i] = d > 0.0f ? d : 0.0f;
+    }
+    if (!std::isfinite(sdfData[0]) || !std::isfinite(sdfData[N3 / 2]) || !std::isfinite(sdfData[N3 - 1])) {
+        std::cerr << "[ERROR] generateMeshSDF: non-finite SDF values\n";
+        return false;
+    }
+
+    // 6. Albedo flood-fill: 3-iter 6-neighbor dilation. Fills the conservative band
+    //    + one ring beyond, so band-region trilinear samples don't blend into black.
+    //    Far-interior voxels stay black — never sampled because rays terminate first.
+    std::vector<uint8_t> albedoData = meshVoxelData;
+    {
+        std::vector<uint8_t> next(albedoData.size());
+        const int off[6] = { -4, +4, -N*4, +N*4, -N2*4, +N2*4 };
+        for (int iter = 0; iter < 3; ++iter) {
+            next = albedoData;
+            for (int z = 1; z < N - 1; ++z)
+            for (int y = 1; y < N - 1; ++y)
+            for (int x = 1; x < N - 1; ++x) {
+                int i = (z*N2 + y*N + x) * 4;
+                if (albedoData[i + 3] != 0) continue;     // already has color
+                for (int n = 0; n < 6; ++n) {
+                    int j = i + off[n];
+                    if (albedoData[j + 3] != 0) {
+                        next[i + 0] = albedoData[j + 0];
+                        next[i + 1] = albedoData[j + 1];
+                        next[i + 2] = albedoData[j + 2];
+                        next[i + 3] = 1;                  // mark as filled (not seed)
+                        break;
+                    }
+                }
+            }
+            albedoData.swap(next);
+        }
+    }
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+
+    // 7. Upload sdfTexture (R32F).
+    glBindTexture(GL_TEXTURE_3D, sdfTexture);
+    glTexSubImage3D(GL_TEXTURE_3D, 0, 0,0,0, N,N,N,
+                    GL_RED, GL_FLOAT, sdfData.data());
+    if (GLenum err = glGetError(); err != GL_NO_ERROR) {
+        std::cerr << "[ERROR] generateMeshSDF: sdfTexture upload failed (GL 0x"
+                  << std::hex << err << std::dec << ")\n";
+        glBindTexture(GL_TEXTURE_3D, 0);
+        return false;
+    }
+
+    // 8. Upload propagated albedoTexture (RGBA8).
+    glBindTexture(GL_TEXTURE_3D, albedoTexture);
+    glTexSubImage3D(GL_TEXTURE_3D, 0, 0,0,0, N,N,N,
+                    GL_RGBA, GL_UNSIGNED_BYTE, albedoData.data());
+    if (GLenum err = glGetError(); err != GL_NO_ERROR) {
+        std::cerr << "[ERROR] generateMeshSDF: albedoTexture upload failed (GL 0x"
+                  << std::hex << err << std::dec << ")\n";
+        glBindTexture(GL_TEXTURE_3D, 0);
+        return false;
+    }
+    glBindTexture(GL_TEXTURE_3D, 0);
+
+    double edtMs    = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    double albedoMs = std::chrono::duration<double, std::milli>(t2 - t1).count();
+    std::cout << "[Demo3D] Mesh SDF: EDT complete N=" << N
+              << " voxelSz=" << voxelSz << "m"
+              << " surfaceRadius=" << surfaceRadius << "m"
+              << " seeds=" << seedCount
+              << " edt=" << edtMs << "ms albedo=" << albedoMs << "ms\n";
+    return true;
+}
+
+bool Demo3D::sdfGenerationPass() {
     /**
      * @brief Generate 3D signed distance field
-     * 
+     *
+     * Returns true on success, false on mesh-bake failure (codex 07 F1).
+     * Caller (render loop) only flips its `sdfReady` flag on true, so a
+     * failed bake retries on the next frame instead of locking the renderer
+     * into stale/partial texture state.
+     *
      * Phase 0 implementation: Use analytic SDF for quick validation.
      * Future: Replace with voxel-based JFA when mesh loading is ready.
+     * Step 3 (3b): added OBJ mesh branch at the top — bakes via generateMeshSDF()
+     * and bypasses the analytic compute dispatch.
      */
-    
+
+    // --- Step 3 (3b, F1): OBJ mesh branch ---
+    if (useOBJMesh && !meshVoxelData.empty()) {
+        if (!meshSDFReady) {
+            if (!generateMeshSDF()) {
+                std::cerr << "[ERROR] sdfGenerationPass: mesh SDF bake failed; "
+                             "render loop keeps sdfReady=false and retries next frame\n";
+                return false;   // codex 07 F1: tell render loop NOT to flip sdfReady
+            }
+            meshSDFReady = true;
+        }
+        return true;   // analytic path never runs while OBJ is active
+    }
+
     if (analyticSDFEnabled) {
         std::cout << "[Demo3D] Generating analytic SDF..." << std::endl;
         
@@ -1262,7 +1493,7 @@ void Demo3D::sdfGenerationPass() {
         auto it = shaders.find("sdf_analytic.comp");
         if (it == shaders.end()) {
             std::cerr << "[ERROR] Analytic SDF shader not loaded!" << std::endl;
-            return;
+            return false;
         }
         
         // Upload primitives to GPU
@@ -1298,13 +1529,14 @@ void Demo3D::sdfGenerationPass() {
         std::cout << "[Demo3D] Analytic SDF generation complete." << std::endl;
     } else {
         std::cout << "[Demo3D] SDF generation skipped (analytic SDF disabled, JFA not implemented)" << std::endl;
-        
+
         // TODO: Implement full 3D JFA when ready
         // For now, just clear the SDF texture
         glBindTexture(GL_TEXTURE_3D, sdfTexture);
         glClearTexImage(sdfTexture, 0, GL_RED, GL_FLOAT, nullptr);
         glBindTexture(GL_TEXTURE_3D, 0);
     }
+    return true;
 }
 
 void Demo3D::updateRadianceCascades() {
@@ -2156,6 +2388,19 @@ void Demo3D::setScene(int sceneType) {
     useOBJMesh = false;
     currentOBJPath.clear();
 
+    // Step 3 (3c): clear mesh state — no implied cache, the only caller is loadOBJMesh
+    // which always re-reads the file. shrink_to_fit reclaims the ~8 MB voxel buffer.
+    meshVoxelData.clear();
+    meshVoxelData.shrink_to_fit();
+    meshSDFReady = false;
+
+    // Step 3 (3c, F2): scene-switch invariant — reseed temporal cascade history so the
+    // previous scene's history doesn't EMA-blend into the new one. Without this, mode 0
+    // can ghost the old scene's lighting into the new scene for many frames.
+    historyNeedsSeed     = true;
+    renderFrameIndex     = 0;
+    temporalRebuildCount = 0;
+
     // Phase 0: Set up analytic SDF if enabled
     if (analyticSDFEnabled) {
         analyticSDF.clear();
@@ -2721,9 +2966,18 @@ void Demo3D::renderSettingsPanel() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("Mode 8: probe cell boundary (fract of probe-grid coord as RGB).\nColor transitions occur at probe center positions; halfway = cell boundary.\nCompare with Mode 6 (GI-only): aligned banding = Type A (cell-size limited);\nmisaligned banding = Type B (directional D quantization).");
 
+    // Step 3 (3d, F3): gate the analytic SDF toggle in OBJ mode. The analytic shader
+    // path has nothing to evaluate against an OBJ mesh, so allowing it would render
+    // empty/wrong. Disabled grays out the checkbox while useOBJMesh is true.
+    ImGui::BeginDisabled(useOBJMesh);
     ImGui::Checkbox("Analytic SDF (smooth, no grid)", &useAnalyticRaymarch);
+    if (useOBJMesh) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(OBJ mode — uses grid SDF)");
+    }
+    ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("OFF (default): SDF read from 128^3 texture (trilinear, grid-quantized).\nON: SDF evaluated analytically per-sample — truly continuous, no voxel grid.\nDiagnostic: toggle in Mode 5 or 7. If banding disappears -> grid is the cause.\nIf banding stays -> it is the natural rectangular iso-contours of the Cornell Box.");
+        ImGui::SetTooltip("OFF (default): SDF read from 128^3 texture (trilinear, grid-quantized).\nON: SDF evaluated analytically per-sample — truly continuous, no voxel grid.\nDiagnostic: toggle in Mode 5 or 7. If banding disappears -> grid is the cause.\nIf banding stays -> it is the natural rectangular iso-contours of the Cornell Box.\n(Disabled in OBJ mode — analytic primitives don't apply to mesh geometry.)");
 
     ImGui::Separator();
     ImGui::Text("GI Bilateral Blur:");
@@ -4097,24 +4351,46 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     }
     
     objLoader.normalize();
-    
-    std::vector<uint8_t> voxelData;
-    objLoader.voxelize(volumeResolution, voxelData, volumeOrigin, volumeSize);
-    
-    if (voxelData.empty()) {
-        std::cerr << "[ERROR] Empty voxelization!" << std::endl;
+
+    // Step 3 (3a, F5): stage voxelization in a local vector. Previous mesh state
+    // (meshVoxelData, useOBJMesh, etc.) is untouched until commit at the end —
+    // so a failed voxelization preserves whatever was on screen.
+    std::vector<uint8_t> newVoxelData;
+    objLoader.voxelize(volumeResolution, newVoxelData, volumeOrigin, volumeSize);
+
+    if (newVoxelData.empty()) {
+        std::cerr << "[ERROR] Empty voxelization for " << successfulPath
+                  << "; keeping previous mesh state\n";
         return false;
     }
-    
+
+    // Debug-display upload (voxelGridTexture). This is the only side effect before
+    // commit; if a later step somehow fails the worst case is that the debug texture
+    // briefly shows the new mesh while meshVoxelData still holds the old data.
     glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
     glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
                     volumeResolution, volumeResolution, volumeResolution,
-                    GL_RGBA, GL_UNSIGNED_BYTE, voxelData.data());
-    
-    sceneDirty = true;
-    useOBJMesh = true;
-    currentOBJPath = (filename.find("sponza") != std::string::npos) ? "sponza" : "cornell";
+                    GL_RGBA, GL_UNSIGNED_BYTE, newVoxelData.data());
+    glBindTexture(GL_TEXTURE_3D, 0);
 
-    std::cout << "[Demo3D] OBJ mesh loaded and voxelized successfully!" << std::endl;
+    // Commit. All scene-switch invariants set together:
+    //  - meshSDFReady=false → Step 3b's branch in sdfGenerationPass() will rebake.
+    //  - useAnalyticRaymarch=false (3d, F3): final raymarch shader has a separate
+    //    analytic toggle (uUseAnalyticSDF) that, if true, ignores uSDF and draws the
+    //    Cornell Box analytic primitives. Force off here so the mesh actually shows.
+    //  - historyNeedsSeed/renderFrameIndex/temporalRebuildCount (3a, F2): temporal
+    //    cascade reseed so previous-scene history doesn't EMA-blend into OBJ frames.
+    meshVoxelData        = std::move(newVoxelData);
+    meshSDFReady         = false;
+    useOBJMesh           = true;
+    useAnalyticRaymarch  = false;
+    historyNeedsSeed     = true;
+    renderFrameIndex     = 0;
+    temporalRebuildCount = 0;
+    sceneDirty           = true;
+    currentOBJPath       = (filename.find("sponza") != std::string::npos) ? "sponza" : "cornell";
+
+    std::cout << "[Demo3D] OBJ committed (" << currentOBJPath
+              << "); SDF will be baked next frame\n";
     return true;
 }
