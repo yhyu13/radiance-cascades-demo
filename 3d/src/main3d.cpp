@@ -154,6 +154,7 @@ int main(int argc, char* argv[]) {
     std::string loadObjName;
     std::string screenshotPath;
     int         exitAfterFrames = 0;
+    int         switchToScene   = -999;   // codex 09 F1 verification: after --load-obj, switch to analytic scene N
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--auto-analyze") {
@@ -185,6 +186,10 @@ int main(int argc, char* argv[]) {
             demo->setInjectBakeFailures(n);
             std::cout << "[MAIN] --inject-bake-failures=" << n
                       << " (codex 07 F1: forces N synthetic generateMeshSDF failures)\n";
+        } else if (arg.rfind("--switch-to-scene=", 0) == 0) {
+            switchToScene = std::atoi(arg.substr(18).c_str());
+            std::cout << "[MAIN] --switch-to-scene=" << switchToScene
+                      << " (codex 09 F1: setScene(N) after --load-obj to test invariant resets)\n";
         }
     }
 
@@ -202,6 +207,10 @@ int main(int argc, char* argv[]) {
         if (!demo->loadOBJMesh(path)) {
             std::cerr << "[MAIN] --load-obj failed for " << path << "\n";
         }
+    }
+    if (switchToScene != -999) {
+        std::cout << "[MAIN] Triggering setScene(" << switchToScene << ") after --load-obj\n";
+        demo->setScene(switchToScene);
     }
     int frameCounter = 0;
 
@@ -222,10 +231,16 @@ int main(int argc, char* argv[]) {
         // Update simulation
         demo->update();
 
+        // codex 09 F4: capture --screenshot on the LAST frame, BEFORE the UI is
+        // drawn, so the saved image is a clean 3D-only frame instead of having
+        // the ImGui overlay obscuring half the viewport.
+        bool isExitFrame = (exitAfterFrames > 0 && (frameCounter + 1) >= exitAfterFrames);
+        bool wantCleanScreenshot = isExitFrame && !screenshotPath.empty();
+
         // Render frame
         BeginDrawing();
             ClearBackground(BLACK);
-            
+
             // Render 3D scene
             BeginMode3D(demo->getRaylibCamera());
                 demo->render();
@@ -234,34 +249,38 @@ int main(int argc, char* argv[]) {
             // Phase 6a: capture after 3D, before ImGui (clean 3D-only frame)
             demo->takeScreenshot(/*launchAiAnalysis=*/true);
 
+            // codex 09 F4: clean --screenshot capture happens HERE, before UI draw.
+            if (wantCleanScreenshot) {
+                TakeScreenshot(screenshotPath.c_str());
+                std::cout << "[MAIN] --screenshot saved (clean 3D, no UI): "
+                          << screenshotPath << "\n";
+            }
+
             // --auto-analyze: exit once capture + analysis are done
             if (autoAnalyze && demo->isReadyToClose())
                 break;
 
-            // Render UI overlay (suppressed when capturing clean frame for analysis)
-            if (!demo->isSkippingUI()) {
+            // Render UI overlay (suppressed when capturing clean frame for analysis,
+            // and also for our --screenshot exit frame so the saved file is clean).
+            if (!demo->isSkippingUI() && !wantCleanScreenshot) {
                 rlImGuiBegin();
                     demo->renderUI();
                 rlImGuiEnd();
             }
-            
+
             // Handle window resize
             if (screenWidth != GetScreenWidth() || screenHeight != GetScreenHeight()) {
                 screenWidth = GetScreenWidth();
                 screenHeight = GetScreenHeight();
                 demo->onResize();
             }
-            
-            // Display FPS counter
-            DrawFPS(10, 10);
+
+            // Display FPS counter (skipped on clean-screenshot frame)
+            if (!wantCleanScreenshot) DrawFPS(10, 10);
 
         EndDrawing();
 
         if (exitAfterFrames > 0 && ++frameCounter >= exitAfterFrames) {
-            if (!screenshotPath.empty()) {
-                TakeScreenshot(screenshotPath.c_str());
-                std::cout << "[MAIN] --screenshot saved: " << screenshotPath << "\n";
-            }
             std::cout << "[MAIN] --exit-frames reached (" << frameCounter << "), quitting.\n";
             break;
         }

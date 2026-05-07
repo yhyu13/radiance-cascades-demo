@@ -150,27 +150,34 @@ public:
     }
     
     /**
-     * @brief Center and scale mesh to fit within [-1, 1] box
+     * @brief Center and scale mesh to fit within [-halfExtent, halfExtent] box.
+     * Step 4 (codex 08 F2): per-OBJ scale -- Cornell uses 1.0 (legacy default),
+     * Sponza uses 1.9 to fill the SDF volume with a 5% boundary margin.
      */
-    void normalize() {
+    void normalize(float halfExtent) {
         if (vertices.empty()) return;
-        
+
         glm::vec3 min, max;
         getBounds(min, max);
-        
+
         glm::vec3 center = (min + max) * 0.5f;
         glm::vec3 extent = max - min;
         float maxExtent = std::max(extent.x, std::max(extent.y, extent.z));
-        
+
         if (maxExtent > 0.0f) {
-            float scale = 2.0f / maxExtent;
+            float scale = (2.0f * halfExtent) / maxExtent;
             for (auto& v : vertices) {
                 v.position = (v.position - center) * scale;
             }
         }
-        
-        std::cout << "[OBJLoader] Mesh normalized to [-1, 1] bounds" << std::endl;
+
+        std::cout << "[OBJLoader] Mesh normalized to [-" << halfExtent
+                  << ", " << halfExtent << "] bounds (scale=" << ((maxExtent > 0.0f) ? (2.0f * halfExtent) / maxExtent : 0.0f)
+                  << ")" << std::endl;
     }
+
+    /** Backwards-compat overload -- old callers expect [-1, 1] normalization. */
+    inline void normalize() { normalize(1.0f); }
     
     /**
      * @brief Get color for a material name (hardcoded Cornell Box materials)
