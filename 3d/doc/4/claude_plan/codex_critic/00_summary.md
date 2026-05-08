@@ -1,6 +1,6 @@
 # Codex Critic Summary
 
-Review timestamp: 2026-05-08T15:28:33+08:00
+Review timestamp: 2026-05-08T17:44:12+08:00
 
 Targets reviewed:
 
@@ -16,6 +16,7 @@ Targets reviewed:
 - `doc/4/claude_plan/sponza_sdf_step5_plan.md`
 - `doc/4/claude_plan/sponza_sdf_step5_impl.md`
 - `doc/4/claude_plan/sponza_sdf_step6_impl.md`
+- `doc/4/claude_plan/sponza_sdf_step7_impl.md`
 
 Output:
 
@@ -31,6 +32,7 @@ Output:
 - `10_sponza_sdf_step5_plan_review.md` - critique of the Step 5 interactive camera plan, including temporal invalidation, OBJ reset behavior, input capture, key binding, and inside-Sponza verification risks.
 - `11_sponza_sdf_step5_impl_review.md` - critique of the Step 5 camera-control implementation note, current source changes, Step 5 logs/screenshots, screenshot comparisons, and a local clean Release build attempt.
 - `12_sponza_sdf_step6_impl_review.md` - critique of the Step 6 OBJ material/parser implementation note, current source changes, Step 6 logs/screenshots, asset comparisons, screenshot diffs, and a fresh clean Release build.
+- `13_sponza_sdf_step7_impl_review.md` - critique of the Step 7 bounds-driven camera/light preset implementation note, current source changes, Step 7 logs/screenshots, screenshot diffs, and a fresh clean Release build.
 
 Scope:
 
@@ -44,10 +46,11 @@ Scope:
 - Step 5 plan claims were checked against current `processInput()`, `main3d.cpp` loop ordering, Step 4 post-review fixes, temporal cascade update ownership, visible UI shortcut labels, and the Step 4 reply that records inside-atrium camera as still open.
 - Step 5 implementation claims were checked against the current `src/demo3d.cpp`/`src/demo3d.h` diff, `tools/app_run_step5*.log`, Step 4 v2 versus Step 5 screenshot hashes/pixel diffs, current process state, and an attempted clean Release build.
 - Step 6 implementation claims were checked against the current `src/obj_loader.h`, `src/demo3d.cpp`, and `src/main3d.cpp` diff, `tools/app_run_step6*.log`, `tools/step6*.png`, Cornell-Original and Sponza-master asset structure, screenshot pixel diffs, and a successful clean Release build.
+- Step 7 implementation claims were checked against the current `src/demo3d.cpp`/`src/demo3d.h` diff, `src/main3d.cpp` reset-test wiring, `tools/app_run_step7*.log`, `tools/step7*.png`, Step 6 versus Step 7 screenshot pixel diffs, and a successful clean Release build.
 
 Verdict:
 
-Do not implement the original plan set as written. The current Step 2/3/4 work is a useful checkpoint: it moved to a conservative EDT band, records real Sponza/Cornell counts, prevents the analytic SDF pass from overwriting successful OBJ bakes, propagates mesh-bake failure back to the render loop, and Step 4's per-OBJ Sponza scale now produces a much denser field. Current source has also accepted and fixed the main Step 4 implementation-review findings around light reset, outside-camera validation, and clean CLI screenshots. Step 5's revised camera controls are largely in place, including the scene-aware reset button fix. Step 6 adds useful OBJ ingestion support for MTL `Kd`/`Ke`, relative `mtllib`, negative vertex indices, fan-triangulated n-gons, and four load targets, and the clean Release build now succeeds. The remaining concerns are mostly correctness/evidence hygiene: the new four-way OBJ keys break scene-aware reset for Cornell-Original and Sponza-master, the Sponza-master density comparison is false for the current workspace, old-Sponza screenshot parity is overstated, and the Step 6 logs still include the existing `sdf_3d.comp` shader compile error.
+Do not implement the original plan set as written. The current Step 2/3/4 work is a useful checkpoint: it moved to a conservative EDT band, records real Sponza/Cornell counts, prevents the analytic SDF pass from overwriting successful OBJ bakes, propagates mesh-bake failure back to the render loop, and Step 4's per-OBJ Sponza scale now produces a much denser field. Current source has also accepted and fixed the main Step 4 implementation-review findings around light reset, outside-camera validation, and clean CLI screenshots. Step 5's revised camera controls are largely in place, including the scene-aware reset button fix. Step 6 adds useful OBJ ingestion support for MTL `Kd`/`Ke`, relative `mtllib`, negative vertex indices, fan-triangulated n-gons, and four load targets, and Step 7 fixes the Step 6 four-way reset bug on successful loads by making the OBJ preset bounds-driven. The clean Release build now succeeds. The remaining concerns are mostly correctness/evidence hygiene: Step 7 stores bounds before mesh-load commit, the Sponza-master density comparison remains false in the Step 6 record, old-Sponza screenshot parity is overstated, the new Step 7 Sponza view changed substantially rather than slightly, and the runtime logs still include the existing `sdf_3d.comp` shader compile error.
 
 Top risks:
 
@@ -86,10 +89,17 @@ Top risks:
 33. Step 5's Cornell headless capture is byte-identical to Step 4 v2, but the Sponza capture differs in hash and in 465,168 pixels, so the no-input/no-behavior-change claim is overstated.
 34. Step 5's clean Release build claim was not reproducible during that review because `RadianceCascades3D.exe` was locked; a later Step 6 clean Release build succeeded with 0 errors.
 35. `tools/app_run_step5_helper.log` predates the final F1 label patch and still prints `Press 'D'`, so it should not be used as final label-patch evidence.
-36. Step 6 stores `cornell_orig` and `sponza_master` in `currentOBJPath`, but `applyOBJViewPreset()` only accepts `cornell` and `sponza`, so `R` and the Reset Camera button do nothing useful for the new variants.
+36. Step 7 fixes Step 6's four-way OBJ reset bug on successful loads by making `applyOBJViewPreset()` bounds-driven and parameterless.
 37. Step 6's Sponza-master density story is wrong for this workspace: the old root `sponza.obj` and `Sponza-master/sponza.obj` logs both show 145,185 vertices and 262,267 faces.
 38. Step 6's old-Sponza regression claim is too strong: `step6_sponza_old_mode0.png` differs from the Step 4 v2 Sponza capture in 450,754 pixels, while the old Cornell capture is pixel-identical to Step 5.
 39. Step 6 runtime logs still contain the existing `res/shaders/sdf_3d.comp` compile failure, so the implementation note should call that out rather than imply clean runtime logs.
 40. Step 6 broadens OBJ face parsing but still lacks resolved-index bounds validation before voxelization dereferences face vertices.
-41. Step 6's material-miss logging reports legacy hardcoded material fallbacks as "unknown material -> default color", which makes old Cornell logs look more broken than they are.
-42. Step 6 updates the CLI parser for `cornell-orig` and `sponza-master`, but the nearby usage/comment text still lists only `cornell|sponza`.
+41. Step 6's material-miss logging issue is fixed in current source: old Cornell logs now distinguish legacy fallback colors from true default-gray misses.
+42. Step 6's stale CLI comment is fixed in current source: `main3d.cpp` now documents `cornell|cornell-orig|sponza|sponza-master`.
+43. Step 7 writes `currentObjBmin/currentObjBmax` before `loadOBJMesh()` commits the staged voxel data, so a failed new voxelization can leave the old mesh active with failed-load reset bounds.
+44. Step 7's auto-fit cameras are all outside the SDF volume in preserved logs, so alpha collision validation is skipped and the note should describe them as ray-box-entry cameras rather than inside-volume validated cameras.
+45. Step 7's Sponza visual claim is too soft: Step 6 versus Step 7 Sponza captures differ in 618,685 to 715,776 pixels, and the camera moved from `(3.5,0.5,0)` to `(4.73561,0.0794485,0)`.
+46. Step 7's generic light placement ignores emissive/material geometry; for Cornell-Original it places the point light near `y=0.588` rather than near the ceiling light emitter.
+47. Step 7's `--test-reset-helper` logs verify the shared reset helper, not literal keyboard `R` or ImGui button input; source inspection shows those entry points share the helper, but runtime wording should be narrower.
+48. Step 7 runtime logs still contain the existing `res/shaders/sdf_3d.comp` compile failure.
+49. Step 7's "no new warnings" claim is not demonstrated by the preserved evidence; the fresh Release build succeeds with 0 errors but still emits project warnings.

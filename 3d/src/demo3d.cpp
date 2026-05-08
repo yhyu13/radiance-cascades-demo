@@ -4466,46 +4466,81 @@ void Demo3D::resetCameraToScenePreset() {
     // OBJ scenes go through the per-OBJ preset (which also restores the
     // matching light); analytic scenes use the legacy resetCamera() default.
     //
-    // codex 12 F1: currentOBJPath is now 4-way (cornell, cornell_orig,
-    // sponza, sponza_master) but applyOBJViewPreset() only accepts the
-    // 2-way kind. Translate here so Cornell-Original / Sponza-master
-    // hit the right preset instead of falling through to the unknown-key
-    // warning path.
+    // Step 7: applyOBJViewPreset is now bounds-driven and parameterless;
+    // the codex 12 F1 4-way -> 2-way translation is no longer needed.
     if (useOBJMesh && !currentOBJPath.empty()) {
-        const bool isSponza = (currentOBJPath == "sponza")
-                           || (currentOBJPath == "sponza_master");
-        applyOBJViewPreset(isSponza ? "sponza" : "cornell");
+        applyOBJViewPreset();
     } else {
         resetCamera();
     }
 }
 
-void Demo3D::applyOBJViewPreset(const std::string& objKind) {
-    // codex 10 F3: extracted from Step 4 4b inline preset block. Called by
-    // loadOBJMesh() after commit AND by R-key reset (no file I/O).
-    glm::vec3 camPos(0.0f);
-    glm::vec3 camTarget(0.0f);
-    glm::vec3 lightPos(0.0f, 0.8f, 0.0f);
-    float fovy = 60.0f;
-    bool found = false;
-
-    if (objKind == "sponza") {
-        camPos    = glm::vec3(3.5f, 0.5f, 0.0f);
-        camTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-        fovy      = 60.0f;
-        lightPos  = glm::vec3(0.0f, 0.5f, 0.0f);
-        found = true;
-    } else if (objKind == "cornell") {
-        camPos    = glm::vec3(0.0f, 0.0f, 4.0f);
-        camTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-        fovy      = 60.0f;
-        lightPos  = glm::vec3(0.0f, 0.8f, 0.0f);
-        found = true;
-    }
-    if (!found) {
-        std::cerr << "[WARN] applyOBJViewPreset: unknown objKind '" << objKind << "'\n";
+void Demo3D::applyOBJViewPreset() {
+    // Step 7 (auto-fit): bounds-driven camera + light placement. Replaces
+    // the Step 4-6 hardcoded per-objKind branches so any new OBJ "just works"
+    // without editing this function.
+    //
+    // Heuristic: position the camera one diagonal away from the bounds
+    // center, looking back at center. Pick lookDir = +Z by default; switch
+    // to +X when the X-extent dominates Z (Sponza-style halls keep their
+    // down-the-axis framing). Light sits 30% of the height above center so
+    // walls/floors are illuminated regardless of scene size.
+    const glm::vec3 bmin = currentObjBmin;
+    const glm::vec3 bmax = currentObjBmax;
+    const glm::vec3 size = bmax - bmin;
+    const glm::vec3 center = (bmin + bmax) * 0.5f;
+    const float diag = glm::length(size);
+    if (diag <= 1e-6f) {
+        std::cerr << "[WARN] applyOBJViewPreset: degenerate bounds, using fallback\n";
+        camera.position = glm::vec3(0.0f, 0.0f, 4.0f);
+        camera.target   = glm::vec3(0.0f);
+        camera.up       = glm::vec3(0.0f, 1.0f, 0.0f);
+        camera.fovy     = 60.0f;
+        lightPosition   = glm::vec3(0.0f, 0.8f, 0.0f);
+        syncCameraYawPitchFromTarget();
         return;
     }
+
+    glm::vec3 lookDir(0.0f, 0.0f, 1.0f);
+    if (size.x > size.z * 1.3f) lookDir = glm::vec3(1.0f, 0.0f, 0.0f);
+
+    // codex 13 F3: FOV-aware backoff. 1.0x diag (Step 7 v1) put Sponza too
+    // far -- the 3.8x1.59x2.34 mesh filled only ~30% of vertical screen.
+    // Solve for the distance that just-fits the visible perpendicular
+    // extent within fovy and the screen aspect, then add a small margin.
+    const float fovy = 60.0f;
+    const int   sw   = GetScreenWidth();
+    const int   sh   = GetScreenHeight();
+    const float aspect = (sh > 0) ? static_cast<float>(sw) / static_cast<float>(sh)
+                                  : (16.0f / 9.0f);
+    const float halfFovyRad = glm::radians(fovy) * 0.5f;
+    const float halfFovxRad = std::atan(std::tan(halfFovyRad) * aspect);
+
+    // Visible extent perpendicular to lookDir: subtract the lookDir-aligned
+    // component from `size`. For lookDir=+Z this leaves XY; for lookDir=+X
+    // this leaves YZ. One axis ends up zero in either branch.
+    glm::vec3 perp = size - lookDir * glm::dot(size, lookDir);
+    const float visH = std::abs(perp.y);                                       // vertical
+    const float visW = std::sqrt(perp.x * perp.x + perp.z * perp.z);           // horizontal
+
+    const float distFromY = (visH * 0.5f) / std::tan(halfFovyRad);
+    const float distFromX = (visW * 0.5f) / std::tan(halfFovxRad);
+    float fitDist = std::max(distFromY, distFromX) * 1.4f;                     // 40% headroom
+
+    // codex 13 F3 follow-up: clamp to "at least outside the bounding box
+    // along lookDir + 30% diag margin". Without this, FOV-fit can park
+    // the camera right against (or inside) a wall when the bounding box
+    // fills the SDF volume -- e.g. Sponza's bmax.x=1.9 with FOV-fit
+    // distance 1.93 lands almost exactly on the wall, producing a
+    // solid-gray render. The clamp pushes Sponza to ~3.3 (matching the
+    // old hand-tuned 3.5) while leaving Cornell at the tight FOV value.
+    const float boxHalfAlongLook = std::abs(glm::dot(size, lookDir)) * 0.5f;
+    const float minBackoff       = boxHalfAlongLook + 0.3f * diag;
+    fitDist = std::max(fitDist, minBackoff);
+
+    glm::vec3 camPos    = center + lookDir * fitDist + glm::vec3(0.0f, size.y * 0.05f, 0.0f);
+    glm::vec3 camTarget = center;
+    glm::vec3 lightPos  = center + glm::vec3(0.0f, size.y * 0.3f, 0.0f);
 
     // F3 alpha-sample validation against meshVoxelData (only meaningful for
     // INSIDE-volume cameras; codex 09 F2 fix preserved).
@@ -4542,8 +4577,13 @@ void Demo3D::applyOBJViewPreset(const std::string& objKind) {
     camera.fovy     = fovy;
     syncCameraYawPitchFromTarget();
     lightPosition   = lightPos;
-    std::cout << "[Demo3D] Applied " << objKind << " view preset: fovy="
-              << camera.fovy << "; light=(" << lightPosition.x << ","
+    std::cout << "[Demo3D] Applied auto-fit view preset (" << currentOBJPath
+              << "): bounds=(" << bmin.x << "," << bmin.y << "," << bmin.z
+              << ")..(" << bmax.x << "," << bmax.y << "," << bmax.z
+              << ") diag=" << diag
+              << " camPos=(" << camPos.x << "," << camPos.y << "," << camPos.z
+              << ") fovy=" << camera.fovy
+              << " light=(" << lightPosition.x << ","
               << lightPosition.y << "," << lightPosition.z << ")\n";
 }
 
@@ -4630,6 +4670,17 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     std::cout << "[Demo3D] OBJ normalized to halfExtent=" << halfExtent
               << " (volume halfSize=" << (volumeSize.x * 0.5f) << ", objKind=" << objKind << ")\n";
 
+    // Step 7 (auto-fit): capture post-normalize bounds for the auto-fit
+    // preset. Held local until the commit block below (codex 13 F1: must
+    // not be assigned to currentObjBmin/Bmax before voxelization succeeds,
+    // otherwise a failed-load case leaves the previous mesh visible but
+    // R-key reset would use the failed mesh's bounds).
+    glm::vec3 nbmin, nbmax;
+    objLoader.getBounds(nbmin, nbmax);
+    std::cout << "[Demo3D] Post-normalize bounds: ("
+              << nbmin.x << "," << nbmin.y << "," << nbmin.z << ")..("
+              << nbmax.x << "," << nbmax.y << "," << nbmax.z << ")\n";
+
     // Step 3 (3a, F5): stage voxelization in a local vector. Previous mesh state
     // (meshVoxelData, useOBJMesh, etc.) is untouched until commit at the end --
     // so a failed voxelization preserves whatever was on screen.
@@ -4667,13 +4718,17 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     temporalRebuildCount = 0;
     sceneDirty           = true;
     currentOBJPath       = objKey;  // Step 6: 4-way key
+    currentObjBmin       = nbmin;   // codex 13 F1: assign bounds atomically with the rest
+    currentObjBmax       = nbmax;
 
     std::cout << "[Demo3D] OBJ committed (" << currentOBJPath
               << "); SDF will be baked next frame\n";
 
     // Step 5 (5-helper, codex 10 F3): per-OBJ camera + light preset extracted
     // into a helper so R-key reset can apply it without reloading the OBJ.
-    applyOBJViewPreset(objKind);
+    // Step 7: now bounds-driven and parameterless — uses currentObjBmin/Bmax
+    // stored above.
+    applyOBJViewPreset();
 
     return true;
 }
