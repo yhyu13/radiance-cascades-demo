@@ -1,6 +1,6 @@
 # Codex Critic Summary
 
-Review timestamp: 2026-05-08T13:18:47+08:00
+Review timestamp: 2026-05-08T15:28:33+08:00
 
 Targets reviewed:
 
@@ -15,6 +15,7 @@ Targets reviewed:
 - `doc/4/claude_plan/sponza_sdf_step4_impl.md`
 - `doc/4/claude_plan/sponza_sdf_step5_plan.md`
 - `doc/4/claude_plan/sponza_sdf_step5_impl.md`
+- `doc/4/claude_plan/sponza_sdf_step6_impl.md`
 
 Output:
 
@@ -29,6 +30,7 @@ Output:
 - `09_sponza_sdf_step4_impl_review.md` - critique of the Step 4 implementation note, current source changes, Step 4 logs/screenshots, and a fresh local MSBuild run.
 - `10_sponza_sdf_step5_plan_review.md` - critique of the Step 5 interactive camera plan, including temporal invalidation, OBJ reset behavior, input capture, key binding, and inside-Sponza verification risks.
 - `11_sponza_sdf_step5_impl_review.md` - critique of the Step 5 camera-control implementation note, current source changes, Step 5 logs/screenshots, screenshot comparisons, and a local clean Release build attempt.
+- `12_sponza_sdf_step6_impl_review.md` - critique of the Step 6 OBJ material/parser implementation note, current source changes, Step 6 logs/screenshots, asset comparisons, screenshot diffs, and a fresh clean Release build.
 
 Scope:
 
@@ -41,10 +43,11 @@ Scope:
 - Step 4 implementation claims were checked against the current source diff, `tools/app_run_step4*.log`, `tools/step4*.png`, pixel comparisons, and a fresh Debug MSBuild of `build/RadianceCascades3D.vcxproj`.
 - Step 5 plan claims were checked against current `processInput()`, `main3d.cpp` loop ordering, Step 4 post-review fixes, temporal cascade update ownership, visible UI shortcut labels, and the Step 4 reply that records inside-atrium camera as still open.
 - Step 5 implementation claims were checked against the current `src/demo3d.cpp`/`src/demo3d.h` diff, `tools/app_run_step5*.log`, Step 4 v2 versus Step 5 screenshot hashes/pixel diffs, current process state, and an attempted clean Release build.
+- Step 6 implementation claims were checked against the current `src/obj_loader.h`, `src/demo3d.cpp`, and `src/main3d.cpp` diff, `tools/app_run_step6*.log`, `tools/step6*.png`, Cornell-Original and Sponza-master asset structure, screenshot pixel diffs, and a successful clean Release build.
 
 Verdict:
 
-Do not implement the original plan set as written. The current Step 2/3/4 work is a useful checkpoint: it moved to a conservative EDT band, records real Sponza/Cornell counts, prevents the analytic SDF pass from overwriting successful OBJ bakes, propagates mesh-bake failure back to the render loop, and Step 4's per-OBJ Sponza scale now produces a much denser field. Current source has also accepted and fixed the main Step 4 implementation-review findings around light reset, outside-camera validation, and clean CLI screenshots. Step 5's implementation follows the revised camera-control architecture on the main code paths: no camera-only cascade reseed, no OBJ reload for `R`, yaw/pitch mouse look, split input capture, and mostly-clean labels. The implementation still needs a small source fix for the ImGui Reset Camera button, and the implementation note overclaims verification: the preserved interactive log does not show the advertised key actions, Sponza's Step 5 headless capture is not byte-identical to Step 4 v2, and the clean Release build is currently blocked by a running executable lock.
+Do not implement the original plan set as written. The current Step 2/3/4 work is a useful checkpoint: it moved to a conservative EDT band, records real Sponza/Cornell counts, prevents the analytic SDF pass from overwriting successful OBJ bakes, propagates mesh-bake failure back to the render loop, and Step 4's per-OBJ Sponza scale now produces a much denser field. Current source has also accepted and fixed the main Step 4 implementation-review findings around light reset, outside-camera validation, and clean CLI screenshots. Step 5's revised camera controls are largely in place, including the scene-aware reset button fix. Step 6 adds useful OBJ ingestion support for MTL `Kd`/`Ke`, relative `mtllib`, negative vertex indices, fan-triangulated n-gons, and four load targets, and the clean Release build now succeeds. The remaining concerns are mostly correctness/evidence hygiene: the new four-way OBJ keys break scene-aware reset for Cornell-Original and Sponza-master, the Sponza-master density comparison is false for the current workspace, old-Sponza screenshot parity is overstated, and the Step 6 logs still include the existing `sdf_3d.comp` shader compile error.
 
 Top risks:
 
@@ -78,8 +81,15 @@ Top risks:
 28. Step 5's proposed `R` reset should not call `loadOBJMesh()`; it should apply existing camera/light presets without re-parsing, re-voxelizing, and re-baking the mesh.
 29. Step 5 needs split keyboard/mouse ImGui capture handling and robust cursor cleanup, otherwise large UI panels and RMB release can make navigation brittle.
 30. Step 5's key rebinding must update visible UI labels; `D`, `F1`, and `R` currently have stale or conflicting user-facing meanings.
-31. Step 5's source fixes the `R` key reset path, but the ImGui `Reset Camera` button still calls `resetCamera()` directly and bypasses OBJ scene presets.
+31. The Step 5 review's ImGui `Reset Camera` bypass was fixed in current source, but Step 6 reintroduced a related reset regression for the new four-way OBJ variant keys.
 32. Step 5's preserved interactive log does not prove F1 toggling, R reset, movement, wheel/FOV, ImGui-hover behavior, or cursor cleanup despite the implementation note claiming those user-driven checks.
 33. Step 5's Cornell headless capture is byte-identical to Step 4 v2, but the Sponza capture differs in hash and in 465,168 pixels, so the no-input/no-behavior-change claim is overstated.
-34. Step 5's clean Release build claim is not currently reproducible because `RadianceCascades3D.exe` is locked by a running process and the local build attempt fails at link with `LNK1104`.
+34. Step 5's clean Release build claim was not reproducible during that review because `RadianceCascades3D.exe` was locked; a later Step 6 clean Release build succeeded with 0 errors.
 35. `tools/app_run_step5_helper.log` predates the final F1 label patch and still prints `Press 'D'`, so it should not be used as final label-patch evidence.
+36. Step 6 stores `cornell_orig` and `sponza_master` in `currentOBJPath`, but `applyOBJViewPreset()` only accepts `cornell` and `sponza`, so `R` and the Reset Camera button do nothing useful for the new variants.
+37. Step 6's Sponza-master density story is wrong for this workspace: the old root `sponza.obj` and `Sponza-master/sponza.obj` logs both show 145,185 vertices and 262,267 faces.
+38. Step 6's old-Sponza regression claim is too strong: `step6_sponza_old_mode0.png` differs from the Step 4 v2 Sponza capture in 450,754 pixels, while the old Cornell capture is pixel-identical to Step 5.
+39. Step 6 runtime logs still contain the existing `res/shaders/sdf_3d.comp` compile failure, so the implementation note should call that out rather than imply clean runtime logs.
+40. Step 6 broadens OBJ face parsing but still lacks resolved-index bounds validation before voxelization dereferences face vertices.
+41. Step 6's material-miss logging reports legacy hardcoded material fallbacks as "unknown material -> default color", which makes old Cornell logs look more broken than they are.
+42. Step 6 updates the CLI parser for `cornell-orig` and `sponza-master`, but the nearby usage/comment text still lists only `cornell|sponza`.

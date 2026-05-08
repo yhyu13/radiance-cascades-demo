@@ -3834,6 +3834,16 @@ void Demo3D::renderTutorialPanel() {
         }
     }
 
+    // Step 6: Cornell-Original variant -- ships its own .mtl with distinct
+    // red/green/white wall colors and an emissive `light` material.
+    if (ImGui::Button(useOBJMesh && currentOBJPath == "cornell_orig" ? "[ACTIVE] Cornell-Original (OBJ+MTL)" : "Cornell-Original (OBJ+MTL)")) {
+        if (loadOBJMesh("res/scene/CornellBox-Original/CornellBox-Original.obj")) {
+            std::cout << "[Demo3D] Loaded Cornell-Original (OBJ+MTL)!" << std::endl;
+        } else {
+            std::cerr << "[ERROR] Failed to load Cornell-Original OBJ!" << std::endl;
+        }
+    }
+
     if (ImGui::Button(useOBJMesh && currentOBJPath == "sponza" ? "[ACTIVE] Sponza (OBJ)" : "Sponza (OBJ)")) {
         if (loadOBJMesh("res/scene/sponza.obj")) {
             std::cout << "[Demo3D] Loaded Sponza OBJ mesh!" << std::endl;
@@ -3842,11 +3852,25 @@ void Demo3D::renderTutorialPanel() {
         }
     }
 
+    // Step 6: Sponza-master variant -- denser mesh (262K faces), .mtl present
+    // but textures not loaded -> uniform mid-gray (Sponza's Kd is 0.4704).
+    if (ImGui::Button(useOBJMesh && currentOBJPath == "sponza_master" ? "[ACTIVE] Sponza-master (OBJ+MTL)" : "Sponza-master (OBJ+MTL, slow)")) {
+        if (loadOBJMesh("res/scene/Sponza-master/sponza.obj")) {
+            std::cout << "[Demo3D] Loaded Sponza-master (OBJ+MTL)!" << std::endl;
+        } else {
+            std::cerr << "[ERROR] Failed to load Sponza-master OBJ!" << std::endl;
+        }
+    }
+
     ImGui::NewLine();
     {
         const char* names[] = { "Empty Room", "Cornell Box", "Simplified Sponza" };
         if (useOBJMesh) {
-            const char* objName = (currentOBJPath == "sponza") ? "Sponza (OBJ)" : "Cornell Box (OBJ)";
+            // Step 6: 4-way label so the new variants show up correctly.
+            const char* objName = "Cornell Box (OBJ)";
+            if      (currentOBJPath == "sponza")        objName = "Sponza (OBJ)";
+            else if (currentOBJPath == "sponza_master") objName = "Sponza-master (OBJ+MTL)";
+            else if (currentOBJPath == "cornell_orig")  objName = "Cornell-Original (OBJ+MTL)";
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Active: %s", objName);
         }
         else if (currentScene >= 0 && currentScene < 3)
@@ -4441,8 +4465,16 @@ void Demo3D::resetCameraToScenePreset() {
     // the R key (in processInput) and the ImGui "Reset Camera" button.
     // OBJ scenes go through the per-OBJ preset (which also restores the
     // matching light); analytic scenes use the legacy resetCamera() default.
+    //
+    // codex 12 F1: currentOBJPath is now 4-way (cornell, cornell_orig,
+    // sponza, sponza_master) but applyOBJViewPreset() only accepts the
+    // 2-way kind. Translate here so Cornell-Original / Sponza-master
+    // hit the right preset instead of falling through to the unknown-key
+    // warning path.
     if (useOBJMesh && !currentOBJPath.empty()) {
-        applyOBJViewPreset(currentOBJPath);
+        const bool isSponza = (currentOBJPath == "sponza")
+                           || (currentOBJPath == "sponza_master");
+        applyOBJViewPreset(isSponza ? "sponza" : "cornell");
     } else {
         resetCamera();
     }
@@ -4579,9 +4611,17 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     //   Cornell: 1.0 (legacy [-1,1] -- unchanged baseline for clean regression).
     //   Sponza : 1.9 (fills the [-2,2] SDF volume with 5% boundary margin -> ~3.6x
     //                 surface-area increase, expected ~136K seeds vs Step 3's 38K).
-    //   objKind is computed early from filename so the commit block at the bottom
-    //   stays atomic (currentOBJPath is still assigned there).
-    const std::string objKind = (filename.find("sponza") != std::string::npos) ? "sponza" : "cornell";
+    //   Step 6: objKey is 4-way (cornell|cornell_orig|sponza|sponza_master) so
+    //   the ImGui ACTIVE indicator distinguishes variants; objKind stays 2-way
+    //   because preset/halfExtent only depend on Cornell-vs-Sponza.
+    const bool isSponza = (filename.find("sponza") != std::string::npos)
+                       || (filename.find("Sponza") != std::string::npos);
+    const std::string objKind = isSponza ? "sponza" : "cornell";
+    std::string objKey;
+    if (filename.find("Sponza-master") != std::string::npos)            objKey = "sponza_master";
+    else if (filename.find("CornellBox-Original") != std::string::npos) objKey = "cornell_orig";
+    else if (isSponza)                                                  objKey = "sponza";
+    else                                                                objKey = "cornell";
     float halfExtent = 1.0f;
     if (objKind == "sponza") {
         halfExtent = 1.9f;
@@ -4626,7 +4666,7 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     renderFrameIndex     = 0;
     temporalRebuildCount = 0;
     sceneDirty           = true;
-    currentOBJPath       = (filename.find("sponza") != std::string::npos) ? "sponza" : "cornell";
+    currentOBJPath       = objKey;  // Step 6: 4-way key
 
     std::cout << "[Demo3D] OBJ committed (" << currentOBJPath
               << "); SDF will be baked next frame\n";

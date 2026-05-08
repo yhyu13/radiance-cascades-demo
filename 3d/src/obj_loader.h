@@ -15,6 +15,7 @@
 #include <sstream>
 #include <iostream>
 #include <map>
+#include <set>
 
 struct OBJVertex {
     glm::vec3 position;
@@ -30,9 +31,10 @@ struct OBJFace {
 
 struct OBJMaterial {
     std::string name;
-    glm::vec3 diffuse = glm::vec3(0.8f);  // Default gray
-    glm::vec3 ambient = glm::vec3(0.1f);
+    glm::vec3 diffuse  = glm::vec3(0.8f);  // Default gray (Kd)
+    glm::vec3 ambient  = glm::vec3(0.1f);
     glm::vec3 specular = glm::vec3(0.5f);
+    glm::vec3 emissive = glm::vec3(0.0f);  // Step 6: Ke (boosted into albedo)
     float shininess = 32.0f;
 };
 
@@ -58,6 +60,17 @@ public:
         texcoords.clear();
         faces.clear();
         faceMaterials.clear();
+        materials.clear();
+        unknownMaterialsLogged.clear();
+        badIndexWarnings = 0;   // codex 12 F5
+        badIndexDropped  = 0;
+
+        // Step 6: directory of the .obj file, used to resolve mtllib paths.
+        std::string objDir;
+        {
+            size_t slash = filename.find_last_of("/\\");
+            if (slash != std::string::npos) objDir = filename.substr(0, slash + 1);
+        }
 
         std::cout << "[OBJLoader] Loading: " << filename << std::endl;
         
@@ -88,37 +101,64 @@ public:
                 texcoords.push_back(texcoord);
             }
             else if (prefix == "f") {
-                // Face (triangle)
-                OBJFace face;
-                std::string v1, v2, v3;
-                iss >> v1 >> v2 >> v3;
-                
-                parseVertexIndex(v1, face.v[0], face.t[0], face.n[0]);
-                parseVertexIndex(v2, face.v[1], face.t[1], face.n[1]);
-                parseVertexIndex(v3, face.v[2], face.t[2], face.n[2]);
-                
-                // Convert to 0-based indexing
-                face.v[0]--; face.v[1]--; face.v[2]--;
-                if (face.n[0] != -1) face.n[0]--;
-                if (face.n[1] != -1) face.n[1]--;
-                if (face.n[2] != -1) face.n[2]--;
-                if (face.t[0] != -1) face.t[0]--;
-                if (face.t[1] != -1) face.t[1]--;
-                if (face.t[2] != -1) face.t[2]--;
-                
-                faces.push_back(face);
-                faceMaterials.push_back(currentMaterial);
+                // Step 6: read ALL vertex tokens (face may be triangle, quad, or n-gon),
+                // resolve negative indices against current vertex count, then
+                // fan-triangulate. Cornell-Original uses quads with negative indices
+                // (e.g. `f -4 -3 -2 -1`); the original 3-token + decrement-only
+                // parser silently dropped the 4th vertex AND produced negative
+                // array indices.
+                std::vector<int> fv, ft, fn;
+                std::string tok;
+                while (iss >> tok) {
+                    int v = 0, t = -1, n = -1;
+                    parseVertexIndex(tok, v, t, n);
+                    // OBJ allows negative indices = relative to current count.
+                    if (v < 0) v = static_cast<int>(vertices.size()) + v + 1;
+                    if (t < 0 && t != -1) t = static_cast<int>(texcoords.size()) + t + 1;
+                    if (n < 0 && n != -1) n = static_cast<int>(normals.size()) + n + 1;
+                    // Convert to 0-based.
+                    fv.push_back(v - 1);
+                    ft.push_back(t == -1 ? -1 : t - 1);
+                    fn.push_back(n == -1 ? -1 : n - 1);
+                }
+                // Fan-triangulate (v0, vi, vi+1). Step 6 (codex 12 F5):
+                // bounds-check resolved indices so a malformed OBJ can't drive
+                // voxelize() into vertices[<negative>] or vertices[>=size()].
+                // Bad triangles are dropped with a bounded warning count.
+                const int vcount = static_cast<int>(vertices.size());
+                for (size_t i = 1; i + 1 < fv.size(); ++i) {
+                    int a = fv[0], b = fv[i], c = fv[i+1];
+                    if (a < 0 || a >= vcount || b < 0 || b >= vcount || c < 0 || c >= vcount) {
+                        if (badIndexWarnings < 8) {
+                            std::cerr << "[OBJLoader] WARN: face vertex index out of range "
+                                      << "(a=" << a << " b=" << b << " c=" << c
+                                      << " vcount=" << vcount << "), dropping triangle\n";
+                            ++badIndexWarnings;
+                            if (badIndexWarnings == 8)
+                                std::cerr << "[OBJLoader] (further out-of-range warnings suppressed)\n";
+                        }
+                        ++badIndexDropped;
+                        continue;
+                    }
+                    OBJFace face;
+                    face.v[0] = a; face.t[0] = ft[0];   face.n[0] = fn[0];
+                    face.v[1] = b; face.t[1] = ft[i];   face.n[1] = fn[i];
+                    face.v[2] = c; face.t[2] = ft[i+1]; face.n[2] = fn[i+1];
+                    faces.push_back(face);
+                    faceMaterials.push_back(currentMaterial);
+                }
             }
             else if (prefix == "usemtl") {
                 // Material reference
                 iss >> currentMaterial;
             }
             else if (prefix == "mtllib") {
-                // Material library (not implemented yet)
+                // Step 6: real .mtl loader -- resolved relative to the .obj's directory.
                 std::string mtlFile;
                 iss >> mtlFile;
-                std::cout << "[OBJLoader] Material library referenced: " << mtlFile 
-                          << " (not loaded)" << std::endl;
+                if (!mtlFile.empty()) {
+                    loadMTL(objDir + mtlFile);
+                }
             }
         }
         
@@ -180,7 +220,48 @@ public:
     inline void normalize() { normalize(1.0f); }
     
     /**
-     * @brief Get color for a material name (hardcoded Cornell Box materials)
+     * @brief Step 6: parse a .mtl file. Reads only `newmtl`, `Kd`, `Ke`.
+     *        All other fields (`Ns`, `Ka`, `Ks`, `illum`, `Ni`, `d`, `map_*`) ignored.
+     *        On failure, leaves `materials` empty so the default-gray fallback in
+     *        voxelize() preserves prior behavior.
+     */
+    bool loadMTL(const std::string& mtlPath) {
+        std::ifstream f(mtlPath);
+        if (!f.is_open()) {
+            std::cout << "[OBJLoader] Material library not found: " << mtlPath
+                      << " (will use default gray)" << std::endl;
+            return false;
+        }
+        std::cout << "[OBJLoader] Loading materials: " << mtlPath << std::endl;
+
+        OBJMaterial cur;
+        bool haveCur = false;
+        std::string line;
+        while (std::getline(f, line)) {
+            std::istringstream iss(line);
+            std::string p;
+            iss >> p;
+            if (p == "newmtl") {
+                if (haveCur) materials[cur.name] = cur;
+                cur = OBJMaterial();
+                iss >> cur.name;
+                haveCur = true;
+            } else if (p == "Kd" && haveCur) {
+                iss >> cur.diffuse.x >> cur.diffuse.y >> cur.diffuse.z;
+            } else if (p == "Ke" && haveCur) {
+                iss >> cur.emissive.x >> cur.emissive.y >> cur.emissive.z;
+            }
+        }
+        if (haveCur) materials[cur.name] = cur;
+
+        std::cout << "[OBJLoader] Loaded " << materials.size() << " materials" << std::endl;
+        return true;
+    }
+
+    /**
+     * @brief Get color for a material name (hardcoded Cornell Box materials).
+     *        Step 6: kept as legacy fallback only -- voxelize() now consults
+     *        the parsed `materials` map first.
      */
     static glm::vec3 getMaterialColor(const std::string& materialName) {
         if (materialName == "BloodyRed" || materialName == "Red") {
@@ -228,15 +309,52 @@ public:
             const auto& v1 = vertices[face.v[1]].position;
             const auto& v2 = vertices[face.v[2]].position;
             
-            // Get material color for this face
-            std::string matName = "";
+            // Step 6: per-face material lookup -- prefer parsed .mtl, fall back to
+            // legacy hardcoded names, finally to default gray.
+            std::string matName;
             if (faceMaterials.size() > &face - &faces[0]) {
                 matName = faceMaterials[&face - &faces[0]];
             }
-            glm::vec3 color = getMaterialColor(matName);
-            
+            glm::vec3 kd, ke;
+            auto mit = materials.find(matName);
+            if (mit != materials.end()) {
+                kd = mit->second.diffuse;
+                ke = mit->second.emissive;
+            } else {
+                // codex 12 F6: distinguish (a) legacy hardcoded match -- a real
+                // recognized name, color is correct -- from (b) true default-gray
+                // miss. Both used to log "Unknown material ..." which made the
+                // legacy fallback path look like a failure.
+                kd = getMaterialColor(matName);  // legacy hardcoded names
+                ke = glm::vec3(0.0f);
+                const glm::vec3 defaultGray(0.8f, 0.8f, 0.8f);
+                const bool isLegacyHit = (kd != defaultGray);
+                if (!matName.empty() && unknownMaterialsLogged.insert(matName).second) {
+                    if (isLegacyHit) {
+                        std::cout << "[OBJLoader] Material '" << matName
+                                  << "' -> legacy fallback color "
+                                  << kd.x << "," << kd.y << "," << kd.z
+                                  << " (no .mtl entry)" << std::endl;
+                    } else {
+                        std::cout << "[OBJLoader] Material '" << matName
+                                  << "' -> default gray (no .mtl entry, no legacy match)"
+                                  << std::endl;
+                    }
+                }
+            }
+
+            // Step 6: bake Ke into the albedo voxel ("Kd + Ke as albedo boost").
+            // For Cornell's `light` (Ke 17 12 4): max=17 -> ke/17 ~ (1, 0.7, 0.24);
+            // saturate(Kd + ke/maxKe) makes that face glow warm-white. For Ke=0
+            // this collapses to the existing Kd-only path (no change to walls/floors).
+            glm::vec3 color = kd;
+            float maxKe = std::max({ ke.x, ke.y, ke.z, 1.0f });
+            if (maxKe > 1.0f) {
+                color = glm::clamp(kd + ke / maxKe, glm::vec3(0.0f), glm::vec3(1.0f));
+            }
+
             // Rasterize triangle into voxels
-            voxelizeTriangle(v0, v1, v2, color, resolution, grid, 
+            voxelizeTriangle(v0, v1, v2, color, resolution, grid,
                            gridOrigin, gridSize, voxelSize, voxelsFilled);
         }
         
@@ -249,6 +367,10 @@ private:
     std::vector<glm::vec2> texcoords;
     std::vector<OBJFace> faces;
     std::vector<std::string> faceMaterials;
+    std::map<std::string, OBJMaterial> materials;       // Step 6: parsed from .mtl
+    mutable std::set<std::string> unknownMaterialsLogged;  // Step 6: dedupe warnings
+    int badIndexWarnings = 0;   // codex 12 F5: bounded out-of-range face counter
+    int badIndexDropped  = 0;
     
     /**
      * @brief Parse vertex index string (v/vt/vn or v//vn format)
