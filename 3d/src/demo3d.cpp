@@ -503,6 +503,14 @@ void Demo3D::processInput() {
             right = glm::vec3(1.0f, 0.0f, 0.0f);   // pitch clamp guarantees this branch is unreachable
         }
 
+        // Step 7+ pan: camera-local up = right x forward (perpendicular to view
+        // plane, unlike worldUp which doesn't account for pitch). Used by Z/X
+        // for screen-space up/down panning.
+        glm::vec3 camUp = glm::cross(right, forward);
+        float camUpLenSq = glm::dot(camUp, camUp);
+        if (camUpLenSq > 1e-6f) camUp /= std::sqrt(camUpLenSq);
+        else                    camUp = worldUp;
+
         float dt = GetFrameTime();
         float speed = camera.moveSpeed * dt;
         if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) speed *= 4.0f;
@@ -514,6 +522,12 @@ void Demo3D::processInput() {
         if (IsKeyDown(KEY_D)) delta += right;
         if (IsKeyDown(KEY_E)) delta += worldUp;
         if (IsKeyDown(KEY_Q)) delta -= worldUp;
+        // Step 7+ pan up/down along camera-local up vector. Distinct from Q/E
+        // (world-axis Y) -- when the camera is pitched, Z/X stay perpendicular
+        // to the view direction so panning never drifts the target along the
+        // forward axis.
+        if (IsKeyDown(KEY_Z)) delta += camUp;
+        if (IsKeyDown(KEY_X)) delta -= camUp;
         if (glm::length(delta) > 1e-6f) {
             delta = glm::normalize(delta) * speed;
             camera.position += delta;
@@ -3796,7 +3810,8 @@ void Demo3D::renderTutorialPanel() {
     // Step 5: full camera-control bullet list (codex 10 F5)
     ImGui::Text("Camera (when not in UI):");
     ImGui::BulletText("WASD: strafe");
-    ImGui::BulletText("Q/E: down/up");
+    ImGui::BulletText("Q/E: down/up (world Y axis)");
+    ImGui::BulletText("Z/X: pan up/down (camera-local up)");
     ImGui::BulletText("Shift: sprint x4");
     ImGui::BulletText("Right-click drag: look");
     ImGui::BulletText("Wheel: zoom; Ctrl+Wheel: FOV");

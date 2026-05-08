@@ -182,7 +182,8 @@
       "Bash(mv step7v3_*.png tools/ 2>&1 && ls tools/step7v3_*.png)",
       "PowerShell($exe = \".\\\\build\\\\RadianceCascades3D.exe\"; foreach \\($name in @\\(\"cornell-orig\",\"sponza-master\"\\)\\) { $log = \"tools/app_run_step7v3_F1_${name}.log\".Replace\\(\"-\",\"_\"\\); $out = & $exe --load-obj=$name --test-reset-helper --exit-frames=20 2>&1; $out | Out-File -FilePath $log -Encoding utf8; \"=== $name ===\"; $out | Select-String \"testResetCameraHelper|Applied auto-fit\" | Select-Object -First 5 })",
       "Bash(stat -c '%y' .wolf/anatomy.md 2>/dev/null || ls -la .wolf/anatomy.md)",
-      "Read(//d/GitRepo-My/radiance-cascades-demo/3d/**)"
+      "Read(//d/GitRepo-My/radiance-cascades-demo/3d/**)",
+      "PowerShell(Get-Process -Name \"RadianceCascades3D\" -ErrorAction SilentlyContinue | Stop-Process -Force; Push-Location build; $out = cmake --build . --config Release 2>&1; Pop-Location; \\($out | Select-String \": error \" -SimpleMatch\\).Count; \"errors above\")"
     ],
     "additionalDirectories": [
       "D:\\GitRepo-My\\radiance-cascades-demo\\3d"
