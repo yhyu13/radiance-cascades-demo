@@ -352,7 +352,7 @@ Demo3D::Demo3D()
     std::cout << "[Demo3D] Volume resolution: " << volumeResolution << "³" << std::endl;
     std::cout << "[Demo3D] Memory usage: ~" << memoryUsageMB << " MB" << std::endl;
     std::cout << "[Demo3D] Shaders loaded: " << shaders.size() << std::endl;
-    std::cout << "[Demo3D] SDF Debug View: Press 'D' to toggle" << std::endl;
+    std::cout << "[Demo3D] SDF Debug View: Press F1 to toggle" << std::endl;
     std::cout << "========================================\n" << std::endl;
 }
 
@@ -389,78 +389,164 @@ Demo3D::~Demo3D() {
 void Demo3D::processInput() {
     /**
      * @brief Process keyboard and mouse input
+     *
+     * Step 5 (codex 10 F4): split ImGui capture handling.
+     * - Cleanup paths (mouse-look RELEASE / EnableCursor) run unconditionally
+     *   so the cursor can't get stuck hidden if the mouse enters ImGui mid-drag.
+     * - Mouse-look START gated on !WantCaptureMouse so dragging in UI doesn't
+     *   start a camera look.
+     * - Keyboard movement (WASD/QE/R) gated on !WantCaptureKeyboard only --
+     *   hovering the UI doesn't freeze WASD; only typing in an input box does.
+     * - Wheel events gated on !WantCaptureMouse (wheel is a mouse event).
+     * - Debug hotkeys (F1/F/P/G + 1/2/3/M slice keys) keep the original
+     *   "either capture blocks" behavior (they were never meant for mid-drag).
      */
-    
-    // Check ImGui capture
-    if (ImGui::GetIO().WantCaptureMouse || ImGui::GetIO().WantCaptureKeyboard) {
-        return;
+    ImGuiIO& io = ImGui::GetIO();
+
+    // -- Step 5 (5b cleanup, codex 10 F4): mouse-look RELEASE always runs.
+    if (mouseDragging && IsMouseButtonReleased(MOUSE_BUTTON_RIGHT)) {
+        mouseDragging = false;
+        EnableCursor();
     }
-    
-    // Phase 0: SDF Debug Controls
-    if (IsKeyPressed(KEY_D)) {
-        showSDFDebug = !showSDFDebug;
-        std::cout << "[Demo3D] SDF Debug View: " << (showSDFDebug ? "ON" : "OFF") << std::endl;
+
+    // ---------- Debug hotkeys (gated on both captures, original behavior) -----
+    if (!io.WantCaptureMouse && !io.WantCaptureKeyboard) {
+        // Phase 0: SDF Debug Controls (Step 5 codex 10 F5: rebound D -> F1 so D can strafe)
+        if (IsKeyPressed(KEY_F1)) {
+            showSDFDebug = !showSDFDebug;
+            std::cout << "[Demo3D] SDF Debug View: " << (showSDFDebug ? "ON" : "OFF") << std::endl;
+        }
+
+        if (showSDFDebug) {
+            if (IsKeyPressed(KEY_ONE))  { sdfSliceAxis = 0; std::cout << "[Demo3D] SDF Slice: X-axis (YZ plane)\n"; }
+            if (IsKeyPressed(KEY_TWO))  { sdfSliceAxis = 1; std::cout << "[Demo3D] SDF Slice: Y-axis (XZ plane)\n"; }
+            if (IsKeyPressed(KEY_THREE)){ sdfSliceAxis = 2; std::cout << "[Demo3D] SDF Slice: Z-axis (XY plane)\n"; }
+            if (IsKeyPressed(KEY_M)) {
+                sdfVisualizeMode = (sdfVisualizeMode + 1) % 4;
+                const char* modes[] = {"Colorized SDF", "Surface Detection", "Gradient Magnitude", "Surface Normals"};
+                std::cout << "[Demo3D] SDF Visualize Mode: " << modes[sdfVisualizeMode] << std::endl;
+            }
+            // SDF debug owns the wheel for slice scrubbing.
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0.0f) {
+                sdfSlicePosition += wheel * 0.05f;
+                sdfSlicePosition = glm::clamp(sdfSlicePosition, 0.0f, 1.0f);
+            }
+        }
+
+        // Phase 1: Radiance Debug Controls
+        if (IsKeyPressed(KEY_F)) {
+            radianceVisualizeMode = (radianceVisualizeMode + 1) % 7;
+            const char* radModes[] = { "Slice", "MaxProj", "Avg", "Atlas", "HitType", "Bin", "Bilinear" };
+            std::cout << "[Demo3D] Radiance Debug Mode: " << radModes[radianceVisualizeMode] << std::endl;
+        }
+
+        // Phase 6a: P = screenshot + AI analysis
+        if (IsKeyPressed(KEY_P)) {
+            pendingScreenshot = true;
+            std::cout << "[6a] Screenshot queued (captured at next render point)." << std::endl;
+        }
+
+        // Phase 6b: G = GPU frame capture via RenderDoc
+        if (IsKeyPressed(KEY_G)) {
+#ifdef _WIN32
+            if (rdoc) {
+                pendingRdocCapture = true;
+                std::cout << "[6b] RenderDoc capture queued for next frame." << std::endl;
+            } else {
+                std::cout << "[6b] RenderDoc not loaded -- capture unavailable." << std::endl;
+            }
+#else
+            std::cout << "[6b] RenderDoc capture only supported on Windows." << std::endl;
+#endif
+        }
     }
-    
-    if (showSDFDebug) {
-        // Change slice axis
-        if (IsKeyPressed(KEY_ONE)) {
-            sdfSliceAxis = 0;
-            std::cout << "[Demo3D] SDF Slice: X-axis (YZ plane)" << std::endl;
+
+    // ---------- Step 5 (5b body, codex 10 F4 + F6): mouse-look START + body ----
+    // START gated on !WantCaptureMouse; body runs whenever dragging.
+    if (!io.WantCaptureMouse && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+        mouseDragging = true;
+        DisableCursor();
+    }
+    if (mouseDragging) {
+        Vector2 md = GetMouseDelta();   // codex 10 F6: safer than absolute coords with cursor lock
+        cameraYaw   += -md.x * camera.rotationSpeed;
+        cameraPitch += -md.y * camera.rotationSpeed;
+        cameraPitch = glm::clamp(cameraPitch, -1.4835f, 1.4835f);   // ~+/-85 deg
+
+        // Reconstruct forward from yaw/pitch -- no cross-product, no singularity.
+        glm::vec3 forward(
+            std::cos(cameraPitch) * std::sin(cameraYaw),
+            std::sin(cameraPitch),
+            std::cos(cameraPitch) * std::cos(cameraYaw)
+        );
+        camera.target = camera.position + forward;
+    }
+
+    // ---------- Step 5 (5a + 5d): keyboard movement (codex 10 F4) ----
+    // Blocked only by KEYBOARD capture (typing into ImGui), not by mouse hover.
+    if (!io.WantCaptureKeyboard) {
+        // 5a: WASD/QE strafe + Shift sprint.
+        glm::vec3 forward = camera.target - camera.position;
+        float fwdLenSq = glm::dot(forward, forward);
+        if (fwdLenSq > 1e-12f) {
+            forward /= std::sqrt(fwdLenSq);
+        } else {
+            forward = glm::vec3(0.0f, 0.0f, -1.0f);
         }
-        if (IsKeyPressed(KEY_TWO)) {
-            sdfSliceAxis = 1;
-            std::cout << "[Demo3D] SDF Slice: Y-axis (XZ plane)" << std::endl;
+        glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 right   = glm::cross(forward, worldUp);
+        float rightLenSq  = glm::dot(right, right);
+        if (rightLenSq > 1e-6f) {
+            right /= std::sqrt(rightLenSq);
+        } else {
+            right = glm::vec3(1.0f, 0.0f, 0.0f);   // pitch clamp guarantees this branch is unreachable
         }
-        if (IsKeyPressed(KEY_THREE)) {
-            sdfSliceAxis = 2;
-            std::cout << "[Demo3D] SDF Slice: Z-axis (XY plane)" << std::endl;
+
+        float dt = GetFrameTime();
+        float speed = camera.moveSpeed * dt;
+        if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) speed *= 4.0f;
+
+        glm::vec3 delta(0.0f);
+        if (IsKeyDown(KEY_W)) delta += forward;
+        if (IsKeyDown(KEY_S)) delta -= forward;
+        if (IsKeyDown(KEY_A)) delta -= right;
+        if (IsKeyDown(KEY_D)) delta += right;
+        if (IsKeyDown(KEY_E)) delta += worldUp;
+        if (IsKeyDown(KEY_Q)) delta -= worldUp;
+        if (glm::length(delta) > 1e-6f) {
+            delta = glm::normalize(delta) * speed;
+            camera.position += delta;
+            camera.target   += delta;
         }
-        
-        // Cycle visualization mode (0=Colorized SDF, 1=Surface, 2=Gradient, 3=Normals)
-        if (IsKeyPressed(KEY_M)) {
-            sdfVisualizeMode = (sdfVisualizeMode + 1) % 4;
-            const char* modes[] = {"Colorized SDF", "Surface Detection", "Gradient Magnitude", "Surface Normals"};
-            std::cout << "[Demo3D] SDF Visualize Mode: " << modes[sdfVisualizeMode] << std::endl;
+
+        // 5d: R resets camera to scene preset (codex 11 F1: shared helper).
+        if (IsKeyPressed(KEY_R)) {
+            resetCameraToScenePreset();
+            std::cout << "[Demo3D] Camera reset to scene preset (R key)\n";
         }
-        
-        // Adjust slice position with mouse wheel
+    }
+
+    // ---------- Step 5 (5c): mouse wheel zoom + Ctrl-wheel FOV ----
+    // Wheel is a mouse event; gate on !WantCaptureMouse so scrolling ImGui works.
+    // Suppressed when SDF debug is active (debug owns wheel for slice scrubbing).
+    if (!io.WantCaptureMouse && !showSDFDebug) {
         float wheel = GetMouseWheelMove();
         if (wheel != 0.0f) {
-            sdfSlicePosition += wheel * 0.05f;
-            sdfSlicePosition = glm::clamp(sdfSlicePosition, 0.0f, 1.0f);
+            if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)) {
+                camera.fovy = glm::clamp(camera.fovy - wheel * 2.0f, 20.0f, 110.0f);
+            } else {
+                glm::vec3 fwd = camera.target - camera.position;
+                float lenSq = glm::dot(fwd, fwd);
+                if (lenSq > 1e-12f) {
+                    fwd /= std::sqrt(lenSq);
+                    float zoomStep = wheel * camera.moveSpeed * 0.1f;
+                    camera.position += fwd * zoomStep;
+                    camera.target   += fwd * zoomStep;
+                }
+            }
         }
     }
-    
-    // Phase 1: Radiance Debug Controls
-    if (IsKeyPressed(KEY_F)) {
-        radianceVisualizeMode = (radianceVisualizeMode + 1) % 7;
-        const char* radModes[] = { "Slice", "MaxProj", "Avg", "Atlas", "HitType", "Bin", "Bilinear" };
-        std::cout << "[Demo3D] Radiance Debug Mode: " << radModes[radianceVisualizeMode] << std::endl;
-    }
-
-    // Phase 6a: P = screenshot + AI analysis
-    if (IsKeyPressed(KEY_P)) {
-        pendingScreenshot = true;
-        std::cout << "[6a] Screenshot queued (captured at next render point)." << std::endl;
-    }
-
-    // Phase 6b: G = GPU frame capture via RenderDoc
-    if (IsKeyPressed(KEY_G)) {
-#ifdef _WIN32
-        if (rdoc) {
-            pendingRdocCapture = true;
-            std::cout << "[6b] RenderDoc capture queued for next frame." << std::endl;
-        } else {
-            std::cout << "[6b] RenderDoc not loaded — capture unavailable." << std::endl;
-        }
-#else
-        std::cout << "[6b] RenderDoc capture only supported on Windows." << std::endl;
-#endif
-    }
-
-    // Basic camera controls would go here
-    // For quick start, rely on Raylib's built-in camera handling in main3d.cpp
 }
 
 void Demo3D::update() {
@@ -1215,7 +1301,7 @@ void Demo3D::renderSDFDebugUI() {
     const char* sdfModeNames[] = {"Colorized SDF", "Surface Detection", "Gradient Magnitude", "Surface Normals"};
     ImGui::Text("Mode: %s", sdfModeNames[sdfVisualizeMode % 4]);
     ImGui::Text("Controls:");
-    ImGui::Text("  [D] Toggle debug view");
+    ImGui::Text("  [F1] Toggle debug view");
     ImGui::Text("  [1/2/3] Change slice axis");
     ImGui::Text("  [Mouse Wheel] Adjust position");
     ImGui::Text("  [M] Cycle visualize mode");
@@ -2924,7 +3010,9 @@ void Demo3D::renderSettingsPanel() {
     }
     
     if (ImGui::Button("Reset Camera")) {
-        resetCamera();
+        // codex 11 F1: scene-aware so Sponza button -> Sponza preset, not Cornell default.
+        resetCameraToScenePreset();
+        std::cout << "[Demo3D] Camera reset to scene preset (button)\n";
     }
     ImGui::SameLine();
     if (ImGui::Button("Screenshot [P]"))
@@ -3705,11 +3793,18 @@ void Demo3D::renderTutorialPanel() {
     ImGui::Text("Full features coming soon!");
     ImGui::NewLine();
     
-    ImGui::Text("Controls:");
-    ImGui::BulletText("WASD + Mouse: Navigate camera");
-    ImGui::BulletText("Scroll: Adjust brush size");
-    ImGui::BulletText("R: Reload shaders");
-    ImGui::BulletText("F1: Toggle UI");
+    // Step 5: full camera-control bullet list (codex 10 F5)
+    ImGui::Text("Camera (when not in UI):");
+    ImGui::BulletText("WASD: strafe");
+    ImGui::BulletText("Q/E: down/up");
+    ImGui::BulletText("Shift: sprint x4");
+    ImGui::BulletText("Right-click drag: look");
+    ImGui::BulletText("Wheel: zoom; Ctrl+Wheel: FOV");
+    ImGui::BulletText("R: reset camera to scene preset");
+    ImGui::Text("Debug:");
+    ImGui::BulletText("F1: Toggle SDF debug");
+    ImGui::BulletText("F: Cycle radiance debug mode");
+    ImGui::BulletText("P: Screenshot + AI analysis");
     ImGui::NewLine();
     
     // Scene Selection Controls
@@ -3764,7 +3859,7 @@ void Demo3D::renderTutorialPanel() {
     ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Debug Visualizations:");
     ImGui::Separator();
     
-    if (ImGui::Button(showSDFDebug ? "[ON] SDF Debug (D)" : "[OFF] SDF Debug (D)")) {
+    if (ImGui::Button(showSDFDebug ? "[ON] SDF Debug (F1)" : "[OFF] SDF Debug (F1)")) {
         showSDFDebug = !showSDFDebug;
         std::cout << "[Demo3D] SDF Debug View: " << (showSDFDebug ? "ON" : "OFF") << std::endl;
     }
@@ -4306,7 +4401,7 @@ void Demo3D::resetCamera() {
     /**
      * @brief Reset camera to default position
      */
-    
+
     // Cornell Box is centered at origin in [-1,1]; camera looks in from +z
     camera.position = glm::vec3(0.0f, 0.0f, 4.0f);
     camera.target = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -4315,9 +4410,109 @@ void Demo3D::resetCamera() {
     camera.projection = CAMERA_PERSPECTIVE;
     camera.moveSpeed = 5.0f;
     camera.rotationSpeed = 0.003f;
-    
-    std::cout << "[Demo3D] Camera reset to position: " 
+    syncCameraYawPitchFromTarget();   // Step 5: keep mouse-look scalars in sync
+
+    std::cout << "[Demo3D] Camera reset to position: "
               << camera.position.x << ", " << camera.position.y << ", " << camera.position.z << std::endl;
+}
+
+// =============================================================================
+// Step 5: Camera control helpers (codex 10 F3, F6)
+// =============================================================================
+
+void Demo3D::syncCameraYawPitchFromTarget() {
+    // codex 10 F6: maintain yaw/pitch as scalars to avoid the
+    // cross-product singularity at world-up/down. Initialize from the
+    // current forward vector so mouse-look starts coherent.
+    glm::vec3 fwd = camera.target - camera.position;
+    float lenSq = glm::dot(fwd, fwd);
+    if (lenSq < 1e-12f) {
+        cameraYaw = 0.0f;
+        cameraPitch = 0.0f;
+        return;
+    }
+    fwd /= std::sqrt(lenSq);
+    cameraYaw   = std::atan2(fwd.x, fwd.z);                   // 0 = +Z forward
+    cameraPitch = std::asin(glm::clamp(fwd.y, -1.0f, 1.0f));
+}
+
+void Demo3D::resetCameraToScenePreset() {
+    // codex 11 F1: scene-aware camera reset. Single source of truth for both
+    // the R key (in processInput) and the ImGui "Reset Camera" button.
+    // OBJ scenes go through the per-OBJ preset (which also restores the
+    // matching light); analytic scenes use the legacy resetCamera() default.
+    if (useOBJMesh && !currentOBJPath.empty()) {
+        applyOBJViewPreset(currentOBJPath);
+    } else {
+        resetCamera();
+    }
+}
+
+void Demo3D::applyOBJViewPreset(const std::string& objKind) {
+    // codex 10 F3: extracted from Step 4 4b inline preset block. Called by
+    // loadOBJMesh() after commit AND by R-key reset (no file I/O).
+    glm::vec3 camPos(0.0f);
+    glm::vec3 camTarget(0.0f);
+    glm::vec3 lightPos(0.0f, 0.8f, 0.0f);
+    float fovy = 60.0f;
+    bool found = false;
+
+    if (objKind == "sponza") {
+        camPos    = glm::vec3(3.5f, 0.5f, 0.0f);
+        camTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+        fovy      = 60.0f;
+        lightPos  = glm::vec3(0.0f, 0.5f, 0.0f);
+        found = true;
+    } else if (objKind == "cornell") {
+        camPos    = glm::vec3(0.0f, 0.0f, 4.0f);
+        camTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+        fovy      = 60.0f;
+        lightPos  = glm::vec3(0.0f, 0.8f, 0.0f);
+        found = true;
+    }
+    if (!found) {
+        std::cerr << "[WARN] applyOBJViewPreset: unknown objKind '" << objKind << "'\n";
+        return;
+    }
+
+    // F3 alpha-sample validation against meshVoxelData (only meaningful for
+    // INSIDE-volume cameras; codex 09 F2 fix preserved).
+    if (!meshVoxelData.empty()) {
+        glm::vec3 uvw = (camPos - volumeOrigin) / volumeSize;
+        bool insideVolume =
+            uvw.x >= 0.0f && uvw.x <= 1.0f &&
+            uvw.y >= 0.0f && uvw.y <= 1.0f &&
+            uvw.z >= 0.0f && uvw.z <= 1.0f;
+        if (insideVolume) {
+            glm::ivec3 voxel = glm::ivec3(uvw * float(volumeResolution));
+            voxel = glm::clamp(voxel, glm::ivec3(0), glm::ivec3(volumeResolution - 1));
+            int idx = (voxel.z * volumeResolution + voxel.y) * volumeResolution + voxel.x;
+            uint8_t alphaAtCam = meshVoxelData[idx * 4 + 3];
+            std::cout << "[Demo3D] Camera preset validation (inside volume): pos=("
+                      << camPos.x << "," << camPos.y << "," << camPos.z
+                      << ") voxel=(" << voxel.x << "," << voxel.y << "," << voxel.z
+                      << ") alpha=" << int(alphaAtCam) << "\n";
+            if (alphaAtCam > 0) {
+                std::cerr << "[WARN] Proposed camera position lies inside a marked surface voxel; "
+                             "view will start inside geometry. Adjust the preset.\n";
+            }
+        } else {
+            std::cout << "[Demo3D] Camera preset validation: pos=("
+                      << camPos.x << "," << camPos.y << "," << camPos.z
+                      << ") OUTSIDE SDF volume (uvw=(" << uvw.x << "," << uvw.y << "," << uvw.z
+                      << ")); alpha check skipped, relying on ray-box intersection at march time\n";
+        }
+    }
+
+    camera.position = camPos;
+    camera.target   = camTarget;
+    camera.up       = glm::vec3(0.0f, 1.0f, 0.0f);
+    camera.fovy     = fovy;
+    syncCameraYawPitchFromTarget();
+    lightPosition   = lightPos;
+    std::cout << "[Demo3D] Applied " << objKind << " view preset: fovy="
+              << camera.fovy << "; light=(" << lightPosition.x << ","
+              << lightPosition.y << "," << lightPosition.z << ")\n";
 }
 
 Camera3D Demo3D::getRaylibCamera() const {
@@ -4436,87 +4631,9 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     std::cout << "[Demo3D] OBJ committed (" << currentOBJPath
               << "); SDF will be baked next frame\n";
 
-    // Step 4 (4b, codex 08 F3): per-OBJ camera preset, with SDF-alpha-sample
-    // validation against the freshly committed meshVoxelData. The raw alpha
-    // mask is the binary "voxel touches surface" indicator from Step 1's
-    // voxelizer -- sampling it at the candidate camera voxel reveals whether
-    // the preset places the camera inside a marked column/wall.
-    {
-        glm::vec3 camPosCandidate(0.0f);
-        glm::vec3 camTargetCandidate(0.0f);
-        float     camFovyCandidate = 60.0f;
-        glm::vec3 lightPosCandidate(0.0f, 0.8f, 0.0f);   // Step 4 (4b ext)
-        bool      hasPreset = false;
-
-        if (objKind == "sponza") {
-            // Sponza atrium: X is the long axis, Y is up, Z is transverse
-            // (confirmed via local mesh bounds). After halfExtent=1.9 the
-            // normalized bounds are X=+/-1.9, Y=+/-0.795, Z=+/-1.169.
-            //
-            // Camera placement: outside +X end of volume (X=3.5 > volume max 2.0)
-            // looking back along -X axis. Mirrors Cornell's "outside-looking-in"
-            // pattern that works reliably with the current raymarch shader.
-            // First-attempt inside-atrium camera at (1.6, 0.1, 0) produced
-            // black mode 0/1/4 -- primary rays didn't terminate on the
-            // conservative-band UDF for this view. Outside camera is more
-            // reliable for first visibility.
-            camPosCandidate    = glm::vec3( 3.5f, 0.5f, 0.0f);
-            camTargetCandidate = glm::vec3( 0.0f, 0.0f, 0.0f);
-            camFovyCandidate   = 60.0f;
-            // Light INSIDE the atrium (Y=+0.5 < ceiling Y=+0.795). The default
-            // Y=+0.8 was just above the Sponza ceiling so direct light couldn't
-            // reach the interior.
-            lightPosCandidate  = glm::vec3(0.0f, 0.5f, 0.0f);
-            hasPreset = true;
-        } else if (objKind == "cornell") {
-            // Cornell Box closed mesh -- camera outside, Step 3 baseline.
-            camPosCandidate    = glm::vec3(0.0f, 0.0f, 4.0f);
-            camTargetCandidate = glm::vec3(0.0f, 0.0f, 0.0f);
-            camFovyCandidate   = 60.0f;
-            lightPosCandidate  = glm::vec3(0.0f, 0.8f, 0.0f);   // unchanged
-            hasPreset = true;
-        }
-
-        if (hasPreset) {
-            // codex 09 F2: alpha-sample only makes sense for INSIDE-volume cameras.
-            // For outside cameras (uvw outside [0,1]^3), clamping silently to the
-            // nearest boundary voxel turns "alpha=0" into "boundary voxel is empty",
-            // which is not what we wanted to verify. Skip the check and log it.
-            glm::vec3 uvw = (camPosCandidate - volumeOrigin) / volumeSize;
-            bool insideVolume =
-                uvw.x >= 0.0f && uvw.x <= 1.0f &&
-                uvw.y >= 0.0f && uvw.y <= 1.0f &&
-                uvw.z >= 0.0f && uvw.z <= 1.0f;
-            if (insideVolume) {
-                glm::ivec3 voxel = glm::ivec3(uvw * float(volumeResolution));
-                voxel = glm::clamp(voxel, glm::ivec3(0), glm::ivec3(volumeResolution - 1));
-                int idx = (voxel.z * volumeResolution + voxel.y) * volumeResolution + voxel.x;
-                uint8_t alphaAtCam = meshVoxelData[idx * 4 + 3];
-                std::cout << "[Demo3D] Camera preset validation (inside volume): pos=("
-                          << camPosCandidate.x << "," << camPosCandidate.y << "," << camPosCandidate.z
-                          << ") voxel=(" << voxel.x << "," << voxel.y << "," << voxel.z
-                          << ") alpha=" << int(alphaAtCam) << "\n";
-                if (alphaAtCam > 0) {
-                    std::cerr << "[WARN] Proposed camera position lies inside a marked surface voxel; "
-                                 "view will start inside geometry. Adjust the preset.\n";
-                }
-            } else {
-                std::cout << "[Demo3D] Camera preset validation: pos=("
-                          << camPosCandidate.x << "," << camPosCandidate.y << "," << camPosCandidate.z
-                          << ") OUTSIDE SDF volume (uvw=(" << uvw.x << "," << uvw.y << "," << uvw.z
-                          << ")); alpha check skipped, relying on ray-box intersection at march time\n";
-            }
-
-            camera.position = camPosCandidate;
-            camera.target   = camTargetCandidate;
-            camera.up       = glm::vec3(0.0f, 1.0f, 0.0f);
-            camera.fovy     = camFovyCandidate;
-            lightPosition   = lightPosCandidate;     // Step 4 (4b ext)
-            std::cout << "[Demo3D] Camera positioned for " << objKind
-                      << ": fovy=" << camera.fovy
-                      << "; light=(" << lightPosition.x << "," << lightPosition.y << "," << lightPosition.z << ")\n";
-        }
-    }
+    // Step 5 (5-helper, codex 10 F3): per-OBJ camera + light preset extracted
+    // into a helper so R-key reset can apply it without reloading the OBJ.
+    applyOBJViewPreset(objKind);
 
     return true;
 }

@@ -495,6 +495,25 @@ public:
     // codex 07 F1 — let main3d.cpp inject bake failures via CLI for runtime test of the bool-return retry path
     void setInjectBakeFailures(int n) { injectBakeFailures = n; }
 
+    // codex 11 F1/F2 — lets main3d.cpp programmatically trigger the scene-aware
+    // reset path (proves the helper that R-key and ImGui button now share).
+    void testResetCameraHelper() {
+        std::cout << "[Demo3D] testResetCameraHelper before: pos=("
+                  << camera.position.x << "," << camera.position.y << "," << camera.position.z
+                  << ") fovy=" << camera.fovy << " light=("
+                  << lightPosition.x << "," << lightPosition.y << "," << lightPosition.z << ")\n";
+        // Move camera away from preset to prove reset actually does something.
+        camera.position += glm::vec3(2.5f, 0.7f, 1.3f);
+        camera.target   += glm::vec3(2.5f, 0.7f, 1.3f);
+        std::cout << "[Demo3D] testResetCameraHelper after move: pos=("
+                  << camera.position.x << "," << camera.position.y << "," << camera.position.z << ")\n";
+        resetCameraToScenePreset();
+        std::cout << "[Demo3D] testResetCameraHelper after reset: pos=("
+                  << camera.position.x << "," << camera.position.y << "," << camera.position.z
+                  << ") fovy=" << camera.fovy << " light=("
+                  << lightPosition.x << "," << lightPosition.y << "," << lightPosition.z << ")\n";
+    }
+
     // Phase 12a — CLI auto-close query / setter (used by main3d.cpp)
     bool isReadyToClose() const { return captureAndAnalysisDone; }
     void setAutoCloseMode(bool v)    { autoCloseAfterCapture = v; }
@@ -949,9 +968,30 @@ private:
 
     /** Step 4 (4b ext): per-scene light position. Was hardcoded to (0, 0.8, 0)
      *  for Cornell Box. Sponza needs a light inside its [-0.795, 0.795] Y range
-     *  (the hardcoded Y=0.8 was just above Sponza's ceiling — explained the
+     *  (the hardcoded Y=0.8 was just above Sponza's ceiling -- explained the
      *  black mode-4 capture). loadOBJMesh() updates this per OBJ. */
     glm::vec3 lightPosition;
+
+    // Step 5 (5b, codex 10 F6): maintained yaw/pitch scalars for mouse-look.
+    // Avoids the cross-product singularity at world-up/down by reconstructing
+    // forward from yaw/pitch directly. Synced from camera.target on scene load
+    // via syncCameraYawPitchFromTarget(). cameraPitch clamped to ~+/-85 deg.
+    float cameraYaw   = 0.0f;   // radians, 0 = +Z forward
+    float cameraPitch = 0.0f;   // radians, clamped
+
+    // Step 5 (5-helper, codex 10 F3): apply per-OBJ camera + light preset
+    // without touching mesh data. Called by loadOBJMesh() after commit and
+    // by R-key reset.
+    void applyOBJViewPreset(const std::string& objKind);
+
+    // Step 5 (codex 10 F6): initialize cameraYaw/cameraPitch from camera's
+    // current forward vector. Called on scene load + camera reset.
+    void syncCameraYawPitchFromTarget();
+
+    // Step 5 (codex 11 F1): scene-aware camera reset. Calls applyOBJViewPreset()
+    // for OBJ scenes, resetCamera() for analytic. Single helper consumed by both
+    // the R key and the ImGui "Reset Camera" button so both paths agree.
+    void resetCameraToScenePreset();
     
     // =============================================================================
     // Performance & Quality

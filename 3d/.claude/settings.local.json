@@ -149,7 +149,9 @@
       "PowerShell(Set-Location \"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\"; $out = cmake --build . --config Release 2>&1; $errs = \\($out | Select-String -Pattern \"error \" -SimpleMatch:$false | Measure-Object\\).Count; $warns = \\($out | Select-String -Pattern \"warning [A-Z]\\\\d{4}\" -SimpleMatch:$false | Measure-Object\\).Count; Write-Host \"errors=$errs warnings=$warns\"; \\($out | Select-Object -Last 2\\))",
       "PowerShell(Set-Location \"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\build\"; $out = cmake --build . --config Release 2>&1; \\($out | Select-String -Pattern \"warning C4701\" | Measure-Object\\).Count; \\($out | Select-Object -Last 2\\))",
       "Bash(awk -F: '$1>=2350 && $1<=2400 {print} $1>=4350 && $1<=4520 {print}')",
-      "Bash(awk -F: '$1>=4350 && $1<=4520 {print}')"
+      "Bash(awk -F: '$1>=4350 && $1<=4520 {print}')",
+      "PowerShell($log = Get-Content \"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\app_run_step5_interactive.log\" -Encoding UTF8 -ErrorAction SilentlyContinue; if \\(-not $log\\) { $log = [System.IO.File]::ReadAllText\\(\"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\app_run_step5_interactive.log\"\\) -split \"`n\" }; \\($log | Where-Object { $_ -match \"Camera reset|SDF Debug View|Camera positioned|Applied|Mesh SDF|Boundary|Voxelize complete\" } | Select-Object -Last 30\\) -join \"`n\")",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"d:\\\\GitRepo-My\\\\radiance-cascades-demo\\\\3d\\\\tools\\\\app_run_step5_interactive.log\"\\); Write-Host \"First 4 bytes \\(BOM check\\): $\\($bytes[0..3] -join ','\\)\"; $size = $bytes.Length; Write-Host \"Size: $size\"; Write-Host \"`nUTF-8 attempt \\(last 1000 chars\\):\"; $text = [System.Text.Encoding]::UTF8.GetString\\($bytes\\); $text.Substring\\([math]::Max\\(0, $text.Length - 1500\\)\\))"
     ]
   }
 }

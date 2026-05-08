@@ -155,6 +155,7 @@ int main(int argc, char* argv[]) {
     std::string screenshotPath;
     int         exitAfterFrames = 0;
     int         switchToScene   = -999;   // codex 09 F1 verification: after --load-obj, switch to analytic scene N
+    bool        testResetHelper = false;  // codex 11 F1/F2 verification: programmatically test resetCameraToScenePreset
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--auto-analyze") {
@@ -190,6 +191,9 @@ int main(int argc, char* argv[]) {
             switchToScene = std::atoi(arg.substr(18).c_str());
             std::cout << "[MAIN] --switch-to-scene=" << switchToScene
                       << " (codex 09 F1: setScene(N) after --load-obj to test invariant resets)\n";
+        } else if (arg == "--test-reset-helper") {
+            testResetHelper = true;
+            std::cout << "[MAIN] --test-reset-helper (codex 11 F1/F2: programmatically exercise resetCameraToScenePreset)\n";
         }
     }
 
@@ -211,6 +215,10 @@ int main(int argc, char* argv[]) {
     if (switchToScene != -999) {
         std::cout << "[MAIN] Triggering setScene(" << switchToScene << ") after --load-obj\n";
         demo->setScene(switchToScene);
+    }
+    if (testResetHelper) {
+        std::cout << "[MAIN] Triggering testResetCameraHelper() after --load-obj/--switch-to-scene\n";
+        demo->testResetCameraHelper();
     }
     int frameCounter = 0;
 
