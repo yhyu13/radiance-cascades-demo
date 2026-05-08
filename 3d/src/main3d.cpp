@@ -148,7 +148,8 @@ int main(int argc, char* argv[]) {
     // --auto-analyze:  burst capture + AI analysis then exit
     // --auto-sequence: sequence capture (N frames) + AI analysis then exit
     // --auto-rdoc:     RenderDoc GPU capture after 8s warm-up (stays open; G also works)
-    // --load-obj=NAME: load OBJ mesh (cornell|sponza) once at startup (Step 2/3 testing)
+    // --load-obj=NAME: load OBJ mesh once at startup (Step 2/3 testing).
+    //   Step 6: NAME accepts cornell | cornell-orig | sponza | sponza-master.
     // --exit-frames=N: quit after rendering N frames (CI-friendly Step 2 verification)
     bool        autoAnalyze   = false;
     std::string loadObjName;
@@ -199,11 +200,13 @@ int main(int argc, char* argv[]) {
 
     if (!loadObjName.empty()) {
         std::string path;
-        if (loadObjName == "sponza")       path = "res/scene/sponza.obj";
-        else if (loadObjName == "cornell") path = "res/scene/cornell_box.obj";
+        if      (loadObjName == "sponza")         path = "res/scene/sponza.obj";
+        else if (loadObjName == "cornell")        path = "res/scene/cornell_box.obj";
+        else if (loadObjName == "cornell-orig")   path = "res/scene/CornellBox-Original/CornellBox-Original.obj";
+        else if (loadObjName == "sponza-master")  path = "res/scene/Sponza-master/sponza.obj";
         else {
             std::cerr << "[MAIN] --load-obj=" << loadObjName
-                      << ": unknown name (expected 'sponza' or 'cornell'). Aborting.\n";
+                      << ": unknown name (expected sponza|cornell|cornell-orig|sponza-master). Aborting.\n";
             delete demo;
             CloseWindow();
             return 1;
