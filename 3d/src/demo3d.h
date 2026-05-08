@@ -647,8 +647,18 @@ private:
     /** Whether to use loaded OBJ mesh instead of analytic primitives */
     bool useOBJMesh;
 
-    /** Which OBJ was last loaded: "cornell" or "sponza" */
+    /** Which OBJ was last loaded (4-way label): "cornell", "cornell_orig",
+     *  "sponza", or "sponza_master". Step 7: pure UI/identity label only —
+     *  camera/light preset is now derived from currentObjBmin/Bmax, not from
+     *  this string. */
     std::string currentOBJPath;
+
+    // Step 7 (auto-fit preset): post-normalize bounds of the active mesh.
+    // Stored at loadOBJMesh time so applyOBJViewPreset() and the R-key reset
+    // path can compute camera/light without re-querying the loader. Both
+    // default to (0,0,0) until first OBJ load.
+    glm::vec3 currentObjBmin = glm::vec3(0.0f);
+    glm::vec3 currentObjBmax = glm::vec3(0.0f);
 
     // Step 2: Mesh SDF (CPU EDT bake from OBJ voxelization)
     /** OBJ surface voxels (RGBA8, volumeResolution^3); set by loadOBJMesh, consumed by generateMeshSDF. */
@@ -982,7 +992,12 @@ private:
     // Step 5 (5-helper, codex 10 F3): apply per-OBJ camera + light preset
     // without touching mesh data. Called by loadOBJMesh() after commit and
     // by R-key reset.
-    void applyOBJViewPreset(const std::string& objKind);
+    //
+    // Step 7 (auto-fit): now parameterless and bounds-driven — uses
+    // currentObjBmin/currentObjBmax (set by loadOBJMesh) to compute the
+    // camera + light position generically. No per-OBJ branches; any future
+    // OBJ "just works" without editing this function.
+    void applyOBJViewPreset();
 
     // Step 5 (codex 10 F6): initialize cameraYaw/cameraPitch from camera's
     // current forward vector. Called on scene load + camera reset.
