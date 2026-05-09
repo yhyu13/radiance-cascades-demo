@@ -1,204 +1,167 @@
 /**
  * @file voxelize.comp
- * @brief Compute shader for voxelizing 3D geometry
- * 
- * This shader converts triangle meshes into a sparse voxel representation.
- * It processes each voxel in parallel to determine occupancy and surface properties.
- * 
- * Algorithm:
- * 1. Each work group processes a tile of the volume
- * 2. For each voxel, check intersection with scene geometry
- * 3. Store density and normal information in output texture
- * 4. Use conservative rasterization to avoid leaks
- * 
- * Input:
- * - Vertex/index buffers (via SSBO)
- * - Model-view-projection matrices
- * - Voxel grid parameters
- * 
- * Output:
- * - 3D texture with voxel density and color
+ * @brief GPU triangle voxelizer (Step 9 Phase 3 rewrite).
+ *
+ * Three passes selected by uPass:
+ *   uPass = 0 init     : per-voxel; clears voxelOwnerTexture to 0xFFFFFFFFu
+ *                        (no-owner sentinel) and voxelGridTexture to (0,0,0,0).
+ *   uPass = 1 voxelize : per-triangle; each thread computes its bbox in voxel
+ *                        coords, iterates the bbox voxels, tests
+ *                        closestPointOnTriangle <= halfDiag, and writes its
+ *                        own triangle index via imageAtomicMin into the owner
+ *                        texture. Lowest-index triangle wins -> deterministic,
+ *                        matches CPU face-iteration first-writer rule
+ *                        (codex 03 F6).
+ *   uPass = 2 resolve  : per-voxel; reads winning owner index, looks up that
+ *                        triangle's color from the SSBO, writes RGBA8 color
+ *                        into voxelGridTexture (alpha=255 if occupied).
+ *
+ * Replaces the dormant Step 0 stub (Moller-Trumbore + half-baked sdfTriangle).
+ *
+ * Bindings (codex 03 F5+F7: explicit layout(binding=N), no glUniform1i needed):
+ *   binding=0  std430    triangleSSBO  (R, voxelize+resolve)
+ *   binding=1  r32ui     uVoxelOwner   (R+W, init+voxelize+resolve)
+ *   binding=2  rgba8     uVoxelGrid    (W, init+resolve)
+ *
+ * NO format aliasing -- voxelOwnerTexture is genuinely R32UI; voxelGridTexture
+ * stays plain RGBA8 with no atomic operations on it.
  */
 
 #version 430 core
 
+// Workgroup size: 8x8x8 = 512 for per-voxel passes (init/resolve);
+// 64x1x1 for per-triangle pass (voxelize). We dispatch with the right
+// shape from C++; the local_size matches the largest case (per-voxel).
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// =============================================================================
+// SSBO + image bindings
+// =============================================================================
+struct Triangle {
+    vec4 v0;
+    vec4 v1;
+    vec4 v2;
+    vec4 colorKd;   // .xyz = Kd in [0,1]
+};
+layout(std430, binding = 0) readonly buffer TriangleBuffer { Triangle tris[]; };
+
+layout(r32ui, binding = 1) uniform uimage3D uVoxelOwner;
+layout(rgba8, binding = 2) uniform image3D  uVoxelGrid;
 
 // =============================================================================
 // Uniforms
 // =============================================================================
+uniform int   uPass;             // 0 init, 1 voxelize, 2 resolve
+uniform int   uNumTriangles;
+uniform vec3  uVolumeOrigin;
+uniform vec3  uVolumeSize;
+uniform ivec3 uVolumeDim;        // (N, N, N)
+uniform float uVoxelHalfDiag;    // 0.5 * sqrt(3) * voxelSize
 
-/** Volume dimensions */
-uniform ivec3 uVolumeSize;
-
-/** World-space size of entire voxel grid */
-uniform vec3 uGridSize;
-
-/** Grid origin in world space */
-uniform vec3 uGridOrigin;
-
-/** Current time for animations */
-uniform float uTime;
-
-/** View-projection matrix for depth testing */
-uniform mat4 uVPMatrix;
+const uint OWNER_NONE = 0xFFFFFFFFu;
 
 // =============================================================================
-// Texture Bindings
+// Closest point on triangle (Ericson Real-Time Collision Detection §5.1.5).
+// Direct port of OBJLoader::closestPointOnTriangle in obj_loader.h.
 // =============================================================================
+vec3 closestPointOnTriangle(vec3 p, vec3 a, vec3 b, vec3 c) {
+    vec3 ab = b - a, ac = c - a, ap = p - a;
+    float d1 = dot(ab, ap), d2 = dot(ac, ap);
+    if (d1 <= 0.0 && d2 <= 0.0) return a;
 
-/** Output voxel grid (density + color) */
-layout(rgba8) uniform image3D oVoxelGrid;
+    vec3 bp = p - b;
+    float d3 = dot(ab, bp), d4 = dot(ac, bp);
+    if (d3 >= 0.0 && d4 <= d3) return b;
 
-/** Optional: Output normals */
-layout(rgba8) uniform image3D oNormalGrid;
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0)
+        return a + (d1 / (d1 - d3)) * ab;
 
-// =============================================================================
-// Scene Data (via Shader Storage Buffer Objects)
-// =============================================================================
+    vec3 cp = p - c;
+    float d5 = dot(ab, cp), d6 = dot(ac, cp);
+    if (d6 >= 0.0 && d5 <= d6) return c;
 
-/**
- * @brief Triangle structure for scene geometry
- */
-struct Triangle {
-    vec3 v0, v1, v2;        // Triangle vertices
-    vec3 n0, n1, n2;        // Vertex normals
-    vec3 color;             // Triangle color
-    int materialId;         // Material index
-};
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0)
+        return a + (d2 / (d2 - d6)) * ac;
 
-/** Array of scene triangles */
-layout(std430) buffer TriangleBuffer {
-    Triangle triangles[];
-} triBuffer;
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0)
+        return b + ((d4 - d3) / ((d4 - d3) + (d5 - d6))) * (c - b);
 
-/** Number of triangles in scene */
-uniform int uTriangleCount;
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/**
- * @brief Convert voxel index to world position
- */
-vec3 voxelToWorld(ivec3 voxelPos) {
-    return uGridOrigin + (vec3(voxelPos) + 0.5f) * (uGridSize / vec3(uVolumeSize));
-}
-
-/**
- * @brief Convert world position to voxel index
- */
-ivec3 worldToVoxel(vec3 worldPos) {
-    return ivec3((worldPos - uGridOrigin) * (vec3(uVolumeSize) / uGridSize));
-}
-
-/**
- * @brief Test ray-triangle intersection using Möller–Trumbore algorithm
- * 
- * @param rayOrigin Ray origin
- * @param rayDir Ray direction
- * @param v0, v1, v2 Triangle vertices
- * @param t Intersection distance (output)
- * @return true if intersection found
- */
-bool intersectTriangle(
-    vec3 rayOrigin, vec3 rayDir,
-    vec3 v0, vec3 v1, vec3 v2,
-    out float t
-) {
-    const float EPSILON = 1e-7;
-    
-    vec3 edge1 = v1 - v0;
-    vec3 edge2 = v2 - v0;
-    vec3 h = cross(rayDir, edge2);
-    float a = dot(edge1, h);
-    
-    if (abs(a) < EPSILON)
-        return false;
-    
-    float f = 1.0 / a;
-    vec3 s = rayOrigin - v0;
-    float u = f * dot(s, h);
-    
-    if (u < 0.0 || u > 1.0)
-        return false;
-    
-    vec3 q = cross(s, edge1);
-    float v = f * dot(rayDir, q);
-    
-    if (v < 0.0 || u + v > 1.0)
-        return false;
-    
-    t = f * dot(edge2, q);
-    return t > EPSILON;
-}
-
-/**
- * @brief Calculate signed distance to triangle surface
- */
-float sdfTriangle(vec3 p, vec3 v0, vec3 v1, vec3 v2) {
-    // Project point onto triangle plane
-    vec3 normal = normalize(cross(v1 - v0, v2 - v0));
-    float dist = dot(p - v0, normal);
-    
-    // Check if inside triangle (barycentric)
-    // Simplified: just return plane distance for now
-    return abs(dist);
+    float sum = va + vb + vc;
+    if (abs(sum) < 1e-12) return a;
+    float denom = 1.0 / sum;
+    return a + ab * (vb * denom) + ac * (vc * denom);
 }
 
 // =============================================================================
-// Main Compute Shader Entry Point
+// Pass 0: init -- clear owner to no-owner, voxel grid to empty.
 // =============================================================================
-
-void main() {
+void runInit() {
     ivec3 pos = ivec3(gl_GlobalInvocationID);
-    
-    // Bounds check
-    if (any(greaterThanEqual(pos, uVolumeSize)))
-        return;
-    
-    // Get voxel center in world space
-    vec3 worldPos = voxelToWorld(pos);
-    
-    // Initialize voxel as empty
-    float minDistance = 1000.0; // Large initial distance
-    vec3 surfaceColor = vec3(0.0);
-    vec3 surfaceNormal = vec3(0.0);
-    bool isSurface = false;
-    
-    // Test against all triangles in scene
-    for (int i = 0; i < uTriangleCount; ++i) {
-        Triangle tri = triBuffer.triangles[i];
-        
-        // Calculate distance to this triangle
-        float dist = sdfTriangle(worldPos, tri.v0, tri.v1, tri.v2);
-        
-        // If this triangle is closest, record it
-        if (dist < minDistance) {
-            minDistance = dist;
-            surfaceColor = tri.color;
-            
-            // Calculate normal at closest point
-            surfaceNormal = normalize(cross(tri.v1 - tri.v0, tri.v2 - tri.v0));
-            
-            isSurface = (dist < 0.01); // Within threshold
+    if (any(greaterThanEqual(pos, uVolumeDim))) return;
+    imageStore(uVoxelOwner, pos, uvec4(OWNER_NONE, 0u, 0u, 0u));
+    imageStore(uVoxelGrid,  pos, vec4(0.0));
+}
+
+// =============================================================================
+// Pass 1: per-triangle atomicMin into owner texture.
+// Workgroup is 8x8x8 = 512 threads; we dispatch (ceil(numTris/512), 1, 1)
+// workgroups. Use the FLATTENED local index so each thread maps to a unique
+// triangle (using only gl_GlobalInvocationID.x would dedupe to 8 unique
+// IDs per workgroup since 8*8*8 threads share the same .x range).
+// =============================================================================
+void runVoxelize() {
+    uint tid = gl_WorkGroupID.x * 512u + gl_LocalInvocationIndex;
+    if (tid >= uint(uNumTriangles)) return;
+
+    Triangle t = tris[tid];
+    vec3 v0 = t.v0.xyz, v1 = t.v1.xyz, v2 = t.v2.xyz;
+
+    // Triangle bbox in world coords (expanded by half-diag so axis-aligned
+    // triangles capture their adjacent voxels), then mapped to voxel coords.
+    vec3 trMin = min(v0, min(v1, v2)) - vec3(uVoxelHalfDiag);
+    vec3 trMax = max(v0, max(v1, v2)) + vec3(uVoxelHalfDiag);
+    vec3 nMin  = (trMin - uVolumeOrigin) / uVolumeSize;
+    vec3 nMax  = (trMax - uVolumeOrigin) / uVolumeSize;
+    ivec3 vMin = ivec3(floor(nMin * vec3(uVolumeDim)));
+    ivec3 vMax = ivec3(floor(nMax * vec3(uVolumeDim)));
+    vMin = clamp(vMin, ivec3(0), uVolumeDim - 1);
+    vMax = clamp(vMax, ivec3(0), uVolumeDim - 1);
+
+    vec3 voxStep = uVolumeSize / vec3(uVolumeDim);
+
+    for (int z = vMin.z; z <= vMax.z; ++z)
+    for (int y = vMin.y; y <= vMax.y; ++y)
+    for (int x = vMin.x; x <= vMax.x; ++x) {
+        vec3 wp = uVolumeOrigin + (vec3(x, y, z) + 0.5) * voxStep;
+        vec3 cp = closestPointOnTriangle(wp, v0, v1, v2);
+        if (length(wp - cp) <= uVoxelHalfDiag) {
+            // codex 03 F6: atomicMin -> lowest triangle index wins ->
+            // deterministic; matches CPU face-iteration first-writer rule.
+            imageAtomicMin(uVoxelOwner, ivec3(x, y, z), tid);
         }
     }
-    
-    // Write to output textures
-    if (isSurface) {
-        // Surface voxel: store color and mark as occupied
-        imageStore(oVoxelGrid, pos, vec4(surfaceColor, 1.0));
-        
-        // TODO: Optional normal encoding for debugging
-        // if (some_condition) {
-        //     vec3 encodedNormal = surfaceNormal * 0.5 + 0.5;
-        //     imageStore(oNormalGrid, pos, vec4(encodedNormal, 1.0));
-        // }
-    } else {
-        // Empty voxel or interior
-        float density = (minDistance < 0.1) ? 1.0 : 0.0;
-        imageStore(oVoxelGrid, pos, vec4(surfaceColor, density));
+}
+
+// =============================================================================
+// Pass 2: per-voxel resolve owner -> color.
+// =============================================================================
+void runResolve() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(pos, uVolumeDim))) return;
+    uint owner = imageLoad(uVoxelOwner, pos).r;
+    if (owner == OWNER_NONE) {
+        imageStore(uVoxelGrid, pos, vec4(0.0));
+        return;
     }
+    vec3 kd = tris[owner].colorKd.xyz;
+    imageStore(uVoxelGrid, pos, vec4(kd, 1.0));
+}
+
+void main() {
+    if      (uPass == 0) runInit();
+    else if (uPass == 1) runVoxelize();
+    else if (uPass == 2) runResolve();
 }

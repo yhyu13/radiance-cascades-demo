@@ -73,6 +73,13 @@ bool checkRequirements();
 // Main Entry Point
 // =============================================================================
 
+// Step 9 Phase 2 verify (--cache-hit-test): re-invoke loadOBJMesh after
+// the initial --load-obj fires, to exercise the cache-hit path headlessly.
+bool g_cacheHitTest = false;
+// codex 04 F2 verify: toggle GPU SDF off after load to exercise the
+// CPU-mirror-preserved transition.
+bool g_toggleGpuSdfOffAfterLoad = false;
+
 int main(int argc, char* argv[]) {
     /**
      * @brief Application entry point
@@ -198,6 +205,22 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--gpu-sdf") {
             demo->setUseGPUSDF(true);
             std::cout << "[MAIN] --gpu-sdf (Step 8): GPU JFA SDF path enabled\n";
+        } else if (arg == "--gpu-voxelize") {
+            demo->setUseGPUVoxelize(true);
+            std::cout << "[MAIN] --gpu-voxelize (Step 9): GPU triangle voxelizer enabled\n";
+        } else if (arg == "--cache-hit-test") {
+            // Step 9 Phase 2 verify hook: after the initial --load-obj fires
+            // below, we'll re-invoke loadOBJMesh on the same path. Hits the
+            // cache; no parse + voxelize work.
+            extern bool g_cacheHitTest; g_cacheHitTest = true;
+            std::cout << "[MAIN] --cache-hit-test (Step 9 Phase 2 verify)\n";
+        } else if (arg == "--toggle-gpu-sdf-off-after-load") {
+            // codex 04 F2 verify hook: after the initial --gpu-voxelize
+            // --gpu-sdf --load-obj load, toggle useGPUSDF off so the next
+            // sdfGenerationPass uses CPU EDT. Without F2's "always keep
+            // CPU mirror" fix, CPU EDT would fail with empty meshVoxelData.
+            extern bool g_toggleGpuSdfOffAfterLoad; g_toggleGpuSdfOffAfterLoad = true;
+            std::cout << "[MAIN] --toggle-gpu-sdf-off-after-load (codex 04 F2 verify)\n";
         } else if (arg == "--dynamic-sphere") {
             demo->setDynamicSphere(true);
             std::cout << "[MAIN] --dynamic-sphere (Step 8): orbiting sphere overlay enabled\n";
@@ -225,6 +248,13 @@ int main(int argc, char* argv[]) {
         if (!demo->loadOBJMesh(path)) {
             std::cerr << "[MAIN] --load-obj failed for " << path << "\n";
         }
+        // Step 9 Phase 2 verify (--cache-hit-test): re-invoke the same load
+        // immediately so the second call hits the cache populated by the first.
+        if (g_cacheHitTest) {
+            std::cout << "[MAIN] --cache-hit-test: re-loading " << path
+                      << " to exercise cache path\n";
+            demo->loadOBJMesh(path);
+        }
     }
     if (switchToScene != -999) {
         std::cout << "[MAIN] Triggering setScene(" << switchToScene << ") after --load-obj\n";
@@ -233,6 +263,10 @@ int main(int argc, char* argv[]) {
     if (testResetHelper) {
         std::cout << "[MAIN] Triggering testResetCameraHelper() after --load-obj/--switch-to-scene\n";
         demo->testResetCameraHelper();
+    }
+    if (g_toggleGpuSdfOffAfterLoad) {
+        std::cout << "[MAIN] Toggling GPU SDF off after load (codex 04 F2 verify)\n";
+        demo->setUseGPUSDF(false);
     }
     int frameCounter = 0;
 
