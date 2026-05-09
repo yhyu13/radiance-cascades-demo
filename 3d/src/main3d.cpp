@@ -195,6 +195,17 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--test-reset-helper") {
             testResetHelper = true;
             std::cout << "[MAIN] --test-reset-helper (codex 11 F1/F2: programmatically exercise resetCameraToScenePreset)\n";
+        } else if (arg == "--gpu-sdf") {
+            demo->setUseGPUSDF(true);
+            std::cout << "[MAIN] --gpu-sdf (Step 8): GPU JFA SDF path enabled\n";
+        } else if (arg == "--dynamic-sphere") {
+            demo->setDynamicSphere(true);
+            std::cout << "[MAIN] --dynamic-sphere (Step 8): orbiting sphere overlay enabled\n";
+        } else if (arg.rfind("--sphere-time=", 0) == 0) {
+            float t = static_cast<float>(std::atof(arg.substr(14).c_str()));
+            demo->setSphereTimeOverride(t);
+            std::cout << "[MAIN] --sphere-time=" << t
+                      << " (codex 01 F10: deterministic orbit phase for capture)\n";
         }
     }
 
