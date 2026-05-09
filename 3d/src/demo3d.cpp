@@ -321,12 +321,11 @@ Demo3D::Demo3D()
     
     // Step 4: Load shaders (minimal set for quick start)
     std::cout << "\n[Demo3D] Loading shaders..." << std::endl;
-    // Step 8: sdf_3d.comp re-enabled (was disabled in the Step 7 cleanup
-    // commit). The shader was rewritten with three uPass-driven kernels
-    // (init / JFA step / finalize) and is dispatched by generateMeshSDFGPU.
-    // voxelize.comp stays unloaded (deferred to Step 9 -- CPU triangle
-    // voxelizer + addVoxelSphere cover Step 8's needs).
-    loadShader("sdf_3d.comp");        // Step 8: GPU JFA SDF for dynamic-friendly path
+    // Step 8: sdf_3d.comp re-enabled (was disabled in the Step 7 cleanup).
+    // Step 9: voxelize.comp re-enabled, rewritten as a 3-pass GPU triangle
+    // voxelizer (init / atomicMin owner-index / resolve owner->color).
+    loadShader("sdf_3d.comp");        // Step 8: GPU JFA SDF
+    loadShader("voxelize.comp");      // Step 9: GPU triangle voxelizer
     loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
     loadShader("radiance_3d.comp");
     loadShader("reduction_3d.comp");    // Phase 5b-1: atlas → isotropic reduction
@@ -1498,6 +1497,13 @@ bool Demo3D::generateMeshSDF() {
                   << injectBakeFailures << " remaining)\n";
         return false;
     }
+    // codex 04 F5: drain pre-existing GL errors so the post-upload
+    // glGetError check below attributes errors to THIS bake only.
+    // (Without this, a stale error from voxelize.comp's compile or a
+    // prior pipeline stage falsely fails the first-frame CPU EDT bake
+    // -- visible as `[ERROR] generateMeshSDF: sdfTexture upload failed
+    // (GL 0x501)` then a successful retry on frame 2.)
+    while (glGetError() != GL_NO_ERROR) { /* drain */ }
 
     const int   N        = volumeResolution;
     const int   N2       = N * N;
@@ -1760,6 +1766,153 @@ bool Demo3D::generateMeshSDFGPU() {
     return true;
 }
 
+// =============================================================================
+// Step 9 Phase 3 (codex 03 F4-F7): GPU triangle voxelizer.
+// =============================================================================
+bool Demo3D::voxelizeOBJ_GPU() {
+    auto sit = shaders.find("voxelize.comp");
+    if (sit == shaders.end() || sit->second == 0) {
+        std::cerr << "[ERROR] voxelizeOBJ_GPU: voxelize.comp not loaded\n";
+        return false;
+    }
+    GLuint prog = sit->second;
+    if (!voxelGridTexture || !voxelOwnerTexture || !triangleSSBO) {
+        std::cerr << "[ERROR] voxelizeOBJ_GPU: required handle is 0 ("
+                  << "grid=" << voxelGridTexture
+                  << " owner=" << voxelOwnerTexture
+                  << " ssbo=" << triangleSSBO << ")\n";
+        return false;
+    }
+
+    // Build flat triangle list using the same per-face material lookup as
+    // CPU voxelize() (codex 03 F4 reuse).
+    auto buildT0 = std::chrono::high_resolution_clock::now();
+    std::vector<GPUTriangle> tris;
+    objLoader.buildTriangles(tris);
+    const size_t numTris = tris.size();
+    if (numTris == 0) {
+        std::cerr << "[ERROR] voxelizeOBJ_GPU: OBJ has zero triangles\n";
+        return false;
+    }
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, triangleSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+                 GLsizeiptr(numTris * sizeof(GPUTriangle)),
+                 tris.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    float ssboMs = std::chrono::duration<float, std::milli>(
+        std::chrono::high_resolution_clock::now() - buildT0).count();
+
+    // Drain pre-existing GL errors (Step 8 codex 02 F4 pattern).
+    while (glGetError() != GL_NO_ERROR) { /* drain */ }
+
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "GPU triangle voxelize");
+
+    GLuint timer = 0;
+    glGenQueries(1, &timer);
+    glBeginQuery(GL_TIME_ELAPSED, timer);
+
+    auto cpuT0 = std::chrono::high_resolution_clock::now();
+    const int N = volumeResolution;
+    const int wgVox = (N + 7) / 8;                            // per-voxel passes (8x8x8 = 512 threads per WG)
+    const int wgTri = static_cast<int>((numTris + 511) / 512); // per-triangle pass uses flat index 512/WG
+    const float voxelHalfDiag = 0.5f * std::sqrt(3.0f) * (volumeSize.x / float(N));
+
+    glUseProgram(prog);
+    GLint uPassLoc       = glGetUniformLocation(prog, "uPass");
+    GLint uNumTrisLoc    = glGetUniformLocation(prog, "uNumTriangles");
+    GLint uVolOriginLoc  = glGetUniformLocation(prog, "uVolumeOrigin");
+    GLint uVolSizeLoc    = glGetUniformLocation(prog, "uVolumeSize");
+    GLint uVolDimLoc     = glGetUniformLocation(prog, "uVolumeDim");
+    GLint uHalfDiagLoc   = glGetUniformLocation(prog, "uVoxelHalfDiag");
+    // codex 04 F6: validate uniform locations -- glUniform*(-1, ...) is
+    // silently ignored by GL spec, which would mask a renamed/removed
+    // uniform with empty/incorrect output AND glGetError success.
+    if (uPassLoc == -1 || uNumTrisLoc == -1 || uVolOriginLoc == -1 ||
+        uVolSizeLoc == -1 || uVolDimLoc == -1 || uHalfDiagLoc == -1) {
+        std::cerr << "[ERROR] voxelizeOBJ_GPU: missing uniform location ("
+                  << "uPass=" << uPassLoc
+                  << " uNumTriangles=" << uNumTrisLoc
+                  << " uVolumeOrigin=" << uVolOriginLoc
+                  << " uVolumeSize=" << uVolSizeLoc
+                  << " uVolumeDim=" << uVolDimLoc
+                  << " uVoxelHalfDiag=" << uHalfDiagLoc
+                  << ") -- shader contract changed?\n";
+        glDeleteQueries(1, &timer);
+        glPopDebugGroup();
+        return false;
+    }
+
+    glUniform1i(uNumTrisLoc, int(numTris));
+    glUniform3f(uVolOriginLoc, volumeOrigin.x, volumeOrigin.y, volumeOrigin.z);
+    glUniform3f(uVolSizeLoc,   volumeSize.x,   volumeSize.y,   volumeSize.z);
+    glUniform3i(uVolDimLoc,    N, N, N);
+    glUniform1f(uHalfDiagLoc,  voxelHalfDiag);
+
+    // Pass 0: init owner + voxel grid.
+    glUniform1i(uPassLoc, 0);
+    glBindImageTexture(1, voxelOwnerTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_R32UI);
+    glBindImageTexture(2, voxelGridTexture,  0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA8);
+    glDispatchCompute(wgVox, wgVox, wgVox);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    // Pass 1: per-triangle atomicMin into owner.
+    glUniform1i(uPassLoc, 1);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, triangleSSBO);
+    glBindImageTexture(1, voxelOwnerTexture, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
+    glDispatchCompute(wgTri, 1, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    // Pass 2: resolve owner -> RGBA8 voxel grid.
+    glUniform1i(uPassLoc, 2);
+    glBindImageTexture(1, voxelOwnerTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_R32UI);
+    glBindImageTexture(2, voxelGridTexture,  0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA8);
+    glDispatchCompute(wgVox, wgVox, wgVox);
+
+    // codex 03 F7: full barrier set covering downstream
+    //   - glCopyImageSubData voxelGridTexture -> meshVoxelBaseTexture (TEXTURE_UPDATE)
+    //   - glGetTexImage readback for cache populate (TEXTURE_UPDATE)
+    //   - sampler3D fetches from raymarch.frag / radiance_3d.comp (TEXTURE_FETCH)
+    //   - imageLoad in generateMeshSDFGPU init pass (SHADER_IMAGE_ACCESS)
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT
+                  | GL_TEXTURE_UPDATE_BARRIER_BIT
+                  | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+    glEndQuery(GL_TIME_ELAPSED);
+    glPopDebugGroup();
+
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::cerr << "[ERROR] voxelizeOBJ_GPU: GL error 0x" << std::hex << err
+                  << std::dec << "\n";
+        glDeleteQueries(1, &timer);
+        return false;
+    }
+
+    float cpuMs = std::chrono::duration<float, std::milli>(
+        std::chrono::high_resolution_clock::now() - cpuT0).count();
+    GLuint64 gpuNs = 0;
+    glGetQueryObjectui64v(timer, GL_QUERY_RESULT, &gpuNs);
+    glDeleteQueries(1, &timer);
+    float gpuMs = gpuNs * 1.0e-6f;
+
+    std::cout << "[Demo3D] GPU voxelize: GPU=" << gpuMs << "ms"
+              << "  CPU-submit=" << cpuMs << "ms"
+              << "  ssbo-build=" << ssboMs << "ms"
+              << "  (" << numTris << " tris -> N=" << N << ")\n";
+
+    // Mirror to base texture so dynamic-sphere overlay still has its base layer.
+    if (meshVoxelBaseTexture) {
+        glCopyImageSubData(voxelGridTexture,    GL_TEXTURE_3D, 0, 0,0,0,
+                           meshVoxelBaseTexture, GL_TEXTURE_3D, 0, 0,0,0,
+                           N, N, N);
+    }
+
+    // codex 03 F1: signal sdfGenerationPass that the OBJ branch can run
+    // without requiring meshVoxelData (CPU mirror).
+    gpuVoxelGridReady = true;
+    return true;
+}
+
 bool Demo3D::sdfGenerationPass() {
     /**
      * @brief Generate 3D signed distance field
@@ -1776,9 +1929,21 @@ bool Demo3D::sdfGenerationPass() {
      */
 
     // --- Step 3 (3b, F1): OBJ mesh branch ---
-    // Step 8: branch on useGPUSDF -- CPU EDT (default) or GPU JFA (dynamic-friendly).
-    if (useOBJMesh && !meshVoxelData.empty()) {
+    // Step 8: branch on useGPUSDF -- CPU EDT (default) or GPU JFA.
+    // Step 9 (codex 03 F1): predicate now also accepts gpuVoxelGridReady
+    // so the GPU/GPU path (no CPU meshVoxelData mirror) doesn't fall through
+    // to the analytic SDF branch.
+    if (useOBJMesh && (!meshVoxelData.empty() || gpuVoxelGridReady)) {
         if (!meshSDFReady) {
+            // CPU EDT requires meshVoxelData; if the user picked CPU EDT
+            // but only the GPU mirror exists, refuse rather than crash.
+            if (!useGPUSDF && meshVoxelData.empty()) {
+                std::cerr << "[ERROR] sdfGenerationPass: CPU EDT requires "
+                             "meshVoxelData but it's empty (GPU/CPU combo "
+                             "without readback). Toggle GPU SDF or restart "
+                             "with CPU voxelizer.\n";
+                return false;
+            }
             bool ok = useGPUSDF ? generateMeshSDFGPU() : generateMeshSDF();
             if (!ok) {
                 std::cerr << "[ERROR] sdfGenerationPass: mesh SDF bake failed (path="
@@ -2471,8 +2636,9 @@ void Demo3D::reloadShaders() {
     }
     shaders.clear();
 
-    // Step 8: see startup-load comment for sdf_3d.comp re-enable rationale.
+    // Step 8/9: see startup-load comment.
     loadShader("sdf_3d.comp");
+    loadShader("voxelize.comp");
     loadShader("sdf_analytic.comp");
     loadShader("radiance_3d.comp");
     loadShader("reduction_3d.comp");
@@ -2557,6 +2723,16 @@ void Demo3D::createVolumeBuffers() {
         std::cerr << "[ERROR] createVolumeBuffers: failed to allocate Step 8 GPU JFA textures\n";
     }
 
+    // Step 9 Phase 3 (codex 03 F5): R32UI owner-index texture + triangle SSBO.
+    voxelOwnerTexture = gl::createTexture3D(
+        volumeResolution, volumeResolution, volumeResolution,
+        GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr
+    );
+    if (!voxelOwnerTexture) {
+        std::cerr << "[ERROR] createVolumeBuffers: failed to allocate Step 9 voxelOwnerTexture\n";
+    }
+    glGenBuffers(1, &triangleSSBO);   // empty until first GPU voxelize
+
     // Phase 6b: label volume textures for RenderDoc resource identification
     glObjectLabel(GL_TEXTURE, voxelGridTexture,        -1, "voxelGridTexture");
     glObjectLabel(GL_TEXTURE, sdfTexture,              -1, "sdfTexture");
@@ -2567,6 +2743,8 @@ void Demo3D::createVolumeBuffers() {
     glObjectLabel(GL_TEXTURE, voronoiTextureA,         -1, "voronoiTextureA");
     glObjectLabel(GL_TEXTURE, voronoiTextureB,         -1, "voronoiTextureB");
     glObjectLabel(GL_TEXTURE, meshVoxelBaseTexture,    -1, "meshVoxelBaseTexture");
+    if (voxelOwnerTexture) glObjectLabel(GL_TEXTURE, voxelOwnerTexture, -1, "voxelOwnerTexture");
+    if (triangleSSBO)      glObjectLabel(GL_BUFFER,  triangleSSBO,      -1, "triangleSSBO");
 
     // Create framebuffers (minimal - we'll use compute shaders mostly)
     glGenFramebuffers(1, &voxelizationFBO);
@@ -2609,6 +2787,9 @@ void Demo3D::destroyVolumeBuffers() {
     if (voronoiTextureA)      glDeleteTextures(1, &voronoiTextureA);
     if (voronoiTextureB)      glDeleteTextures(1, &voronoiTextureB);
     if (meshVoxelBaseTexture) glDeleteTextures(1, &meshVoxelBaseTexture);
+    // Step 9 Phase 3 (codex 03 F9): cleanup Step 9 voxelizer resources.
+    if (voxelOwnerTexture)    glDeleteTextures(1, &voxelOwnerTexture);
+    if (triangleSSBO)         glDeleteBuffers(1, &triangleSSBO);
 }
 
 void Demo3D::initCascades() {
@@ -3108,76 +3289,56 @@ void Demo3D::addVoxelBox(
     bool emissive
 ) {
     /**
-     * @brief Helper function to add a box of voxels
-     * 
-     * @param center Box center in world space
-     * @param size Box dimensions
-     * @param color RGB color
-     * @param emissive Whether the box emits light
+     * @brief Helper function to add a box of voxels.
+     *
+     * Step 9 follow-up (post codex 04): rewritten to mirror addVoxelSphere.
+     * Two long-standing bugs are fixed:
+     *   - Coord math: was `voxelSize = 1/N` and `gridOrigin = (0,0,0)`,
+     *     which silently clipped negative-coord boxes (Cornell walls at
+     *     x=-1.5 mapped to voxel -192 -> clamped to 0). The actual SDF
+     *     volume is at volumeOrigin=(-2,-2,-2) volumeSize=(4,4,4); now
+     *     uses `(world - volumeOrigin) / volumeSize * N` (matches the
+     *     OBJ + sphere voxelizers).
+     *   - Upload: was per-voxel glTexSubImage3D in a tight loop. For
+     *     analytic Cornell that's ~525K GL calls = ~10 s scene-switch
+     *     stall. Now builds a single sub-volume buffer and uploads with
+     *     ONE glTexSubImage3D (~1 ms total).
      */
-    
-    // Calculate voxel bounds
+    const int N = volumeResolution;
+    auto worldToVoxel = [&](const glm::vec3& w) {
+        glm::vec3 norm = (w - volumeOrigin) / volumeSize;
+        return glm::ivec3(norm * float(N));
+    };
     glm::vec3 halfSize = size * 0.5f;
     glm::vec3 minPos = center - halfSize;
     glm::vec3 maxPos = center + halfSize;
-    
-    // Convert to voxel coordinates
-    // Assuming unit grid size for demo purposes, scaled by resolution
-    float voxelSize = 1.0f / float(volumeResolution); 
-    
-    // Assuming origin at 0,0,0 for this demo implementation
-    glm::vec3 uGridOrigin(0.0f);
-    
-    glm::ivec3 minVoxel = glm::ivec3((minPos - uGridOrigin) / voxelSize);
-    glm::ivec3 maxVoxel = glm::ivec3((maxPos - uGridOrigin) / voxelSize);
-    
-    // Clamp to volume bounds
-    minVoxel = glm::clamp(minVoxel, glm::ivec3(0), glm::ivec3(volumeResolution - 1));
-    maxVoxel = glm::clamp(maxVoxel, glm::ivec3(0), glm::ivec3(volumeResolution - 1));
-    
-    // Prepare voxel data
-    std::vector<unsigned char> voxelData;
-    std::vector<glm::ivec3> voxelPositions;
-    
-    for (int x = minVoxel.x; x <= maxVoxel.x; ++x) {
-        for (int y = minVoxel.y; y <= maxVoxel.y; ++y) {
-            for (int z = minVoxel.z; z <= maxVoxel.z; ++z) {
-                // Add voxel
-                unsigned char r = static_cast<unsigned char>(color.r * 255);
-                unsigned char g = static_cast<unsigned char>(color.g * 255);
-                unsigned char b = static_cast<unsigned char>(color.b * 255);
-                unsigned char a = emissive ? 255 : 128;
-                
-                voxelData.push_back(r);
-                voxelData.push_back(g);
-                voxelData.push_back(b);
-                voxelData.push_back(a);
-                
-                voxelPositions.push_back(glm::ivec3(x, y, z));
-            }
-        }
-    }
-    
-    // Upload to GPU (batch update)
-    // Note: For efficiency, should use staging buffer and single upload
-    // This is a simplified implementation
-    
-    glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
-    
-    for (size_t i = 0; i < voxelPositions.size(); ++i) {
-        glTexSubImage3D(
-            GL_TEXTURE_3D,
-            0,
-            voxelPositions[i].x,
-            voxelPositions[i].y,
-            voxelPositions[i].z,
-            1, 1, 1,
-            GL_RGBA,
-            GL_UNSIGNED_BYTE,
-            &voxelData[i * 4]
-        );
+
+    glm::ivec3 minV = worldToVoxel(minPos);
+    glm::ivec3 maxV = worldToVoxel(maxPos);
+    minV = glm::clamp(minV, glm::ivec3(0), glm::ivec3(N - 1));
+    maxV = glm::clamp(maxV, glm::ivec3(0), glm::ivec3(N - 1));
+    glm::ivec3 dim = maxV - minV + glm::ivec3(1);
+    if (dim.x <= 0 || dim.y <= 0 || dim.z <= 0) return;
+
+    // Build sub-volume on CPU. Boxes are solid volumes (every voxel inside
+    // the bbox gets the box's color); the alpha=128 vs 255 distinction
+    // (emissive) is preserved from the prior behavior.
+    const uint8_t r = static_cast<uint8_t>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
+    const uint8_t g = static_cast<uint8_t>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
+    const uint8_t b = static_cast<uint8_t>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
+    const uint8_t a = emissive ? 255 : 128;
+
+    std::vector<uint8_t> sub(size_t(dim.x) * dim.y * dim.z * 4);
+    for (size_t i = 0, n = sub.size() / 4; i < n; ++i) {
+        sub[i * 4 + 0] = r;
+        sub[i * 4 + 1] = g;
+        sub[i * 4 + 2] = b;
+        sub[i * 4 + 3] = a;
     }
 
+    glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
+    glTexSubImage3D(GL_TEXTURE_3D, 0, minV.x, minV.y, minV.z,
+                    dim.x, dim.y, dim.z, GL_RGBA, GL_UNSIGNED_BYTE, sub.data());
     glBindTexture(GL_TEXTURE_3D, 0);
 }
 
@@ -4163,6 +4324,26 @@ void Demo3D::renderTutorialPanel() {
         std::cout << "[Demo3D] Mesh SDF path: " << (useGPUSDF ? "GPU JFA" : "CPU EDT") << "\n";
     }
 
+    // Step 9 Phase 3 (codex 03 F10): GPU voxelize toggle. Re-runs the
+    // current OBJ through loadOBJMesh on flip so the user sees the effect
+    // immediately (cache key is per-voxelizer-kind so both bakes coexist).
+    if (ImGui::Checkbox("GPU voxelize (re-runs current OBJ)", &useGPUVoxelize)) {
+        std::cout << "[Demo3D] Voxelizer: " << (useGPUVoxelize ? "GPU" : "CPU") << "\n";
+        if (useOBJMesh && !currentOBJPath.empty()) {
+            // The current OBJ was loaded under the OTHER voxelizer; reload
+            // through the new path. Cache key per-kind means CPU and GPU
+            // bakes coexist, so this is fast on the second click each way.
+            std::string pathToReload =
+                (currentOBJPath == "cornell")        ? "res/scene/cornell_box.obj" :
+                (currentOBJPath == "cornell_orig")   ? "res/scene/CornellBox-Original/CornellBox-Original.obj" :
+                (currentOBJPath == "sponza")         ? "res/scene/sponza.obj" :
+                (currentOBJPath == "sponza_master")  ? "res/scene/Sponza-master/sponza.obj" : "";
+            if (!pathToReload.empty()) {
+                loadOBJMesh(pathToReload);
+            }
+        }
+    }
+
     // Step 8 Phase 2d: dynamic sphere overlay (greyed out unless GPU+OBJ).
     ImGui::BeginDisabled(!useGPUSDF || !useOBJMesh);
     if (ImGui::Checkbox("Dynamic sphere overlay", &dynamicSphereEnabled)) {
@@ -4916,7 +5097,64 @@ glm::ivec3 Demo3D::calculateWorkGroups(int dimX, int dimY, int dimZ, int localSi
 
 bool Demo3D::loadOBJMesh(const std::string& filename) {
     std::cout << "\n[Demo3D] Loading OBJ mesh: " << filename << std::endl;
-    
+    const auto loadT0 = std::chrono::high_resolution_clock::now();
+
+    // Step 9 Phase 2 (codex 03 F2): source-aware cache lookup.
+    // Hits skip parse + normalize + voxelize entirely; just upload cached
+    // bytes to GPU textures + commit + applyOBJViewPreset.
+    {
+        MeshCacheKey key{ filename, useGPUVoxelize ? 1 : 0 };
+        auto cit = meshCache.find(key);
+        if (cit != meshCache.end()) {
+            const auto& cm = cit->second;
+            currentObjBmin = cm.bmin;
+            currentObjBmax = cm.bmax;
+            // Upload cached bytes to voxelGridTexture + meshVoxelBaseTexture.
+            glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
+            glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
+                            volumeResolution, volumeResolution, volumeResolution,
+                            GL_RGBA, GL_UNSIGNED_BYTE, cm.voxelBytes.data());
+            if (meshVoxelBaseTexture) {
+                glBindTexture(GL_TEXTURE_3D, meshVoxelBaseTexture);
+                glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
+                                volumeResolution, volumeResolution, volumeResolution,
+                                GL_RGBA, GL_UNSIGNED_BYTE, cm.voxelBytes.data());
+            }
+            glBindTexture(GL_TEXTURE_3D, 0);
+            // codex 04 F2: ALWAYS keep the CPU mirror (8 MB at 128^3) so the
+            // user can flip "GPU SDF" off mid-session without stranding CPU
+            // EDT (which requires meshVoxelData as input). The earlier
+            // "clear on GPU/GPU" optimization saved 8 MB but broke the
+            // toggle-off transition. gpuVoxelGridReady stays true so
+            // sdfGenerationPass uses the GPU path while it's enabled.
+            meshVoxelData     = cm.voxelBytes;   // copy
+            gpuVoxelGridReady = (useGPUVoxelize ? true : false);
+            // Commit-block invariants (mirror the cache-miss commit below).
+            meshSDFReady         = false;
+            useOBJMesh           = true;
+            useAnalyticRaymarch  = false;
+            historyNeedsSeed     = true;
+            renderFrameIndex     = 0;
+            temporalRebuildCount = 0;
+            sceneDirty           = true;
+            // Compute objKey same way as cache-miss path so currentOBJPath stays consistent.
+            std::string objKey;
+            if      (filename.find("Sponza-master") != std::string::npos)       objKey = "sponza_master";
+            else if (filename.find("CornellBox-Original") != std::string::npos) objKey = "cornell_orig";
+            else if (filename.find("sponza") != std::string::npos
+                  || filename.find("Sponza") != std::string::npos)              objKey = "sponza";
+            else                                                                objKey = "cornell";
+            currentOBJPath = objKey;
+            applyOBJViewPreset();
+            const double loadMs = std::chrono::duration<double, std::milli>(
+                std::chrono::high_resolution_clock::now() - loadT0).count();
+            std::cout << "[Demo3D] OBJ cache hit (path=" << filename
+                      << " kind=" << (key.voxelizerKind ? "GPU" : "CPU")
+                      << "): loadOBJMesh wall=" << loadMs << "ms\n";
+            return true;
+        }
+    }
+
     // Try loading from multiple possible paths (handle different working directories)
     std::vector<std::string> searchPaths = {
         filename,                              // As provided
@@ -4984,23 +5222,27 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     // Step 3 (3a, F5): stage voxelization in a local vector. Previous mesh state
     // (meshVoxelData, useOBJMesh, etc.) is untouched until commit at the end --
     // so a failed voxelization preserves whatever was on screen.
+    // Step 9 Phase 3 (codex 03 F1): branch on useGPUVoxelize. CPU path
+    // produces newVoxelData; GPU path runs voxelizeOBJ_GPU AFTER commit
+    // (it writes voxelGridTexture + meshVoxelBaseTexture directly and sets
+    // gpuVoxelGridReady = true).
     std::vector<uint8_t> newVoxelData;
-    objLoader.voxelize(volumeResolution, newVoxelData, volumeOrigin, volumeSize);
-
-    if (newVoxelData.empty()) {
-        std::cerr << "[ERROR] Empty voxelization for " << successfulPath
-                  << "; keeping previous mesh state\n";
-        return false;
+    if (!useGPUVoxelize) {
+        objLoader.voxelize(volumeResolution, newVoxelData, volumeOrigin, volumeSize);
+        if (newVoxelData.empty()) {
+            std::cerr << "[ERROR] Empty voxelization for " << successfulPath
+                      << "; keeping previous mesh state\n";
+            return false;
+        }
+        // Debug-display upload (voxelGridTexture). This is the only side effect before
+        // commit; if a later step somehow fails the worst case is that the debug texture
+        // briefly shows the new mesh while meshVoxelData still holds the old data.
+        glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
+        glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
+                        volumeResolution, volumeResolution, volumeResolution,
+                        GL_RGBA, GL_UNSIGNED_BYTE, newVoxelData.data());
+        glBindTexture(GL_TEXTURE_3D, 0);
     }
-
-    // Debug-display upload (voxelGridTexture). This is the only side effect before
-    // commit; if a later step somehow fails the worst case is that the debug texture
-    // briefly shows the new mesh while meshVoxelData still holds the old data.
-    glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
-    glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
-                    volumeResolution, volumeResolution, volumeResolution,
-                    GL_RGBA, GL_UNSIGNED_BYTE, newVoxelData.data());
-    glBindTexture(GL_TEXTURE_3D, 0);
 
     // Commit. All scene-switch invariants set together:
     //  - meshSDFReady=false -> Step 3b's branch in sdfGenerationPass() will rebake.
@@ -5009,7 +5251,29 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     //    Cornell Box analytic primitives. Force off here so the mesh actually shows.
     //  - historyNeedsSeed/renderFrameIndex/temporalRebuildCount (3a, F2): temporal
     //    cascade reseed so previous-scene history doesn't EMA-blend into OBJ frames.
-    meshVoxelData        = std::move(newVoxelData);
+    // codex 04 F1: snapshot prior scene state BEFORE the commit so GPU
+    // voxelize failure can roll back. Captures only the CPU-side fields
+    // the commit mutates -- texture contents are best-effort restored
+    // by re-clicking the prior scene's button (cache hit makes that fast).
+    struct PriorScene {
+        std::vector<uint8_t> meshVoxelData;
+        bool        useOBJMesh;
+        bool        useAnalyticRaymarch;
+        std::string currentOBJPath;
+        glm::vec3   currentObjBmin;
+        glm::vec3   currentObjBmax;
+        bool        gpuVoxelGridReady;
+    } prior {
+        std::move(meshVoxelData),
+        useOBJMesh, useAnalyticRaymarch, currentOBJPath,
+        currentObjBmin, currentObjBmax, gpuVoxelGridReady
+    };
+    // codex 04 F2: always store CPU mirror so GPU SDF toggle-off doesn't
+    // strand CPU EDT. GPU path reads it from the cache-populate readback
+    // below (after voxelizeOBJ_GPU completes); CPU path gets it directly
+    // from objLoader.voxelize() above.
+    if (!useGPUVoxelize) meshVoxelData = std::move(newVoxelData);
+    else                 meshVoxelData.clear();   // GPU path repopulates from readback
     meshSDFReady         = false;
     useOBJMesh           = true;
     useAnalyticRaymarch  = false;
@@ -5020,11 +5284,14 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     currentOBJPath       = objKey;  // Step 6: 4-way key
     currentObjBmin       = nbmin;   // codex 13 F1: assign bounds atomically with the rest
     currentObjBmax       = nbmax;
+    gpuVoxelGridReady    = false;   // reset; GPU path sets true below on success
 
     // Step 8 Phase 2a: cache static OBJ voxels in meshVoxelBaseTexture so the
     // dynamic-sphere overlay path can fast-restore them via glCopyImageSubData
-    // each frame without re-running CPU triangle voxelization (~hundreds of ms).
-    if (meshVoxelBaseTexture) {
+    // each frame without re-running voxelization. CPU path uploads from
+    // meshVoxelData here; GPU path mirrors voxelGridTexture inside
+    // voxelizeOBJ_GPU below.
+    if (!useGPUVoxelize && meshVoxelBaseTexture) {
         glBindTexture(GL_TEXTURE_3D, meshVoxelBaseTexture);
         glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
                         volumeResolution, volumeResolution, volumeResolution,
@@ -5032,8 +5299,62 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
         glBindTexture(GL_TEXTURE_3D, 0);
     }
 
+    // Step 9 Phase 3 (codex 03 F1): GPU voxelize fires AFTER commit so
+    // gpuVoxelGridReady takes effect on the next sdfGenerationPass.
+    if (useGPUVoxelize) {
+        if (!voxelizeOBJ_GPU()) {
+            // codex 04 F1: full rollback -- restore every CPU-side field
+            // the commit mutated. Texture contents are best-effort: the
+            // user can re-click the prior scene's button (cache hit fast)
+            // to fully restore the visible output. Without rollback the
+            // user would see an empty volume + lose any prior OBJ.
+            std::cerr << "[Demo3D] loadOBJMesh GPU voxelize failed -- "
+                         "rolling back to prior scene state\n";
+            meshVoxelData       = std::move(prior.meshVoxelData);
+            useOBJMesh          = prior.useOBJMesh;
+            useAnalyticRaymarch = prior.useAnalyticRaymarch;
+            currentOBJPath      = std::move(prior.currentOBJPath);
+            currentObjBmin      = prior.currentObjBmin;
+            currentObjBmax      = prior.currentObjBmax;
+            gpuVoxelGridReady   = prior.gpuVoxelGridReady;
+            meshSDFReady        = false;
+            sceneDirty          = true;
+            return false;
+        }
+    }
+
     std::cout << "[Demo3D] OBJ committed (" << currentOBJPath
               << "); SDF will be baked next frame\n";
+
+    // Step 9 Phase 2 (codex 03 F2): populate cache so subsequent same-OBJ
+    // clicks under the same voxelizer skip parse + voxelize entirely.
+    // CPU path stores meshVoxelData directly. GPU path pays a one-shot
+    // glGetTexImage readback (~5-10 ms) -- the OBJ-load total still
+    // wins big over re-doing CPU voxelize.
+    {
+        MeshCacheKey key{ filename, useGPUVoxelize ? 1 : 0 };
+        CachedMesh cm;
+        cm.bmin = nbmin;
+        cm.bmax = nbmax;
+        if (useGPUVoxelize) {
+            cm.voxelBytes.resize(size_t(volumeResolution) * volumeResolution * volumeResolution * 4);
+            glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
+            glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_UNSIGNED_BYTE, cm.voxelBytes.data());
+            glBindTexture(GL_TEXTURE_3D, 0);
+            // codex 04 F2: always populate CPU mirror so GPU SDF toggle-off
+            // (interactive: useGPUVoxelize stays true, useGPUSDF flips to
+            // false) doesn't strand CPU EDT without input. The 8 MB cost is
+            // already paid for the cache.
+            meshVoxelData = cm.voxelBytes;   // copy
+        } else {
+            cm.voxelBytes = meshVoxelData;   // copy
+        }
+        meshCache[key] = std::move(cm);
+    }
+    const double loadMs = std::chrono::duration<double, std::milli>(
+        std::chrono::high_resolution_clock::now() - loadT0).count();
+    std::cout << "[Demo3D] loadOBJMesh wall=" << loadMs << "ms (cache miss, voxelizer="
+              << (useGPUVoxelize ? "GPU" : "CPU") << ")\n";
 
     // Step 5 (5-helper, codex 10 F3): per-OBJ camera + light preset extracted
     // into a helper so R-key reset can apply it without reloading the OBJ.

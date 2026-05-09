@@ -24,6 +24,7 @@
 
 #include <string>
 #include <map>
+#include <unordered_map>
 #include <vector>
 #include <memory>
 #include <thread>
@@ -638,6 +639,18 @@ private:
      *  sphere injection doesn't destroy the static base layer. */
     GLuint meshVoxelBaseTexture = 0;
 
+    // Step 9 Phase 3 (codex 03 F5): R32UI owner-index texture for the GPU
+    // voxelizer's atomicMin pass. Stores winning triangle index per voxel
+    // (0xFFFFFFFFu = no owner). Resolve pass reads this and writes RGBA8
+    // color into voxelGridTexture. Separate texture so we don't alias RGBA8
+    // as R32UI (which is fragile re: GL image-format-class compatibility).
+    GLuint voxelOwnerTexture = 0;
+
+    // Step 9 Phase 3: SSBO holding all triangles for the active OBJ
+    // (positions + per-face Kd lookup). Built once per OBJ load via
+    // OBJLoader::buildTriangles(). 64 bytes per triangle.
+    GLuint triangleSSBO = 0;
+
     // =============================================================================
     // Analytic SDF (Phase 0 - Quick Validation)
     // =============================================================================
@@ -682,6 +695,47 @@ private:
     //   if (!sdfReady || (useOBJMesh && !meshSDFReady)) -> bake
     bool sdfReady     = false;
     bool cascadeReady = false;
+
+    // Step 9 Phase 2 (codex 03 F1+F2): source-aware OBJ cache.
+    // Key includes voxelizerKind (0=CPU, 1=GPU) so CPU and GPU bakes coexist
+    // as separate entries -- toggling between paths after first load gives
+    // two cache hits, not a re-voxelize. Cache always stores RGBA8 voxel
+    // bytes regardless of which path produced them; GPU path pays one-shot
+    // glGetTexImage on cache populate (~5-10ms per unique OBJ).
+    // codex 04 F3: key is the CALLER-PROVIDED string (`requestedPath`),
+    // NOT a canonicalized filesystem path. Two different aliases for the
+    // same file (e.g. `cornell_box.obj` vs `res/scene/cornell_box.obj`)
+    // produce two cache entries. Current callers (4 ImGui buttons + the
+    // CLI mapping) all use stable strings so this isn't observed in
+    // practice; renaming clears up the doc/code mismatch.
+    struct MeshCacheKey {
+        std::string requestedPath;
+        int         voxelizerKind;   // 0 = CPU, 1 = GPU
+        bool operator==(const MeshCacheKey& o) const {
+            return requestedPath == o.requestedPath && voxelizerKind == o.voxelizerKind;
+        }
+    };
+    struct MeshCacheKeyHash {
+        size_t operator()(const MeshCacheKey& k) const {
+            return std::hash<std::string>{}(k.requestedPath) ^ size_t(k.voxelizerKind);
+        }
+    };
+    struct CachedMesh {
+        std::vector<uint8_t> voxelBytes;
+        glm::vec3 bmin, bmax;
+    };
+    std::unordered_map<MeshCacheKey, CachedMesh, MeshCacheKeyHash> meshCache;
+
+    // Step 9 Phase 3 (codex 03 F1): set true after GPU voxelize completes.
+    // sdfGenerationPass branches into the OBJ SDF path on either
+    // !meshVoxelData.empty() (CPU path) OR gpuVoxelGridReady (GPU path).
+    bool gpuVoxelGridReady = false;
+
+    // Step 9 Phase 3 (codex 03 F10): runtime toggle picks GPU vs CPU
+    // triangle voxelizer at OBJ load. Default OFF (CPU baseline). Flipping
+    // re-invokes loadOBJMesh on the active OBJ so the user sees the effect
+    // immediately (cache key includes voxelizerKind so both bakes coexist).
+    bool useGPUVoxelize = false;
     /** Step 2 v2: bake conservative UDF from meshVoxelData into sdfTexture + propagated albedoTexture.
      *  Returns false on validation/upload failure; caller (Step 3) sets meshSDFReady on success. */
     bool generateMeshSDF();
@@ -691,6 +745,13 @@ private:
      *  albedoTexture with conservative-band UDF matching the CPU path. Returns
      *  false if shader missing or dispatch fails. */
     bool generateMeshSDFGPU();
+
+    /** Step 9 Phase 3 (codex 03 F4-F7): GPU triangle voxelizer. Builds
+     *  triangle SSBO via OBJLoader::buildTriangles, dispatches voxelize.comp
+     *  in 3 passes (init / atomicMin / resolve), copies result into
+     *  meshVoxelBaseTexture, populates the mesh cache via glGetTexImage,
+     *  sets gpuVoxelGridReady = true. Returns false on shader/handle/GL error. */
+    bool voxelizeOBJ_GPU();
 
     /** Step 8 (codex 01 F1): runtime toggle picks GPU vs CPU mesh-SDF path.
      *  Default OFF (CPU baseline). Flipping invalidates meshSDFReady so the
@@ -714,6 +775,9 @@ public:
     /** Step 8 (codex 01 F10): CLI hooks for dynamic-sphere demo. */
     void setDynamicSphere(bool v) { dynamicSphereEnabled = v; }
     void setSphereTimeOverride(float t) { sphereTimeOverride = t; }
+    /** Step 9 (codex 03 F10): CLI hook (`--gpu-voxelize`) -- must be set
+     *  BEFORE the first --load-obj so the initial bake uses the chosen path. */
+    void setUseGPUVoxelize(bool v) { useGPUVoxelize = v; }
 private:
 
     /** codex 07 F1 test hook: when > 0, generateMeshSDF returns false this many times

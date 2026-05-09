@@ -10,12 +10,16 @@
 
 #include <glm/glm.hpp>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <map>
 #include <set>
+#include <charconv>      // Step 9: from_chars for fast numeric parsing
+#include <chrono>        // Step 9: parse-time logging
+#include <cstring>       // strchr
 
 struct OBJVertex {
     glm::vec3 position;
@@ -38,6 +42,15 @@ struct OBJMaterial {
     float shininess = 32.0f;
 };
 
+// Step 9 Phase 3 (codex 03 F4): flat triangle layout for the GPU voxelizer
+// SSBO. std430-padded so each triangle is 64 bytes (4 vec4s).
+struct GPUTriangle {
+    glm::vec4 v0;        // .xyz = world position, .w = padding
+    glm::vec4 v1;
+    glm::vec4 v2;
+    glm::vec4 colorKd;   // .xyz = Kd (with Ke albedo-boost from Step 6), .w = padding
+};
+
 class OBJLoader {
 public:
     OBJLoader() {}
@@ -48,13 +61,25 @@ public:
      * @return true if successful
      */
     bool load(const std::string& filename) {
-        std::ifstream file(filename);
+        // Step 9 Phase 1 (codex 03 F8): rewrite uses whole-file read +
+        // string_view + std::from_chars for both float lines (v/vn/vt) AND
+        // face tokens (parseVertexIndexSV). Sponza-master 23.8MB / ~2-3 s
+        // -> ~300-500 ms expected.
+        std::ifstream file(filename, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
             std::cerr << "[OBJLoader] Failed to open file: " << filename << std::endl;
             return false;
         }
+        const std::streamsize fsize = file.tellg();
+        file.seekg(0, std::ios::beg);
+        std::string buf(fsize, '\0');
+        if (!file.read(buf.data(), fsize)) {
+            std::cerr << "[OBJLoader] Failed to read file: " << filename << std::endl;
+            return false;
+        }
+        file.close();
 
-        // Clear only after a successful open so a failed load preserves existing data.
+        // Clear only after a successful read so a failed load preserves existing data.
         vertices.clear();
         normals.clear();
         texcoords.clear();
@@ -72,101 +97,86 @@ public:
             if (slash != std::string::npos) objDir = filename.substr(0, slash + 1);
         }
 
-        std::cout << "[OBJLoader] Loading: " << filename << std::endl;
-        
-        std::string line;
+        std::cout << "[OBJLoader] Loading: " << filename
+                  << " (" << fsize << " bytes)" << std::endl;
+
+        const auto t0 = std::chrono::high_resolution_clock::now();
+
+        // Track vn/vt counts for negative-index resolution even though we
+        // don't store the actual values (codex 03 F8 -- skip parse cost).
+        size_t vnCount = 0;
+        size_t vtCount = 0;
         std::string currentMaterial;
-        
-        while (std::getline(file, line)) {
-            std::istringstream iss(line);
-            std::string prefix;
-            iss >> prefix;
-            
-            if (prefix == "v") {
+
+        // Walk the buffer line by line via string_view.
+        const char* p   = buf.data();
+        const char* end = p + buf.size();
+        while (p < end) {
+            const char* lineStart = p;
+            while (p < end && *p != '\n' && *p != '\r') ++p;
+            std::string_view line(lineStart, size_t(p - lineStart));
+            // Skip CR, LF, CRLF.
+            while (p < end && (*p == '\r' || *p == '\n')) ++p;
+            if (line.empty()) continue;
+
+            // Trim leading whitespace.
+            size_t s0 = 0;
+            while (s0 < line.size() && (line[s0] == ' ' || line[s0] == '\t')) ++s0;
+            line = line.substr(s0);
+            if (line.empty() || line[0] == '#') continue;
+
+            // Identify prefix. Single chars 'v'/'f' are common; multi-char
+            // prefixes 'vn', 'vt', 'usemtl', 'mtllib' need lookahead.
+            const char c0 = line[0];
+            const char c1 = line.size() > 1 ? line[1] : 0;
+
+            if (c0 == 'v' && (c1 == ' ' || c1 == '\t')) {
                 // Vertex position
                 OBJVertex vertex;
-                iss >> vertex.position.x >> vertex.position.y >> vertex.position.z;
-                vertices.push_back(vertex);
-            }
-            else if (prefix == "vn") {
-                // Vertex normal
-                glm::vec3 normal;
-                iss >> normal.x >> normal.y >> normal.z;
-                normals.push_back(normal);
-            }
-            else if (prefix == "vt") {
-                // Texture coordinate
-                glm::vec2 texcoord;
-                iss >> texcoord.x >> texcoord.y;
-                texcoords.push_back(texcoord);
-            }
-            else if (prefix == "f") {
-                // Step 6: read ALL vertex tokens (face may be triangle, quad, or n-gon),
-                // resolve negative indices against current vertex count, then
-                // fan-triangulate. Cornell-Original uses quads with negative indices
-                // (e.g. `f -4 -3 -2 -1`); the original 3-token + decrement-only
-                // parser silently dropped the 4th vertex AND produced negative
-                // array indices.
-                std::vector<int> fv, ft, fn;
-                std::string tok;
-                while (iss >> tok) {
-                    int v = 0, t = -1, n = -1;
-                    parseVertexIndex(tok, v, t, n);
-                    // OBJ allows negative indices = relative to current count.
-                    if (v < 0) v = static_cast<int>(vertices.size()) + v + 1;
-                    if (t < 0 && t != -1) t = static_cast<int>(texcoords.size()) + t + 1;
-                    if (n < 0 && n != -1) n = static_cast<int>(normals.size()) + n + 1;
-                    // Convert to 0-based.
-                    fv.push_back(v - 1);
-                    ft.push_back(t == -1 ? -1 : t - 1);
-                    fn.push_back(n == -1 ? -1 : n - 1);
-                }
-                // Fan-triangulate (v0, vi, vi+1). Step 6 (codex 12 F5):
-                // bounds-check resolved indices so a malformed OBJ can't drive
-                // voxelize() into vertices[<negative>] or vertices[>=size()].
-                // Bad triangles are dropped with a bounded warning count.
-                const int vcount = static_cast<int>(vertices.size());
-                for (size_t i = 1; i + 1 < fv.size(); ++i) {
-                    int a = fv[0], b = fv[i], c = fv[i+1];
-                    if (a < 0 || a >= vcount || b < 0 || b >= vcount || c < 0 || c >= vcount) {
-                        if (badIndexWarnings < 8) {
-                            std::cerr << "[OBJLoader] WARN: face vertex index out of range "
-                                      << "(a=" << a << " b=" << b << " c=" << c
-                                      << " vcount=" << vcount << "), dropping triangle\n";
-                            ++badIndexWarnings;
-                            if (badIndexWarnings == 8)
-                                std::cerr << "[OBJLoader] (further out-of-range warnings suppressed)\n";
-                        }
-                        ++badIndexDropped;
-                        continue;
-                    }
-                    OBJFace face;
-                    face.v[0] = a; face.t[0] = ft[0];   face.n[0] = fn[0];
-                    face.v[1] = b; face.t[1] = ft[i];   face.n[1] = fn[i];
-                    face.v[2] = c; face.t[2] = ft[i+1]; face.n[2] = fn[i+1];
-                    faces.push_back(face);
-                    faceMaterials.push_back(currentMaterial);
+                if (parse3Floats(line.substr(2),
+                                 vertex.position.x, vertex.position.y, vertex.position.z)) {
+                    vertices.push_back(vertex);
                 }
             }
-            else if (prefix == "usemtl") {
-                // Material reference
-                iss >> currentMaterial;
+            else if (c0 == 'v' && c1 == 'n' && line.size() > 2 && (line[2] == ' ' || line[2] == '\t')) {
+                // Vertex normal -- codex 03 F8: skip value parse, count only.
+                ++vnCount;
             }
-            else if (prefix == "mtllib") {
-                // Step 6: real .mtl loader -- resolved relative to the .obj's directory.
-                std::string mtlFile;
-                iss >> mtlFile;
-                if (!mtlFile.empty()) {
-                    loadMTL(objDir + mtlFile);
-                }
+            else if (c0 == 'v' && c1 == 't' && line.size() > 2 && (line[2] == ' ' || line[2] == '\t')) {
+                // Texture coord -- codex 03 F8: skip value parse, count only.
+                ++vtCount;
+            }
+            else if (c0 == 'f' && (c1 == ' ' || c1 == '\t')) {
+                // Face line: tokenize on whitespace, parse each token as v/vt/vn
+                // via parseVertexIndexSV. Fan-triangulate. Codex 03 F8 fast path.
+                parseFaceLine(line.substr(2), vnCount, vtCount, currentMaterial);
+            }
+            else if (line.substr(0, 7) == "usemtl ") {
+                size_t name0 = 7;
+                while (name0 < line.size() && (line[name0] == ' ' || line[name0] == '\t')) ++name0;
+                size_t name1 = name0;
+                while (name1 < line.size() && line[name1] != ' ' && line[name1] != '\t' && line[name1] != '\r') ++name1;
+                currentMaterial = std::string(line.substr(name0, name1 - name0));
+            }
+            else if (line.substr(0, 7) == "mtllib ") {
+                size_t name0 = 7;
+                while (name0 < line.size() && (line[name0] == ' ' || line[name0] == '\t')) ++name0;
+                size_t name1 = name0;
+                while (name1 < line.size() && line[name1] != ' ' && line[name1] != '\t' && line[name1] != '\r') ++name1;
+                std::string mtlFile(line.substr(name0, name1 - name0));
+                if (!mtlFile.empty()) loadMTL(objDir + mtlFile);
             }
         }
-        
-        file.close();
-        
-        std::cout << "[OBJLoader] Loaded: " << vertices.size() << " vertices, "
-                  << faces.size() << " faces" << std::endl;
-        
+
+        const auto t1 = std::chrono::high_resolution_clock::now();
+        const double parseMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        std::cout << "[OBJLoader] Parse: " << parseMs << "ms"
+                  << " (" << vertices.size() << " v, "
+                  << vnCount << " vn-skipped, "
+                  << vtCount << " vt-skipped, "
+                  << faces.size() << " f, "
+                  << materials.size() << " materials, "
+                  << badIndexDropped << " dropped-tris)" << std::endl;
         return true;
     }
     
@@ -282,13 +292,56 @@ public:
     }
     
     /**
+     * @brief Step 9 Phase 3 (codex 03 F4): build flat triangle list for the
+     *        GPU voxelizer SSBO. Reuses the SAME per-face material-color
+     *        resolution chain as voxelize() (parsed .mtl Kd -> legacy
+     *        getMaterialColor -> default gray, plus Ke albedo-boost from
+     *        Step 6) so CPU and GPU voxelizers cannot drift on color.
+     */
+    void buildTriangles(std::vector<GPUTriangle>& out) const {
+        out.clear();
+        out.reserve(faces.size());
+        for (size_t fi = 0; fi < faces.size(); ++fi) {
+            const auto& face = faces[fi];
+            const auto& v0 = vertices[face.v[0]].position;
+            const auto& v1 = vertices[face.v[1]].position;
+            const auto& v2 = vertices[face.v[2]].position;
+
+            // Same material lookup as voxelize() -- parsed .mtl wins, then
+            // legacy table, then default gray; Ke baked as albedo boost.
+            std::string matName;
+            if (faceMaterials.size() > fi) matName = faceMaterials[fi];
+            glm::vec3 kd, ke(0.0f);
+            auto mit = materials.find(matName);
+            if (mit != materials.end()) {
+                kd = mit->second.diffuse;
+                ke = mit->second.emissive;
+            } else {
+                kd = getMaterialColor(matName);
+            }
+            glm::vec3 color = kd;
+            float maxKe = std::max({ ke.x, ke.y, ke.z, 1.0f });
+            if (maxKe > 1.0f) {
+                color = glm::clamp(kd + ke / maxKe, glm::vec3(0.0f), glm::vec3(1.0f));
+            }
+
+            GPUTriangle t;
+            t.v0      = glm::vec4(v0, 0.0f);
+            t.v1      = glm::vec4(v1, 0.0f);
+            t.v2      = glm::vec4(v2, 0.0f);
+            t.colorKd = glm::vec4(color, 0.0f);
+            out.push_back(t);
+        }
+    }
+
+    /**
      * @brief Voxelize mesh into a 3D grid
      * @param resolution Grid resolution (e.g., 128)
      * @param grid Output voxel grid (resolution³ x 4 RGBA)
      * @param gridOrigin World space origin of the grid
      * @param gridSize World space size of the grid
      */
-    void voxelize(int resolution, std::vector<uint8_t>& grid, 
+    void voxelize(int resolution, std::vector<uint8_t>& grid,
                   const glm::vec3& gridOrigin, const glm::vec3& gridSize) const {
         if (vertices.empty() || faces.empty()) {
             std::cerr << "[OBJLoader] No geometry to voxelize!" << std::endl;
@@ -378,11 +431,11 @@ private:
     void parseVertexIndex(const std::string& str, int& v, int& t, int& n) {
         std::istringstream iss(str);
         std::string token;
-        
+
         // Vertex index (required)
         std::getline(iss, token, '/');
         v = std::stoi(token);
-        
+
         // Texture coordinate index (optional)
         if (iss.peek() == '/') {
             iss.get();  // Skip '/'
@@ -391,7 +444,7 @@ private:
             std::getline(iss, token, '/');
             t = token.empty() ? -1 : std::stoi(token);
         }
-        
+
         // Normal index (optional)
         if (iss.peek() == '/') {
             iss.get();  // Skip '/'
@@ -399,6 +452,108 @@ private:
             n = token.empty() ? -1 : std::stoi(token);
         } else {
             n = -1;
+        }
+    }
+
+    // =========================================================================
+    // Step 9 Phase 1 fast-path helpers (codex 03 F8): from_chars + string_view.
+    // =========================================================================
+
+    /** Parse 3 floats from a string_view (whitespace-separated). Returns true
+     *  iff all 3 parsed successfully. */
+    static bool parse3Floats(std::string_view sv, float& x, float& y, float& z) {
+        auto skipWS = [&]() {
+            while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+        };
+        auto parseOne = [&](float& out) -> bool {
+            skipWS();
+            if (sv.empty()) return false;
+            const char* b = sv.data();
+            const char* e = b + sv.size();
+            auto r = std::from_chars(b, e, out);
+            if (r.ec != std::errc()) return false;
+            sv.remove_prefix(size_t(r.ptr - b));
+            return true;
+        };
+        return parseOne(x) && parseOne(y) && parseOne(z);
+    }
+
+    /** Parse a single OBJ face token of the form "v", "v/t", "v//n", or "v/t/n".
+     *  v required; t and n default to -1 if absent. Indices may be negative. */
+    static bool parseVertexIndexSV(std::string_view tok, int& v, int& t, int& n) {
+        v = 0; t = -1; n = -1;
+        if (tok.empty()) return false;
+        const char* b = tok.data();
+        const char* e = b + tok.size();
+
+        auto r = std::from_chars(b, e, v);
+        if (r.ec != std::errc()) return false;
+        b = r.ptr;
+        if (b >= e || *b != '/') return true;            // "v"
+        ++b;                                             // skip '/'
+        if (b < e && *b != '/') {
+            r = std::from_chars(b, e, t);
+            if (r.ec != std::errc()) return false;
+            b = r.ptr;
+        }
+        if (b >= e || *b != '/') return true;            // "v/t"
+        ++b;                                             // skip second '/'
+        if (b < e) {
+            r = std::from_chars(b, e, n);
+            if (r.ec != std::errc()) return false;
+        }
+        return true;
+    }
+
+    /** Parse the body of an `f` line (already past the "f " prefix), tokenize
+     *  on whitespace, fan-triangulate, push triangles into `faces` +
+     *  `faceMaterials` while honoring negative indices and bounds-checking
+     *  resolved indices. Mirror of the Step 6 stringstream-based path. */
+    void parseFaceLine(std::string_view body, size_t /*vnCount*/, size_t /*vtCount*/,
+                       const std::string& currentMaterial)
+    {
+        // Tokenize on whitespace.
+        std::vector<int> fv, ft, fn;
+        size_t i = 0, N = body.size();
+        while (i < N) {
+            while (i < N && (body[i] == ' ' || body[i] == '\t')) ++i;
+            if (i >= N) break;
+            size_t j = i;
+            while (j < N && body[j] != ' ' && body[j] != '\t' && body[j] != '\r') ++j;
+            std::string_view tok = body.substr(i, j - i);
+            i = j;
+
+            int v = 0, t = -1, n = -1;
+            if (!parseVertexIndexSV(tok, v, t, n)) continue;
+            if (v < 0)              v = static_cast<int>(vertices.size())  + v + 1;
+            if (t < 0 && t != -1)   t = static_cast<int>(texcoords.size()) + t + 1;
+            if (n < 0 && n != -1)   n = static_cast<int>(normals.size())   + n + 1;
+            fv.push_back(v - 1);
+            ft.push_back(t == -1 ? -1 : t - 1);
+            fn.push_back(n == -1 ? -1 : n - 1);
+        }
+        // Fan-triangulate (v0, vi, vi+1) with bounds-check (codex 12 F5).
+        const int vcount = static_cast<int>(vertices.size());
+        for (size_t k = 1; k + 1 < fv.size(); ++k) {
+            int a = fv[0], b = fv[k], c = fv[k+1];
+            if (a < 0 || a >= vcount || b < 0 || b >= vcount || c < 0 || c >= vcount) {
+                if (badIndexWarnings < 8) {
+                    std::cerr << "[OBJLoader] WARN: face vertex index out of range "
+                              << "(a=" << a << " b=" << b << " c=" << c
+                              << " vcount=" << vcount << "), dropping triangle\n";
+                    ++badIndexWarnings;
+                    if (badIndexWarnings == 8)
+                        std::cerr << "[OBJLoader] (further out-of-range warnings suppressed)\n";
+                }
+                ++badIndexDropped;
+                continue;
+            }
+            OBJFace face;
+            face.v[0] = a; face.t[0] = ft[0];   face.n[0] = fn[0];
+            face.v[1] = b; face.t[1] = ft[k];   face.n[1] = fn[k];
+            face.v[2] = c; face.t[2] = ft[k+1]; face.n[2] = fn[k+1];
+            faces.push_back(face);
+            faceMaterials.push_back(currentMaterial);
         }
     }
     
