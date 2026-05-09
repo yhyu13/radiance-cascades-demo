@@ -1,23 +1,27 @@
 /**
  * @file sdf_3d.comp
- * @brief Compute shader for generating 3D Signed Distance Field using Jump Flooding
- * 
- * This shader extends the 2D JFA algorithm to 3D volumes. It computes the Euclidean
- * distance transform by iteratively propagating distance information through the
- * volume in logarithmic time.
- * 
- * Algorithm Overview:
- * 1. Initialize: Surface voxels = 0, empty voxels = infinity
- * 2. For step = max_size down to 1 (halving each iteration):
- *    - Sample 3x3x3 neighborhood
- *    - Find minimum distance and closest surface position
- *    - Store result
- * 3. Final pass: Convert to signed distance (positive outside, negative inside)
- * 
- * Complexity: O(log n) iterations instead of O(n) for naive approach
- * 
- * Input: Voxel grid with surface markers
- * Output: 3D texture storing signed distance values
+ * @brief GPU Jump Flooding Algorithm (JFA) SDF generator -- Step 8 rewrite.
+ *
+ * Three passes selected by uPass:
+ *   uPass = 0  init      : seeds Voronoi from voxelGridTexture (alpha > thresh)
+ *   uPass = 1  step      : 27-neighbor JFA propagation, ping-pong I/O
+ *   uPass = 2  finalize  : voronoi -> sdfTexture (UDF, conservative-band) +
+ *                          albedoTexture (nearest-seed lookup)
+ *
+ * Replaces the broken Step 0 stub which used image3D as a function parameter
+ * (`safeLoad(image3D, ivec3)`) -- a driver overload mismatch on this GPU.
+ * All bounds checks are inlined here.
+ *
+ * Bindings (codex 01 F7 -- declared in GLSL so no glUniform1i wiring):
+ *   binding=0  rgba8     uVoxelGrid    (R, init+finalize)
+ *   binding=1  rgba32f   oVoronoi      (W, init+step)
+ *   binding=2  rgba32f   iVoronoi      (R, step+finalize)
+ *   binding=3  r32f      oSDF          (W, finalize)
+ *   binding=4  rgba8     oAlbedo       (W, finalize)
+ *
+ * Voronoi storage: rgba32f, .xyz = closest-seed voxel coord (vec3, ivec3
+ *   would round-trip via packing), .w = valid-flag (1.0 = has a seed,
+ *   0.0 = not yet reached). INF distance = .w == 0.
  */
 
 #version 430 core
@@ -25,156 +29,108 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
 // =============================================================================
+// Image bindings (codex 01 F7: layout(binding=N) so no glUniform1i needed)
+// =============================================================================
+layout(rgba8,   binding = 0) uniform image3D uVoxelGrid;
+layout(rgba32f, binding = 1) uniform image3D oVoronoi;
+layout(rgba32f, binding = 2) uniform image3D iVoronoi;
+layout(r32f,    binding = 3) uniform image3D oSDF;
+layout(rgba8,   binding = 4) uniform image3D oAlbedo;
+
+// =============================================================================
 // Uniforms
 // =============================================================================
+uniform int   uPass;             // 0 init, 1 step, 2 finalize
+uniform int   uStepSize;         // current JFA step (N/2, N/4, ..., 1)
+uniform float uVoxelSizeWorld;   // volumeSize.x / N (used in finalize)
 
-/** Current JFA step size */
-uniform int uStepSize;
-
-/** Maximum step size (initial) */
-uniform int uMaxStep;
-
-/** Volume dimensions */
-uniform ivec3 uVolumeSize;
-
-/** Threshold for surface detection */
-uniform float uSurfaceThreshold;
+const float SURFACE_THRESHOLD = 0.5;   // alpha8 > this means "surface"
+const float SQRT3_OVER_2 = 0.86602540378443864676;  // (sqrt(3)) / 2 -- conservative-band
 
 // =============================================================================
-// Texture Bindings
+// Helpers
 // =============================================================================
-
-/** Input voxel grid (density information) */
-layout(rgba8) uniform image3D uVoxelGrid;
-
-/** Output SDF (single float per voxel) */
-layout(r32f) uniform image3D oSDF;
-
-/** Optional: Voronoi diagram (closest surface position) */
-layout(rgba32f) uniform image3D oVoronoi;
-
-// =============================================================================
-// Constants
-// =============================================================================
-
-const float INF = 1e10;
-const float EPSILON = 1e-6;
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/**
- * @brief Safe texture load with bounds checking
- */
-vec4 safeLoad(image3D img, ivec3 pos) {
-    if (any(lessThan(pos, ivec3(0))) || any(greaterThanEqual(pos, uVolumeSize))) {
-        return vec4(INF, 0.0, 0.0, 0.0);
-    }
-    return imageLoad(img, pos);
+bool inBounds(ivec3 p, ivec3 size) {
+    return all(greaterThanEqual(p, ivec3(0))) && all(lessThan(p, size));
 }
-
-/**
- * @brief Get density from voxel
- */
-float getDensity(ivec3 pos) {
-    if (any(lessThan(pos, ivec3(0))) || any(greaterThanEqual(pos, uVolumeSize))) {
-        return 0.0;
-    }
-    return imageLoad(uVoxelGrid, pos).a;
-}
-
-/**
- * @brief Calculate 3D offset for current step
- */
-ivec3 getOffset(int idx) {
-    return ivec3(
-        (idx % 3) - 1,
-        ((idx / 3) % 3) - 1,
-        (idx / 9) - 1
-    ) * uStepSize;
-}
-
-// =============================================================================
-// Main Compute Shader
-// =============================================================================
 
 void main() {
-    ivec3 pos = ivec3(gl_GlobalInvocationID);
-    
-    // Bounds check
-    if (any(greaterThanEqual(pos, uVolumeSize)))
+    ivec3 pos  = ivec3(gl_GlobalInvocationID);
+    ivec3 size = imageSize(uVoxelGrid);
+    if (any(greaterThanEqual(pos, size))) return;
+
+    // -------------------------------------------------------------------------
+    // Pass 0: init Voronoi from voxelGridTexture.
+    //   Surface voxel -> store own position as the closest-seed (.w = 1).
+    //   Empty voxel   -> mark invalid (.w = 0; .xyz unused).
+    // -------------------------------------------------------------------------
+    if (uPass == 0) {
+        float a = imageLoad(uVoxelGrid, pos).a;
+        if (a > SURFACE_THRESHOLD) {
+            imageStore(oVoronoi, pos, vec4(vec3(pos), 1.0));
+        } else {
+            imageStore(oVoronoi, pos, vec4(0.0, 0.0, 0.0, 0.0));
+        }
         return;
-    
-    // Initialize with current position as closest
-    float minDist = INF;
-    ivec3 closestPos = pos;
-    
-    // Sample 3x3x3 neighborhood (27 voxels total)
-    for (int i = 0; i < 27; ++i) {
-        ivec3 offset = getOffset(i);
-        ivec3 samplePos = pos + offset;
-        
-        // Load neighbor's distance value with bounds checking
-        vec4 neighborData;
-        if (any(lessThan(samplePos, ivec3(0))) || any(greaterThanEqual(samplePos, uVolumeSize))) {
-            neighborData = vec4(INF, 0.0, 0.0, 0.0);
-        } else {
-            neighborData = imageLoad(oSDF, samplePos);
-        }
-        float neighborDist = neighborData.r;
-        
-        // If this is first iteration (step == maxStep), initialize from voxel grid
-        if (uStepSize == uMaxStep) {
-            float density = getDensity(samplePos);
-            if (density > uSurfaceThreshold) {
-                // Surface voxel: distance = 0
-                neighborDist = 0.0;
-                closestPos = samplePos;
-            }
-        } else {
-            // Subsequent iterations: use stored distance
-            if (neighborDist < minDist) {
-                minDist = neighborDist;
-                
-                // Load stored closest position from voronoi buffer
-                // TODO: Optional Voronoi diagram output
-                // if (enableVoronoi) {
-                //     vec4 voronoiData = imageLoad(oVoronoi, samplePos);
-                //     if (voronoiData.a > 0.5) { // Valid position stored
-                //         closestPos = ivec3(voronoiData.xyz);
-                //     }
-                // }
-            }
-        }
-        
-        // Update minimum
-        if (neighborDist < minDist) {
-            minDist = neighborDist;
-            
-            // If surface found at sample position, record it
-            if (uStepSize == uMaxStep && getDensity(samplePos) > uSurfaceThreshold) {
-                closestPos = samplePos;
-            }
-        }
     }
-    
-    // Calculate Euclidean distance to closest surface
-    if (uStepSize < uMaxStep) {
-        // Use stored closest position
-        vec3 worldPos = vec3(pos);
-        vec3 closestWorld = vec3(closestPos);
-        minDist = length(worldPos - closestWorld);
+
+    // -------------------------------------------------------------------------
+    // Pass 1: 27-neighbor JFA step. Read iVoronoi (ping), write oVoronoi (pong).
+    //   For each of 27 offsets at distance uStepSize, fetch the neighbor's
+    //   stored seed-position. If valid, compute Euclidean distance from THIS
+    //   pos to that seed; pick the minimum. Carry forward our own seed too
+    //   (so already-reached voxels don't lose their best seed).
+    // -------------------------------------------------------------------------
+    if (uPass == 1) {
+        // Start with our own current best (from previous pass / init).
+        vec4 best = imageLoad(iVoronoi, pos);
+        float bestD2 = (best.w > 0.5)
+            ? dot(vec3(pos) - best.xyz, vec3(pos) - best.xyz)
+            : 1e30;
+
+        for (int dz = -1; dz <= 1; ++dz)
+        for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+            ivec3 sp = pos + ivec3(dx, dy, dz) * uStepSize;
+            if (!inBounds(sp, size)) continue;
+            vec4 s = imageLoad(iVoronoi, sp);
+            if (s.w < 0.5) continue;   // neighbor has no seed yet
+            vec3 d = vec3(pos) - s.xyz;
+            float d2 = dot(d, d);
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                best   = vec4(s.xyz, 1.0);
+            }
+        }
+        imageStore(oVoronoi, pos, best);
+        return;
     }
-    
-    // Write distance to output
-    imageStore(oSDF, pos, vec4(minDist, 0.0, 0.0, 0.0));
-    
-    // Optionally store Voronoi diagram
-    // TODO: Optional Voronoi diagram output
-    // if (enableVoronoi) {
-    //     // Store closest surface position (with validity flag in w)
-    //     float valid = (minDist < INF) ? 1.0 : 0.0;
-    //     imageStore(oVoronoi, pos, vec4(vec3(closestPos), valid));
-    // }
+
+    // -------------------------------------------------------------------------
+    // Pass 2: finalize. iVoronoi holds the closest-seed coord at every voxel.
+    //   - distance = length(pos - seed) * voxelSize  (UDF in world units)
+    //   - subtract (voxelSize * sqrt(3) / 2)  -> conservative band, matches
+    //     CPU EDT path (codex 04 F1) so raymarch.frag's EPSILON / 0.002
+    //     thresholds still land
+    //   - albedo = uVoxelGrid[seed].rgb  (nearest-seed lookup)
+    //
+    // Voxels with no seed (.w==0) are unreachable -- write a large positive
+    // distance so the raymarcher treats them as empty space.
+    // -------------------------------------------------------------------------
+    if (uPass == 2) {
+        vec4 v = imageLoad(iVoronoi, pos);
+        float distOut;
+        vec3  albOut;
+        if (v.w < 0.5) {
+            distOut = 1e3;                 // unreachable -> "very far"
+            albOut  = vec3(0.0);
+        } else {
+            float distVox = length(vec3(pos) - v.xyz);
+            distOut = max(distVox * uVoxelSizeWorld - uVoxelSizeWorld * SQRT3_OVER_2, 0.0);
+            albOut  = imageLoad(uVoxelGrid, ivec3(v.xyz + 0.5)).rgb;
+        }
+        imageStore(oSDF,    pos, vec4(distOut, 0.0, 0.0, 0.0));
+        imageStore(oAlbedo, pos, vec4(albOut, 1.0));
+        return;
+    }
 }

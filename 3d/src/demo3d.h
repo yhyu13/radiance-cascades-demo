@@ -628,6 +628,16 @@ private:
     /** Albedo/material color volume (RGBA8) — written alongside SDF by sdf_analytic.comp */
     GLuint albedoTexture;
 
+    // Step 8 (codex 01 F9): GPU JFA SDF + dynamic-sphere overlay textures.
+    /** RGBA32F Voronoi ping-pong A: .xyz = closest-seed voxel coord, .w = valid flag. */
+    GLuint voronoiTextureA = 0;
+    /** RGBA32F Voronoi ping-pong B (alternate target each JFA step). */
+    GLuint voronoiTextureB = 0;
+    /** RGBA8 cache of static OBJ voxels: written once at loadOBJMesh,
+     *  copied into voxelGridTexture each frame the dynamic sphere is on so
+     *  sphere injection doesn't destroy the static base layer. */
+    GLuint meshVoxelBaseTexture = 0;
+
     // =============================================================================
     // Analytic SDF (Phase 0 - Quick Validation)
     // =============================================================================
@@ -665,9 +675,46 @@ private:
     std::vector<uint8_t> meshVoxelData;
     /** True after generateMeshSDF() successfully baked sdfTexture/albedoTexture for the current mesh. */
     bool meshSDFReady = false;
+
+    // Step 8 (codex 01 F1): promoted from render() static locals so non-render
+    // sites (UI toggles, dynamic-sphere update path) can invalidate the same
+    // single source of truth. Render condition is now
+    //   if (!sdfReady || (useOBJMesh && !meshSDFReady)) -> bake
+    bool sdfReady     = false;
+    bool cascadeReady = false;
     /** Step 2 v2: bake conservative UDF from meshVoxelData into sdfTexture + propagated albedoTexture.
      *  Returns false on validation/upload failure; caller (Step 3) sets meshSDFReady on success. */
     bool generateMeshSDF();
+
+    /** Step 8 (codex 01 F6/F7/F8): GPU JFA equivalent of generateMeshSDF().
+     *  3-pass dispatch (init / log2(N) JFA steps / finalize) into sdfTexture +
+     *  albedoTexture with conservative-band UDF matching the CPU path. Returns
+     *  false if shader missing or dispatch fails. */
+    bool generateMeshSDFGPU();
+
+    /** Step 8 (codex 01 F1): runtime toggle picks GPU vs CPU mesh-SDF path.
+     *  Default OFF (CPU baseline). Flipping invalidates meshSDFReady so the
+     *  next render frame re-bakes via the new path. */
+    bool useGPUSDF = false;
+
+    // Step 8 Phase 2: dynamic sphere overlay state.
+    bool       dynamicSphereEnabled    = false;    // ImGui + --dynamic-sphere
+    bool       dynamicSphereWasEnabled = false;    // codex 02 F2: detect disable transition
+    glm::vec3  dynamicSphereCenter     = glm::vec3(0.0f);
+    float      sphereTime              = 0.0f;     // accumulated orbit phase
+    float      sphereOrbitSpeed        = 1.0f;     // ImGui slider 0.1..5.0
+    float      sphereTimeOverride      = -1.0f;    // codex 01 F10: -1 = real time, else snap
+
+    /** Step 8 Phase 2b (codex 01 F3+F4): rasterize a solid sphere into voxelGridTexture
+     *  with correct world->voxel math AND a single batched glTexSubImage3D upload. */
+    void addVoxelSphere(const glm::vec3& center, float radius, const glm::vec3& color);
+public:
+    /** Step 8: CLI hook (`--gpu-sdf`) to enable GPU JFA SDF path at startup. */
+    void setUseGPUSDF(bool v) { useGPUSDF = v; meshSDFReady = false; cascadeReady = false; }
+    /** Step 8 (codex 01 F10): CLI hooks for dynamic-sphere demo. */
+    void setDynamicSphere(bool v) { dynamicSphereEnabled = v; }
+    void setSphereTimeOverride(float t) { sphereTimeOverride = t; }
+private:
 
     /** codex 07 F1 test hook: when > 0, generateMeshSDF returns false this many times
      *  before behaving normally. Used by --inject-bake-failures=N to verify the render

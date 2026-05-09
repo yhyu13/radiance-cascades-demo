@@ -321,8 +321,12 @@ Demo3D::Demo3D()
     
     // Step 4: Load shaders (minimal set for quick start)
     std::cout << "\n[Demo3D] Loading shaders..." << std::endl;
-    loadShader("voxelize.comp");
-    loadShader("sdf_3d.comp");
+    // Step 8: sdf_3d.comp re-enabled (was disabled in the Step 7 cleanup
+    // commit). The shader was rewritten with three uPass-driven kernels
+    // (init / JFA step / finalize) and is dispatched by generateMeshSDFGPU.
+    // voxelize.comp stays unloaded (deferred to Step 9 -- CPU triangle
+    // voxelizer + addVoxelSphere cover Step 8's needs).
+    loadShader("sdf_3d.comp");        // Step 8: GPU JFA SDF for dynamic-friendly path
     loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
     loadShader("radiance_3d.comp");
     loadShader("reduction_3d.comp");    // Phase 5b-1: atlas → isotropic reduction
@@ -574,6 +578,72 @@ void Demo3D::update() {
     // Calling voxelizationPass() here would clear sceneDirty before render() sees it,
     // preventing sdfReady from being reset and leaving the SDF texture stale.
 
+    // -------------------------------------------------------------------------
+    // Step 8 Phase 2c (codex 01 F1+F2 contract): dynamic-sphere overlay.
+    //
+    // Triple gate: sphere only fires when GPU SDF is on AND an OBJ is loaded
+    // AND the user enabled the demo. Without GPU SDF, per-frame re-bake would
+    // cost ~67ms CPU and tank framerate to ~4 fps; without an OBJ we have no
+    // base layer to overlay onto.
+    //
+    // Each frame: copy static OBJ voxels back over voxelGridTexture, animate
+    // sphere center, inject sphere voxels (one batched glTexSubImage3D), then
+    // invalidate the SAME flags any other trigger uses so the render loop
+    // re-bakes the SDF and re-runs ALL cascades with no temporal ghost.
+    // -------------------------------------------------------------------------
+    if (dynamicSphereEnabled && useOBJMesh && useGPUSDF && meshVoxelBaseTexture) {
+        // 1. Restore static OBJ voxels.
+        glCopyImageSubData(meshVoxelBaseTexture, GL_TEXTURE_3D, 0, 0, 0, 0,
+                           voxelGridTexture,    GL_TEXTURE_3D, 0, 0, 0, 0,
+                           volumeResolution, volumeResolution, volumeResolution);
+
+        // 2. Animate sphere phase. CLI override (--sphere-time=X) snaps to a
+        //    fixed value for deterministic capture (codex 01 F10).
+        if (sphereTimeOverride < 0.0f) sphereTime += GetFrameTime() * sphereOrbitSpeed;
+        else                            sphereTime  = sphereTimeOverride;
+
+        const glm::vec3 center = (currentObjBmin + currentObjBmax) * 0.5f;
+        const glm::vec3 size   = currentObjBmax - currentObjBmin;
+        const float orbitR     = std::min(size.x, size.z) * 0.3f;
+        const float radius     = size.y * 0.08f;
+        dynamicSphereCenter = center + glm::vec3(
+            orbitR * std::cos(sphereTime),
+            size.y * 0.2f,
+            orbitR * std::sin(sphereTime)
+        );
+
+        // 3. Overlay sphere (~9^3 voxels for the demo, 1 GL upload).
+        addVoxelSphere(dynamicSphereCenter, radius, glm::vec3(1.0f, 0.4f, 0.1f));
+
+        // 4. codex 01 F1+F2 / codex 02 F1: invalidate SAME flags any other
+        // trigger uses. forceCascadeRebuild ENTERS the cascade pass; setting
+        // renderFrameIndex=0 BYPASSES the per-cascade stagger interval test
+        // (interval=1<<i; 0 % anything == 0 -> all cascades dispatch). Without
+        // both, C1/C2/C3 stay 1/3/7 frames stale even though the SDF rebuilt.
+        // Pattern matches the RenderDoc capture path (demo3d.cpp:4390).
+        meshSDFReady        = false;   // sdfGenerationPass re-bakes via GPU JFA
+        cascadeReady        = false;   // updateRadianceCascades runs
+        forceCascadeRebuild = true;    // enters cascade pass even if cascadeReady
+        renderFrameIndex    = 0;       // codex 02 F1: bypass stagger -> ALL cascades
+        historyNeedsSeed    = true;    // alpha=1.0, no EMA ghost trail
+    } else if (dynamicSphereWasEnabled && useOBJMesh && useGPUSDF && meshVoxelBaseTexture) {
+        // codex 02 F2: dynamic sphere just turned OFF. Restore the static
+        // base voxels so the previously injected sphere doesn't linger in
+        // voxelGridTexture / sdfTexture / cascades. Same invalidation set as
+        // the active path so the next frame re-bakes the sphere-free SDF.
+        glCopyImageSubData(meshVoxelBaseTexture, GL_TEXTURE_3D, 0, 0, 0, 0,
+                           voxelGridTexture,    GL_TEXTURE_3D, 0, 0, 0, 0,
+                           volumeResolution, volumeResolution, volumeResolution);
+        meshSDFReady        = false;
+        cascadeReady        = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex    = 0;
+        historyNeedsSeed    = true;
+        std::cout << "[Demo3D] Dynamic sphere disabled: restored static OBJ base voxels\n";
+    }
+    // Track previous-frame state for the codex 02 F2 disable-cleanup branch.
+    dynamicSphereWasEnabled = (dynamicSphereEnabled && useOBJMesh && useGPUSDF && meshVoxelBaseTexture);
+
     // Phase 6b: auto-capture after warm-up delay (--auto-rdoc mode)
     // Hides UI one frame before capture so the thumbnail shows the clean 3D scene.
 #ifdef _WIN32
@@ -595,7 +665,9 @@ void Demo3D::render() {
      */
     
     // Pass 1: Voxelization (if needed)
-    static bool sdfReady = false;
+    // Step 8 (codex 01 F1): sdfReady + cascadeReady are now Demo3D members
+    // (was render-local statics). Promoted so toggles + dynamic-sphere
+    // update can invalidate the same flag the render loop checks.
     if (sceneDirty) {
         double t0 = GetTime();
         voxelizationPass();
@@ -603,10 +675,11 @@ void Demo3D::render() {
         sdfReady = false;
     }
 
-    // Pass 2: SDF Generation (only when scene changed or first run)
-    static bool cascadeReady = false;
+    // Pass 2: SDF Generation (codex 01 F1: condition now also re-fires when
+    // the OBJ mesh-SDF was invalidated externally -- e.g. GPU/CPU toggle
+    // flipped, or dynamic-sphere update cleared meshSDFReady).
     static bool lastMergeFlag = false;
-    if (!sdfReady) {
+    if (!sdfReady || (useOBJMesh && !meshSDFReady)) {
         double t0 = GetTime();
         // codex 07 F1: only flip sdfReady on success. On mesh-bake failure,
         // sdfReady stays false → next frame retries the bake. cascadeReady is
@@ -1581,6 +1654,112 @@ bool Demo3D::generateMeshSDF() {
     return true;
 }
 
+// =============================================================================
+// Step 8 (codex 01 F1/F6/F7/F8): GPU JFA equivalent of generateMeshSDF.
+// =============================================================================
+bool Demo3D::generateMeshSDFGPU() {
+    // codex 02 F4: validate inputs before issuing any GL work so a missing
+    // shader / null texture / lost context returns false (lets the render
+    // loop's existing meshSDFReady-stays-false retry path take over).
+    auto sit = shaders.find("sdf_3d.comp");
+    if (sit == shaders.end() || sit->second == 0) {
+        std::cerr << "[ERROR] generateMeshSDFGPU: sdf_3d.comp not loaded\n";
+        return false;
+    }
+    GLuint prog = sit->second;
+    if (!voxelGridTexture || !voronoiTextureA || !voronoiTextureB ||
+        !sdfTexture || !albedoTexture) {
+        std::cerr << "[ERROR] generateMeshSDFGPU: required texture handle is 0 ("
+                  << "voxel=" << voxelGridTexture
+                  << " voronoiA=" << voronoiTextureA
+                  << " voronoiB=" << voronoiTextureB
+                  << " sdf=" << sdfTexture
+                  << " albedo=" << albedoTexture << ")\n";
+        return false;
+    }
+
+    // Drain any pre-existing GL error so the post-dispatch check below
+    // attributes errors to THIS call only.
+    while (glGetError() != GL_NO_ERROR) { /* drain */ }
+
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "GPU JFA SDF");
+
+    // codex 01 F8: real GPU-side timing via GL_TIME_ELAPSED query.
+    GLuint timer = 0;
+    glGenQueries(1, &timer);
+    glBeginQuery(GL_TIME_ELAPSED, timer);
+
+    auto cpuT0 = std::chrono::high_resolution_clock::now();
+    const int N  = volumeResolution;
+    const int wg = (N + 7) / 8;
+
+    glUseProgram(prog);
+    GLint uPassLoc = glGetUniformLocation(prog, "uPass");
+    GLint uStepLoc = glGetUniformLocation(prog, "uStepSize");
+    GLint uVoxLoc  = glGetUniformLocation(prog, "uVoxelSizeWorld");
+
+    // Pass 0: init Voronoi from voxelGridTexture (binding=0 R, binding=1 W).
+    glUniform1i(uPassLoc, 0);
+    glBindImageTexture(0, voxelGridTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA8);
+    glBindImageTexture(1, voronoiTextureA,  0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    glDispatchCompute(wg, wg, wg);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    // Pass 1: log2(N) JFA steps with ping-pong (binding=2 R, binding=1 W; swap each pass).
+    GLuint readTex = voronoiTextureA, writeTex = voronoiTextureB;
+    glUniform1i(uPassLoc, 1);
+    int passCount = 0;
+    for (int step = N / 2; step >= 1; step /= 2) {
+        glUniform1i(uStepLoc, step);
+        glBindImageTexture(2, readTex,  0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA32F);
+        glBindImageTexture(1, writeTex, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+        glDispatchCompute(wg, wg, wg);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        std::swap(readTex, writeTex);
+        ++passCount;
+    }
+
+    // Pass 2: finalize -> sdfTexture + albedoTexture (with conservative band).
+    const float voxelSize = volumeSize.x / float(N);
+    glUniform1i(uPassLoc, 2);
+    glUniform1f(uVoxLoc, voxelSize);
+    glBindImageTexture(2, readTex,         0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA32F);
+    glBindImageTexture(0, voxelGridTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA8);
+    glBindImageTexture(3, sdfTexture,      0, GL_TRUE, 0, GL_WRITE_ONLY, GL_R32F);
+    glBindImageTexture(4, albedoTexture,   0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA8);
+    glDispatchCompute(wg, wg, wg);
+
+    // codex 01 F6: texture-fetch + image-access barriers BOTH needed before
+    // raymarch.frag / radiance_3d.comp sample sdf/albedo as sampler3D.
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+    glEndQuery(GL_TIME_ELAPSED);
+    glPopDebugGroup();
+
+    // codex 02 F4: check for GL errors accumulated during the dispatch
+    // sequence (bad bindings, lost context, etc). Report and return false so
+    // the render loop honors the failure (sdfReady stays false next frame).
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::cerr << "[ERROR] generateMeshSDFGPU: GL error 0x" << std::hex << err
+                  << std::dec << " during JFA dispatch sequence\n";
+        glDeleteQueries(1, &timer);
+        return false;
+    }
+
+    float cpuMs = std::chrono::duration<float, std::milli>(
+                    std::chrono::high_resolution_clock::now() - cpuT0).count();
+    GLuint64 gpuNs = 0;
+    glGetQueryObjectui64v(timer, GL_QUERY_RESULT, &gpuNs);
+    glDeleteQueries(1, &timer);
+    float gpuMs = gpuNs * 1.0e-6f;
+
+    std::cout << "[Demo3D] GPU JFA SDF: GPU=" << gpuMs << "ms"
+              << "  CPU-submit=" << cpuMs << "ms"
+              << "  (N=" << N << ", 1 init + " << passCount << " steps + 1 finalize)\n";
+    return true;
+}
+
 bool Demo3D::sdfGenerationPass() {
     /**
      * @brief Generate 3D signed distance field
@@ -1597,11 +1776,14 @@ bool Demo3D::sdfGenerationPass() {
      */
 
     // --- Step 3 (3b, F1): OBJ mesh branch ---
+    // Step 8: branch on useGPUSDF -- CPU EDT (default) or GPU JFA (dynamic-friendly).
     if (useOBJMesh && !meshVoxelData.empty()) {
         if (!meshSDFReady) {
-            if (!generateMeshSDF()) {
-                std::cerr << "[ERROR] sdfGenerationPass: mesh SDF bake failed; "
-                             "render loop keeps sdfReady=false and retries next frame\n";
+            bool ok = useGPUSDF ? generateMeshSDFGPU() : generateMeshSDF();
+            if (!ok) {
+                std::cerr << "[ERROR] sdfGenerationPass: mesh SDF bake failed (path="
+                          << (useGPUSDF ? "GPU" : "CPU")
+                          << "); render loop keeps sdfReady=false and retries next frame\n";
                 return false;   // codex 07 F1: tell render loop NOT to flip sdfReady
             }
             meshSDFReady = true;
@@ -2288,8 +2470,8 @@ void Demo3D::reloadShaders() {
         glDeleteProgram(program);
     }
     shaders.clear();
-    
-    loadShader("voxelize.comp");
+
+    // Step 8: see startup-load comment for sdf_3d.comp re-enable rationale.
     loadShader("sdf_3d.comp");
     loadShader("sdf_analytic.comp");
     loadShader("radiance_3d.comp");
@@ -2357,7 +2539,24 @@ void Demo3D::createVolumeBuffers() {
         volumeResolution, volumeResolution, volumeResolution,
         GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr
     );
-    
+
+    // Step 8 (codex 01 F9): GPU JFA Voronoi ping-pong + static-OBJ voxel cache.
+    voronoiTextureA = gl::createTexture3D(
+        volumeResolution, volumeResolution, volumeResolution,
+        GL_RGBA32F, GL_RGBA, GL_FLOAT, nullptr
+    );
+    voronoiTextureB = gl::createTexture3D(
+        volumeResolution, volumeResolution, volumeResolution,
+        GL_RGBA32F, GL_RGBA, GL_FLOAT, nullptr
+    );
+    meshVoxelBaseTexture = gl::createTexture3D(
+        volumeResolution, volumeResolution, volumeResolution,
+        GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr
+    );
+    if (!voronoiTextureA || !voronoiTextureB || !meshVoxelBaseTexture) {
+        std::cerr << "[ERROR] createVolumeBuffers: failed to allocate Step 8 GPU JFA textures\n";
+    }
+
     // Phase 6b: label volume textures for RenderDoc resource identification
     glObjectLabel(GL_TEXTURE, voxelGridTexture,        -1, "voxelGridTexture");
     glObjectLabel(GL_TEXTURE, sdfTexture,              -1, "sdfTexture");
@@ -2365,6 +2564,9 @@ void Demo3D::createVolumeBuffers() {
     glObjectLabel(GL_TEXTURE, directLightingTexture,   -1, "directLightingTexture");
     glObjectLabel(GL_TEXTURE, prevFrameTexture,        -1, "prevFrameTexture");
     glObjectLabel(GL_TEXTURE, currentRadianceTexture,  -1, "currentRadianceTexture");
+    glObjectLabel(GL_TEXTURE, voronoiTextureA,         -1, "voronoiTextureA");
+    glObjectLabel(GL_TEXTURE, voronoiTextureB,         -1, "voronoiTextureB");
+    glObjectLabel(GL_TEXTURE, meshVoxelBaseTexture,    -1, "meshVoxelBaseTexture");
 
     // Create framebuffers (minimal - we'll use compute shaders mostly)
     glGenFramebuffers(1, &voxelizationFBO);
@@ -2403,6 +2605,10 @@ void Demo3D::destroyVolumeBuffers() {
     glDeleteTextures(1, &directLightingTexture);
     glDeleteTextures(1, &prevFrameTexture);
     glDeleteTextures(1, &currentRadianceTexture);
+    // Step 8 (codex 01 F9): cleanup Step 8 textures.
+    if (voronoiTextureA)      glDeleteTextures(1, &voronoiTextureA);
+    if (voronoiTextureB)      glDeleteTextures(1, &voronoiTextureB);
+    if (meshVoxelBaseTexture) glDeleteTextures(1, &meshVoxelBaseTexture);
 }
 
 void Demo3D::initCascades() {
@@ -2971,7 +3177,62 @@ void Demo3D::addVoxelBox(
             &voxelData[i * 4]
         );
     }
-    
+
+    glBindTexture(GL_TEXTURE_3D, 0);
+}
+
+// =============================================================================
+// Step 8 Phase 2b (codex 01 F3 + F4): solid-sphere voxel rasterizer.
+//   F3 -- correct world->voxel math via volumeOrigin/volumeSize/resolution
+//         (NOT addVoxelBox's broken (0,0,0) origin assumption).
+//   F4 -- ONE batched glTexSubImage3D call per invocation, not thousands.
+// Used by the dynamic-sphere overlay path; safe to call every frame.
+// =============================================================================
+void Demo3D::addVoxelSphere(const glm::vec3& center, float radius, const glm::vec3& color) {
+    const int N = volumeResolution;
+    auto worldToVoxel = [&](const glm::vec3& w) {
+        glm::vec3 norm = (w - volumeOrigin) / volumeSize;
+        return glm::ivec3(norm * float(N));
+    };
+    glm::ivec3 minV = worldToVoxel(center - glm::vec3(radius));
+    glm::ivec3 maxV = worldToVoxel(center + glm::vec3(radius));
+    minV = glm::clamp(minV, glm::ivec3(0), glm::ivec3(N - 1));
+    maxV = glm::clamp(maxV, glm::ivec3(0), glm::ivec3(N - 1));
+    glm::ivec3 dim = maxV - minV + glm::ivec3(1);
+    if (dim.x <= 0 || dim.y <= 0 || dim.z <= 0) return;
+
+    std::vector<uint8_t> sub(size_t(dim.x) * dim.y * dim.z * 4, 0);
+    // codex 02 F3: rasterize SURFACE BAND (one voxel-diagonal wide), not
+    // solid fill. Solid-fill turned every interior voxel into a JFA seed,
+    // which produced zero-gradient interiors and chunky silhouettes (the
+    // GPU JFA finalizes distance-to-nearest-seed, so interior voxels read
+    // as distance=0 -> no surface gradient inside the sphere). A surface
+    // band matches what OBJLoader::voxelize produces for triangles.
+    const glm::vec3 voxStep = volumeSize / float(N);
+    const float halfDiag = 0.5f * std::sqrt(voxStep.x * voxStep.x +
+                                            voxStep.y * voxStep.y +
+                                            voxStep.z * voxStep.z);
+    for (int z = 0; z < dim.z; ++z)
+    for (int y = 0; y < dim.y; ++y)
+    for (int x = 0; x < dim.x; ++x) {
+        glm::ivec3 v(minV.x + x, minV.y + y, minV.z + z);
+        glm::vec3 wp = volumeOrigin + (glm::vec3(v) + 0.5f) * voxStep;
+        glm::vec3 d  = wp - center;
+        // surface band: |length(d) - radius| <= halfDiag => voxel center
+        // is within half a voxel-diagonal of the sphere's surface.
+        float dist = std::sqrt(glm::dot(d, d));
+        if (std::abs(dist - radius) <= halfDiag) {
+            int i = ((z * dim.y + y) * dim.x + x) * 4;
+            sub[i + 0] = uint8_t(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
+            sub[i + 1] = uint8_t(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
+            sub[i + 2] = uint8_t(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
+            sub[i + 3] = 255;
+        }
+    }
+
+    glBindTexture(GL_TEXTURE_3D, voxelGridTexture);
+    glTexSubImage3D(GL_TEXTURE_3D, 0, minV.x, minV.y, minV.z,
+                    dim.x, dim.y, dim.z, GL_RGBA, GL_UNSIGNED_BYTE, sub.data());
     glBindTexture(GL_TEXTURE_3D, 0);
 }
 
@@ -3891,7 +4152,31 @@ void Demo3D::renderTutorialPanel() {
         else if (currentScene >= 0 && currentScene < 3)
             ImGui::Text("Active: %s", names[currentScene]);
     }
-    
+
+    // Step 8 (codex 01 F1): GPU/CPU SDF toggle. Flipping invalidates
+    // meshSDFReady + cascadeReady so the next frame re-bakes through the
+    // newly-selected path.
+    ImGui::Separator();
+    if (ImGui::Checkbox("GPU SDF (dynamic-friendly)", &useGPUSDF)) {
+        meshSDFReady = false;
+        cascadeReady = false;
+        std::cout << "[Demo3D] Mesh SDF path: " << (useGPUSDF ? "GPU JFA" : "CPU EDT") << "\n";
+    }
+
+    // Step 8 Phase 2d: dynamic sphere overlay (greyed out unless GPU+OBJ).
+    ImGui::BeginDisabled(!useGPUSDF || !useOBJMesh);
+    if (ImGui::Checkbox("Dynamic sphere overlay", &dynamicSphereEnabled)) {
+        std::cout << "[Demo3D] Dynamic sphere overlay: "
+                  << (dynamicSphereEnabled ? "ON" : "OFF") << "\n";
+    }
+    if (dynamicSphereEnabled) {
+        ImGui::SliderFloat("Sphere orbit speed", &sphereOrbitSpeed, 0.1f, 5.0f);
+    }
+    ImGui::EndDisabled();
+    if (!useGPUSDF || !useOBJMesh) {
+        ImGui::TextDisabled("(requires GPU SDF + OBJ scene)");
+    }
+
     ImGui::NewLine();
     
     // Debug Visualization Controls
@@ -4735,6 +5020,17 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
     currentOBJPath       = objKey;  // Step 6: 4-way key
     currentObjBmin       = nbmin;   // codex 13 F1: assign bounds atomically with the rest
     currentObjBmax       = nbmax;
+
+    // Step 8 Phase 2a: cache static OBJ voxels in meshVoxelBaseTexture so the
+    // dynamic-sphere overlay path can fast-restore them via glCopyImageSubData
+    // each frame without re-running CPU triangle voxelization (~hundreds of ms).
+    if (meshVoxelBaseTexture) {
+        glBindTexture(GL_TEXTURE_3D, meshVoxelBaseTexture);
+        glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
+                        volumeResolution, volumeResolution, volumeResolution,
+                        GL_RGBA, GL_UNSIGNED_BYTE, meshVoxelData.data());
+        glBindTexture(GL_TEXTURE_3D, 0);
+    }
 
     std::cout << "[Demo3D] OBJ committed (" << currentOBJPath
               << "); SDF will be baked next frame\n";
