@@ -46,12 +46,17 @@ constexpr int OPENGL_MINOR_VERSION = 3;
 
 /**
  * @brief Initialize application and OpenGL context
- * 
+ *
  * Sets up window, OpenGL context, GLEW, and debug output.
- * 
+ *
+ * @param windowWidth  Initial window width  (default DEFAULT_WIDTH)
+ * @param windowHeight Initial window height (default DEFAULT_HEIGHT)
+ *                     Step 11 perf-analysis: passed in from argv so
+ *                     `--window-size=W,H` is honored at InitWindow time
+ *                     (codex 11 F2+F5 -- avoids stale-dim Demo3D init).
  * @return true if initialization successful
  */
-bool initializeApplication();
+bool initializeApplication(int windowWidth, int windowHeight);
 
 /**
  * @brief Configure OpenGL state for optimal performance
@@ -132,8 +137,29 @@ int main(int argc, char* argv[]) {
 #endif
     }
 
+    // Step 11 perf-analysis: pre-init pass over argv to resolve --window-size=W,H
+    // BEFORE InitWindow (codex 11 F2+F5). All other flags are parsed AFTER
+    // Demo3D construction below since they need a `demo` instance to call setters.
+    int wWidth  = DEFAULT_WIDTH;
+    int wHeight = DEFAULT_HEIGHT;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg.rfind("--window-size=", 0) == 0) {
+            int w = 0, h = 0;
+            if (std::sscanf(arg.substr(14).c_str(), "%d,%d", &w, &h) == 2 && w > 0 && h > 0) {
+                wWidth  = w;
+                wHeight = h;
+                std::cout << "[MAIN] --window-size=" << w << "," << h << "\n";
+            } else {
+                std::cerr << "[MAIN] --window-size: expected W,H positive ints (got: '"
+                          << arg.substr(14) << "'); using default "
+                          << DEFAULT_WIDTH << "x" << DEFAULT_HEIGHT << "\n";
+            }
+        }
+    }
+
     // Step 2: Initialize application
-    if (!initializeApplication()) {
+    if (!initializeApplication(wWidth, wHeight)) {
         std::cerr << "[ERROR] Application initialization failed." << std::endl;
         return 1;
     }
@@ -164,6 +190,12 @@ int main(int argc, char* argv[]) {
     int         exitAfterFrames = 0;
     int         switchToScene   = -999;   // codex 09 F1 verification: after --load-obj, switch to analytic scene N
     bool        testResetHelper = false;  // codex 11 F1/F2 verification: programmatically test resetCameraToScenePreset
+    // Step 10 (codex 06 F7): CLI camera-state overrides. Applied AFTER --load-obj,
+    // --switch-to-scene AND --test-reset-helper so user values are never overridden
+    // by the auto-fit / scene-reset paths.
+    bool        cliCameraPosSet    = false; glm::vec3 cliCameraPos{0.0f};
+    bool        cliCameraTargetSet = false; glm::vec3 cliCameraTarget{0.0f};
+    bool        cliFovySet         = false; float     cliFovy = 60.0f;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--auto-analyze") {
@@ -208,6 +240,10 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--gpu-voxelize") {
             demo->setUseGPUVoxelize(true);
             std::cout << "[MAIN] --gpu-voxelize (Step 9): GPU triangle voxelizer enabled\n";
+        } else if (arg == "--strip-ambient-floor-bake") {
+            // Step 11: cascade bake skips the vec3(0.05) floor at radiance_3d.comp:262.
+            demo->setStripAmbientFloorBake(true);
+            std::cout << "[MAIN] --strip-ambient-floor-bake (Step 11): GI bake without ambient floor\n";
         } else if (arg == "--cache-hit-test") {
             // Step 9 Phase 2 verify hook: after the initial --load-obj fires
             // below, we'll re-invoke loadOBJMesh on the same path. Hits the
@@ -229,6 +265,31 @@ int main(int argc, char* argv[]) {
             demo->setSphereTimeOverride(t);
             std::cout << "[MAIN] --sphere-time=" << t
                       << " (codex 01 F10: deterministic orbit phase for capture)\n";
+        } else if (arg.rfind("--camera-pos=", 0) == 0) {
+            // Step 10 — reproducible camera position for headless captures.
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            if (std::sscanf(arg.substr(13).c_str(), "%f,%f,%f", &x, &y, &z) == 3) {
+                cliCameraPos = glm::vec3(x, y, z);
+                cliCameraPosSet = true;
+                std::cout << "[MAIN] --camera-pos=" << x << "," << y << "," << z << "\n";
+            } else {
+                std::cerr << "[MAIN] --camera-pos: expected x,y,z (got: '"
+                          << arg.substr(13) << "')\n";
+            }
+        } else if (arg.rfind("--camera-target=", 0) == 0) {
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            if (std::sscanf(arg.substr(16).c_str(), "%f,%f,%f", &x, &y, &z) == 3) {
+                cliCameraTarget = glm::vec3(x, y, z);
+                cliCameraTargetSet = true;
+                std::cout << "[MAIN] --camera-target=" << x << "," << y << "," << z << "\n";
+            } else {
+                std::cerr << "[MAIN] --camera-target: expected x,y,z (got: '"
+                          << arg.substr(16) << "')\n";
+            }
+        } else if (arg.rfind("--camera-fovy=", 0) == 0) {
+            cliFovy = static_cast<float>(std::atof(arg.substr(14).c_str()));
+            cliFovySet = true;
+            std::cout << "[MAIN] --camera-fovy=" << cliFovy << "\n";
         }
     }
 
@@ -268,6 +329,13 @@ int main(int argc, char* argv[]) {
         std::cout << "[MAIN] Toggling GPU SDF off after load (codex 04 F2 verify)\n";
         demo->setUseGPUSDF(false);
     }
+    // Step 10 (codex 06 F7): camera CLI overrides apply LAST so they win
+    // over loadOBJMesh's auto-fit, --switch-to-scene's resetCamera, AND
+    // --test-reset-helper. Order: pos -> target -> fovy. Setting target after
+    // position re-syncs yaw/pitch from the user-chosen target.
+    if (cliCameraPosSet)    demo->setCameraPosition(cliCameraPos);
+    if (cliCameraTargetSet) demo->setCameraTarget(cliCameraTarget);
+    if (cliFovySet)         demo->setCameraFovy(cliFovy);
     int frameCounter = 0;
 
     // Step 6: Main rendering loop
@@ -360,10 +428,10 @@ int main(int argc, char* argv[]) {
 // Application Initialization
 // =============================================================================
 
-bool initializeApplication() {
+bool initializeApplication(int windowWidth, int windowHeight) {
     /**
      * @brief Initialize window and OpenGL context
-     * 
+     *
      * Implementation Steps:
      * 1. Set OpenGL version hints
      * 2. Enable MSAA if available
@@ -371,21 +439,25 @@ bool initializeApplication() {
      * 4. Load OpenGL extensions with GLEW
      * 5. Initialize ImGui and rlImGui
      * 6. Print system information
-     * 
+     *
      * @return true if successful
      */
-    
+
     // TODO: Implement initialization
-    
+
     // Step 1: Configure window hints
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
-    
+
     // Note: Raylib will use the highest OpenGL version available on the system
     // We've downgraded shaders to GLSL 430 for broader compatibility
-    
+
     // Step 2: Create window
-    InitWindow(DEFAULT_WIDTH, DEFAULT_HEIGHT, WINDOW_TITLE.c_str());
+    // Step 11 perf-analysis: width/height come from argv (--window-size=W,H)
+    // so Demo3D's later GetScreenWidth/Height reads pick up the right dims
+    // immediately. Codex 11 F2+F5: do NOT use SetWindowSize after InitWindow.
+    InitWindow(windowWidth, windowHeight, WINDOW_TITLE.c_str());
+    std::cout << "[INIT] Window created at " << windowWidth << "x" << windowHeight << "\n";
     
     if (!IsWindowReady()) {
         std::cerr << "[ERROR] Failed to create window." << std::endl;

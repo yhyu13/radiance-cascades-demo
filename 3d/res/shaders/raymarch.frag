@@ -534,27 +534,67 @@ void main() {
             float diff         = max(dot(normal, lightDir), 0.0) * (1.0 - shadow);
             vec3  directColor  = albedo * (diff * uLightColor + vec3(0.05));
             vec3  indirectColor = vec3(0.0);
+            // Step 11 (codex 07 F3): hoist `indirect` to outer scope so the
+            // heatmap modes (12 = raw GI) can read the un-albedo-modulated
+            // probe radiance. Stays vec3(0.0) when uUseCascade == 0 -- mode
+            // 12 then degenerates to all-green (tooltip warns).
+            vec3  indirect      = vec3(0.0);
 
             // Probes store source-albedo-weighted radiance; multiply by destination
             // albedo for energy-conserving Lambertian: L_out = albedo_dest * integral(L_in*cos)/integral(cos)
             if (uUseCascade != 0) {
-                vec3 indirect = (uUseDirectionalGI != 0)
+                indirect = (uUseDirectionalGI != 0)
                     ? sampleDirectionalGI(pos, normal)
                     : texture(uRadiance, uvw).rgb;
                 indirectColor = albedo * indirect;
             }
 
+            // Step 11 (codex 07 F3): GI heatmaps. Inserted AFTER the main-path
+            // lighting computation (line 535-544) so they CONSUME directColor /
+            // indirectColor / indirect -- unlike modes 4/6 which compute their
+            // own. Same green/yellow/red palette as modes 5 & 7.
+            if (uRenderMode == 11 || uRenderMode == 12 || uRenderMode == 13) {
+                float v;
+                // codex 07 F7: divisors picked from Step 10 mode-6 magnitudes
+                // (Sponza body ~0.04, rim ~0.34). Retune via shader edit if saturated.
+                if      (uRenderMode == 11) v = length(albedo * indirect) / 0.1;   // visible GI
+                else if (uRenderMode == 12) v = length(indirect)          / 0.5;   // raw GI -- codex 08 F5 retune (was /0.05, saturated red)
+                else /* 13 */ {
+                    // codex 07 F8: 0.001 threshold safe for current asset albedos.
+                    float total = length(directColor + indirectColor);
+                    v = (total > 0.001) ? length(indirectColor) / total : 0.0;     // already 0..1
+                }
+                float t8 = clamp(v, 0.0, 1.0);
+                vec3 heatColor = (t8 < 0.5)
+                    ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), t8 * 2.0)
+                    : mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (t8 - 0.5) * 2.0);
+                fragColor = vec4(heatColor, 1.0);
+                return;
+            }
+
             // uSeparateGI=1: output linear direct + linear indirect separately for the
             // bilateral GI blur composite pass. Tone mapping moves to gi_blur.frag.
-            if (uSeparateGI != 0) {
+            // Step 10 (codex 06 F3): gate on uRenderMode == 0 so the new diagnostic
+            // modes (9, 10) always reach the composite below; the GI-blur split path
+            // is only meaningful for the default render mode.
+            if (uSeparateGI != 0 && uRenderMode == 0) {
                 fragColor = vec4(directColor,   1.0);
                 fragGI    = vec4(indirectColor, 1.0);
                 return;
             }
 
+            // Step 10 (codex 06 F2 + F8): GI diagnostic modes. Mode 9 strips the
+            // hidden vec3(0.05) ambient floor; mode 10 shows ONLY that floor.
+            // Mode 4 (existing) = Mode 9 + Mode 10. Comparing 6 vs 10 reveals
+            // whether the ambient floor is washing out cascade GI bounce.
+            vec3 modeColor;
+            if      (uRenderMode == 9)  modeColor = albedo * diff * uLightColor;
+            else if (uRenderMode == 10) modeColor = albedo * vec3(0.05);
+            else                        modeColor = directColor + indirectColor;
+
             // Normal path: composite here, tone map after the loop.
             float alpha = 1.0;
-            accumulatedColor += (directColor + indirectColor) * alpha * (1.0 - accumulatedAlpha);
+            accumulatedColor += modeColor * alpha * (1.0 - accumulatedAlpha);
             accumulatedAlpha += alpha * (1.0 - accumulatedAlpha);
 
             break;

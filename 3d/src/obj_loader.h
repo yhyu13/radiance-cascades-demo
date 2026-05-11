@@ -20,6 +20,7 @@
 #include <charconv>      // Step 9: from_chars for fast numeric parsing
 #include <chrono>        // Step 9: parse-time logging
 #include <cstring>       // strchr
+#include <cctype>        // tolower (Step 9 follow-up: name-based color hints)
 
 struct OBJVertex {
     glm::vec3 position;
@@ -264,8 +265,88 @@ public:
         }
         if (haveCur) materials[cur.name] = cur;
 
+        // Post-process: name-based color hints for Sponza-style placeholder
+        // Kd values (0.4704 0.4704 0.4704 across all 25 materials means the
+        // real color lives in textures we don't load yet). Cornell-Original
+        // and other meshes with distinct .mtl Kd values are untouched -- the
+        // override only fires when (a) the name matches a known pattern AND
+        // (b) the existing Kd looks like a placeholder gray.
+        applyNameBasedColorHints();
+
         std::cout << "[OBJLoader] Loaded " << materials.size() << " materials" << std::endl;
         return true;
+    }
+
+    /**
+     * @brief Step 9 follow-up: name-based color hints for placeholder-Kd
+     *        materials (Sponza-master + similar). Only overrides materials
+     *        whose existing Kd is a near-gray in [0.3, 0.7] -- distinct
+     *        colors (Cornell-Original red/green walls) are left intact.
+     *        Quick win until proper texture loading lands.
+     */
+    void applyNameBasedColorHints() {
+        const float TOL = 0.05f;
+        int hits = 0;
+        for (auto& kv : materials) {
+            OBJMaterial& mat = kv.second;
+            const bool looksGray =
+                std::abs(mat.diffuse.r - mat.diffuse.g) < TOL &&
+                std::abs(mat.diffuse.r - mat.diffuse.b) < TOL &&
+                mat.diffuse.r > 0.3f && mat.diffuse.r < 0.7f;
+            if (!looksGray) continue;
+            glm::vec3 hint = sponzaMaterialHint(kv.first);
+            if (hint.r < 0.0f) continue;   // sentinel: no override
+            mat.diffuse = hint;
+            ++hits;
+        }
+        if (hits > 0) {
+            std::cout << "[OBJLoader] Applied " << hits
+                      << " name-based color hints to placeholder materials" << std::endl;
+        }
+    }
+
+    /** Substring-match a material name to a "make-sense" diffuse color.
+     *  Returns vec3(-1) sentinel when no pattern matches.
+     *  Codex 05 F4: per-letter suffix patterns (`_g`, `_c`, `_e`) use
+     *  `endsWith` rather than naked `has` to avoid matching incidental
+     *  letters anywhere in the name (e.g. `has("g")` would have flagged
+     *  `background` or `flag` as gold-fabric). */
+    static glm::vec3 sponzaMaterialHint(const std::string& name) {
+        // Lowercase the name so we match regardless of asset capitalization.
+        std::string n; n.reserve(name.size());
+        for (char c : name) n.push_back(char(std::tolower(unsigned(c))));
+        auto has = [&](const char* sub) { return n.find(sub) != std::string::npos; };
+        auto endsWith = [&](const char* sub) {
+            size_t L = std::strlen(sub);
+            return n.size() >= L && n.compare(n.size() - L, L, sub) == 0;
+        };
+
+        if (has("brick"))                              return glm::vec3(0.65f, 0.45f, 0.35f); // reddish brown
+        if (has("ceiling"))                            return glm::vec3(0.92f, 0.86f, 0.72f); // warm cream
+        if (has("floor"))                              return glm::vec3(0.72f, 0.62f, 0.48f); // sandstone
+        if (has("arch"))                               return glm::vec3(0.80f, 0.74f, 0.62f); // light stone
+        if (has("column"))                             return glm::vec3(0.88f, 0.85f, 0.78f); // marble
+        if (has("chain"))                              return glm::vec3(0.35f, 0.32f, 0.30f); // dark metal
+        // Curtain colors (Crytek Sponza variants); has("dif") removed (codex 05 F3).
+        if (has("curtain") && has("blue"))             return glm::vec3(0.20f, 0.30f, 0.65f); // blue velvet
+        if (has("curtain") && has("green"))            return glm::vec3(0.20f, 0.55f, 0.30f); // green velvet
+        if (has("curtain"))                            return glm::vec3(0.65f, 0.12f, 0.12f); // red velvet (default)
+        // Fabric variants -- Sponza-master uses fabric_a/c/d/e/f/g suffixes.
+        // codex 05 F4: use endsWith to keep the suffix bound; bare has("g")
+        // would also match background, flag, etc.
+        if (has("fabric") && endsWith("_g"))           return glm::vec3(0.70f, 0.50f, 0.20f); // gold-ish
+        if (has("fabric") && (endsWith("_c") || endsWith("_e"))) return glm::vec3(0.55f, 0.35f, 0.55f); // purple
+        if (has("fabric"))                             return glm::vec3(0.62f, 0.45f, 0.30f); // brown
+        if (has("vase") && has("plant"))               return glm::vec3(0.30f, 0.50f, 0.22f); // foliage
+        if (has("vase") && has("hang"))                return glm::vec3(0.78f, 0.55f, 0.20f); // copper
+        if (has("vase"))                               return glm::vec3(0.70f, 0.42f, 0.28f); // terracotta
+        if (has("lion"))                               return glm::vec3(0.72f, 0.50f, 0.22f); // bronze
+        if (has("flag") || has("pole"))                return glm::vec3(0.78f, 0.65f, 0.30f); // gold
+        if (has("roof"))                               return glm::vec3(0.45f, 0.28f, 0.22f); // dark tile
+        if (has("thorn") || has("plant") || has("leaf")) return glm::vec3(0.30f, 0.50f, 0.22f); // green
+        if (has("detail"))                             return glm::vec3(0.82f, 0.78f, 0.68f); // off-white trim
+        if (has("background"))                         return glm::vec3(0.60f, 0.65f, 0.75f); // sky-ish
+        return glm::vec3(-1.0f);  // sentinel
     }
 
     /**

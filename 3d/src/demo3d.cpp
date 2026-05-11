@@ -280,7 +280,10 @@ Demo3D::Demo3D()
     , giBlurDepthSigma(0.05f)
     , giBlurNormalSigma(0.2f)
     , giBlurLumSigma(0.4f)           // Phase 13b: stops within-plane tonal blur
-    , c0MinRange(1.0f)               // Phase 14b: C0 tMax min (wu); 0=legacy cellSize=0.125
+    , c0MinRange(0.5f)               // Phase 14b: C0 tMax min (wu); 0=legacy cellSize=0.125
+                                     // Step 11 codex 09 P2: reduced 1.0 -> 0.5 to let probes
+                                     // near walls/ceilings register surface hits (was masking
+                                     // near-surface geometry in Sponza voxels ~3cm apart).
     , c1MinRange(1.0f)               // Phase 14c: C1 tMax min (wu); 0=legacy 0.5wu
 {
     /**
@@ -2077,6 +2080,9 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glUniform1i(glGetUniformLocation(prog, "uUseSpatialTrilinear"), useSpatialTrilinear ? 1 : 0);
     glUniform3fv(glGetUniformLocation(prog, "uLightPos"),  1, glm::value_ptr(lightPosition));
     glUniform3f(glGetUniformLocation(prog, "uLightColor"), 1.0f, 0.95f, 0.85f);
+    // Step 11: strip vec3(0.05) ambient floor from probe bake when toggled.
+    glUniform1i(glGetUniformLocation(prog, "uStripAmbientFloor"),
+                stripAmbientFloorBake ? 1 : 0);
     glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
     glUniform3fv(glGetUniformLocation(prog, "uSkyColor"),  1, glm::value_ptr(skyColor));
     glUniform1f(glGetUniformLocation(prog, "uBlendFraction"), blendFraction);
@@ -3447,6 +3453,8 @@ void Demo3D::renderSettingsPanel() {
     
     if (ImGui::Button("Reset Camera")) {
         // codex 11 F1: scene-aware so Sponza button -> Sponza preset, not Cornell default.
+        // codex 06 F6: Reset always restores fovy=60 (applyOBJViewPreset hardcodes it);
+        // any user-edited FOVY is intentionally lost. Documented as acceptable this round.
         resetCameraToScenePreset();
         std::cout << "[Demo3D] Camera reset to scene preset (button)\n";
     }
@@ -3494,7 +3502,54 @@ void Demo3D::renderSettingsPanel() {
         ImGui::TextDisabled("Last analysis: %s", lastAnalysisPath.c_str());
 
     ImGui::Separator();
-    
+
+    // Step 10 — Camera state (read-only display + editable position/target/fovy).
+    // Read-only fields use InputText + ReadOnly|AutoSelectAll: clicking selects all,
+    // Ctrl+C copies. Edit fields use InputFloat3 (codex 06 F4: also commits per-frame
+    // during drag, which is acceptable for smooth motion).
+    if (ImGui::CollapsingHeader("Camera state")) {
+        char buf[256];
+        std::snprintf(buf, sizeof(buf), "%.4f, %.4f, %.4f",
+                      camera.position.x, camera.position.y, camera.position.z);
+        ImGui::InputText("Position", buf, sizeof(buf),
+                         ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_AutoSelectAll);
+
+        std::snprintf(buf, sizeof(buf), "%.4f, %.4f, %.4f",
+                      camera.target.x, camera.target.y, camera.target.z);
+        ImGui::InputText("Target", buf, sizeof(buf),
+                         ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_AutoSelectAll);
+
+        std::snprintf(buf, sizeof(buf),
+                      "yaw=%.4f pitch=%.4f rad  (yaw=%.2f pitch=%.2f deg)",
+                      cameraYaw, cameraPitch,
+                      glm::degrees(cameraYaw), glm::degrees(cameraPitch));
+        ImGui::InputText("Facing", buf, sizeof(buf),
+                         ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_AutoSelectAll);
+
+        ImGui::Separator();
+
+        // Editable: position. Preserves facing via rebuildCameraTargetFromYawPitch.
+        glm::vec3 posEdit = camera.position;
+        if (ImGui::InputFloat3("Set position", &posEdit.x, "%.3f")) {
+            camera.position = posEdit;
+            rebuildCameraTargetFromYawPitch();
+            validateCameraPosition(posEdit, "ImGui edit");
+        }
+
+        // Editable: target. Re-syncs yaw/pitch from new forward.
+        glm::vec3 tgtEdit = camera.target;
+        if (ImGui::InputFloat3("Set target", &tgtEdit.x, "%.3f")) {
+            camera.target = tgtEdit;
+            syncCameraYawPitchFromTarget();
+        }
+
+        // Editable: fovy. Clamped to a reasonable range (matches setCameraFovy).
+        float fovyEdit = camera.fovy;
+        if (ImGui::InputFloat("FOVY", &fovyEdit, 1.0f, 5.0f, "%.1f")) {
+            camera.fovy = glm::clamp(fovyEdit, 20.0f, 110.0f);
+        }
+    }
+
     ImGui::Separator();
     ImGui::Text("Cascade GI (Phase 2):");
     ImGui::Checkbox("Cascade GI", &useCascadeGI);
@@ -3503,6 +3558,22 @@ void Demo3D::renderSettingsPanel() {
             cascadeC0Res, dirRes, dirRes * dirRes);
     else
         ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Cascade not initialized!");
+
+    // Step 11 (codex 07 F6): GI bake strip toggle, gated on Cascade GI being
+    // enabled (toggle is meaningless without cascades). One-frame ~25 ms
+    // dispatch spike on toggle (codex 07 F10) -- renderFrameIndex=0 bypasses
+    // stagger.
+    ImGui::BeginDisabled(!useCascadeGI);
+    bool sStrip = stripAmbientFloorBake;
+    if (ImGui::Checkbox("Strip 0.05 ambient floor from GI bake (Step 11)", &sStrip))
+        setStripAmbientFloorBake(sStrip);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        if (!useCascadeGI)
+            ImGui::SetTooltip("Disabled -- requires Cascade GI to be enabled.");
+        else
+            ImGui::SetTooltip("Strips vec3(0.05) ambient floor from radiance_3d.comp:262.\nProbes then store ONLY real-direct-lit bounce.\nToggling triggers a full cascade rebake (~25 ms one-frame spike).");
+    }
 
     ImGui::Separator();
     ImGui::Text("Debug Render Mode:");
@@ -3519,6 +3590,25 @@ void Demo3D::renderSettingsPanel() {
     ImGui::RadioButton("ProbeCell (8)",   &raymarchRenderMode, 8);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("Mode 8: probe cell boundary (fract of probe-grid coord as RGB).\nColor transitions occur at probe center positions; halfway = cell boundary.\nCompare with Mode 6 (GI-only): aligned banding = Type A (cell-size limited);\nmisaligned banding = Type B (directional D quantization).");
+    // Step 10 (codex 06 F2 + F10): GI diagnostic modes — isolate the
+    // hidden vec3(0.05) ambient floor that may wash out cascade GI bounce.
+    ImGui::RadioButton("DirectNoAmb (9)", &raymarchRenderMode, 9); ImGui::SameLine();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Mode 9: direct lighting WITHOUT the hidden vec3(0.05) ambient floor.\nFormula: albedo * diff * uLightColor. Compare vs Mode 4 (=Mode 9 + Mode 10).\nDark in scenes with no direct light source.");
+    ImGui::RadioButton("AmbFloor (10)",   &raymarchRenderMode, 10);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Mode 10: ambient floor only (albedo * vec3(0.05)).\nDiagnostic baseline -- if this dominates Mode 6 (GI bounce), the floor\nis washing out cascade GI. Independent of light direction.");
+    // Step 11 (codex 07 F6): GI heatmap modes -- spatial visualization of where
+    // GI is doing work. Same green/yellow/red palette as modes 5 & 7.
+    ImGui::RadioButton("GIHeat-Vis (11)",  &raymarchRenderMode, 11); ImGui::SameLine();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Mode 11: visible-GI heatmap = length(albedo * indirect) / 0.1.\nGreen=low / yellow=mid / red=high contribution at the camera-visible surface.\nRequires Cascade GI -- output is all-green when disabled.\nIf saturated everywhere, retune the divisor in raymarch.frag.");
+    ImGui::RadioButton("GIHeat-Raw (12)",  &raymarchRenderMode, 12); ImGui::SameLine();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Mode 12: raw-GI heatmap = length(indirect) / 0.05.\nProbe radiance magnitude WITHOUT albedo modulation.\nUseful for diagnosing cascade convergence independent of materials.\nRequires Cascade GI -- output is all-green when disabled.");
+    ImGui::RadioButton("GIHeat-Frac (13)", &raymarchRenderMode, 13);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Mode 13: GI-fraction heatmap = indirect / (direct + indirect), naturally [0,1].\nGreen = pixel is mostly direct-lit; red = pixel is mostly GI-lit.\nMost informative for the 'is GI being washed out?' question.\nRequires Cascade GI -- fraction is 0 when indirect is 0.");
 
     // Step 3 (3d, F3): gate the analytic SDF toggle in OBJ mode. The analytic shader
     // path has nothing to evaluate against an OBJ mesh, so allowing it would render
@@ -5023,34 +5113,9 @@ void Demo3D::applyOBJViewPreset() {
     glm::vec3 camTarget = center;
     glm::vec3 lightPos  = center + glm::vec3(0.0f, size.y * 0.3f, 0.0f);
 
-    // F3 alpha-sample validation against meshVoxelData (only meaningful for
-    // INSIDE-volume cameras; codex 09 F2 fix preserved).
-    if (!meshVoxelData.empty()) {
-        glm::vec3 uvw = (camPos - volumeOrigin) / volumeSize;
-        bool insideVolume =
-            uvw.x >= 0.0f && uvw.x <= 1.0f &&
-            uvw.y >= 0.0f && uvw.y <= 1.0f &&
-            uvw.z >= 0.0f && uvw.z <= 1.0f;
-        if (insideVolume) {
-            glm::ivec3 voxel = glm::ivec3(uvw * float(volumeResolution));
-            voxel = glm::clamp(voxel, glm::ivec3(0), glm::ivec3(volumeResolution - 1));
-            int idx = (voxel.z * volumeResolution + voxel.y) * volumeResolution + voxel.x;
-            uint8_t alphaAtCam = meshVoxelData[idx * 4 + 3];
-            std::cout << "[Demo3D] Camera preset validation (inside volume): pos=("
-                      << camPos.x << "," << camPos.y << "," << camPos.z
-                      << ") voxel=(" << voxel.x << "," << voxel.y << "," << voxel.z
-                      << ") alpha=" << int(alphaAtCam) << "\n";
-            if (alphaAtCam > 0) {
-                std::cerr << "[WARN] Proposed camera position lies inside a marked surface voxel; "
-                             "view will start inside geometry. Adjust the preset.\n";
-            }
-        } else {
-            std::cout << "[Demo3D] Camera preset validation: pos=("
-                      << camPos.x << "," << camPos.y << "," << camPos.z
-                      << ") OUTSIDE SDF volume (uvw=(" << uvw.x << "," << uvw.y << "," << uvw.z
-                      << ")); alpha check skipped, relying on ray-box intersection at march time\n";
-        }
-    }
+    // Step 10 (codex 06 F1+F11): F3 alpha-sample validation moved to
+    // validateCameraPosition() helper so setters and ImGui edit can reuse it.
+    validateCameraPosition(camPos, "preset");
 
     camera.position = camPos;
     camera.target   = camTarget;
@@ -5066,6 +5131,78 @@ void Demo3D::applyOBJViewPreset() {
               << ") fovy=" << camera.fovy
               << " light=(" << lightPosition.x << ","
               << lightPosition.y << "," << lightPosition.z << ")\n";
+}
+
+// =============================================================================
+// Step 10 — Camera state CLI/UI helpers (codex 06 F5/F11)
+// =============================================================================
+
+void Demo3D::rebuildCameraTargetFromYawPitch() {
+    // codex 06 F5: clamp pitch BEFORE computing forward so a near-vertical
+    // sync result (e.g. user types target right above camera) doesn't yield
+    // a degenerate forward. Same +/-85 deg clamp as mouse-look at demo3d.cpp:478.
+    cameraPitch = glm::clamp(cameraPitch, -1.4835f, 1.4835f);
+    glm::vec3 forward(
+        std::cos(cameraPitch) * std::sin(cameraYaw),
+        std::sin(cameraPitch),
+        std::cos(cameraPitch) * std::cos(cameraYaw)
+    );
+    camera.target = camera.position + forward;
+}
+
+void Demo3D::validateCameraPosition(const glm::vec3& pos, const char* originLabel) {
+    // codex 06 F11: extracted from applyOBJViewPreset() so setters + ImGui edit
+    // can reuse. F3 alpha-sample validation against meshVoxelData (only meaningful
+    // for INSIDE-volume cameras; codex 09 F2 fix preserved). Logs originLabel so
+    // the warning identifies which trigger fired.
+    if (meshVoxelData.empty()) return;
+
+    glm::vec3 uvw = (pos - volumeOrigin) / volumeSize;
+    bool insideVolume =
+        uvw.x >= 0.0f && uvw.x <= 1.0f &&
+        uvw.y >= 0.0f && uvw.y <= 1.0f &&
+        uvw.z >= 0.0f && uvw.z <= 1.0f;
+    if (insideVolume) {
+        glm::ivec3 voxel = glm::ivec3(uvw * float(volumeResolution));
+        voxel = glm::clamp(voxel, glm::ivec3(0), glm::ivec3(volumeResolution - 1));
+        int idx = (voxel.z * volumeResolution + voxel.y) * volumeResolution + voxel.x;
+        uint8_t alphaAtCam = meshVoxelData[idx * 4 + 3];
+        std::cout << "[Demo3D] Camera " << originLabel << " validation (inside volume): pos=("
+                  << pos.x << "," << pos.y << "," << pos.z
+                  << ") voxel=(" << voxel.x << "," << voxel.y << "," << voxel.z
+                  << ") alpha=" << int(alphaAtCam) << "\n";
+        if (alphaAtCam > 0) {
+            std::cerr << "[WARN] Camera " << originLabel
+                      << " position lies inside a marked surface voxel; "
+                         "view will start inside geometry.\n";
+        }
+    } else {
+        std::cout << "[Demo3D] Camera " << originLabel << " validation: pos=("
+                  << pos.x << "," << pos.y << "," << pos.z
+                  << ") OUTSIDE SDF volume (uvw=(" << uvw.x << "," << uvw.y << "," << uvw.z
+                  << ")); alpha check skipped, relying on ray-box intersection at march time\n";
+    }
+}
+
+void Demo3D::setCameraPosition(const glm::vec3& p) {
+    camera.position = p;
+    rebuildCameraTargetFromYawPitch();   // preserve facing
+    validateCameraPosition(p, "CLI/setter");
+    std::cout << "[Demo3D] Camera position override: (" << p.x << ","
+              << p.y << "," << p.z << ")\n";
+}
+
+void Demo3D::setCameraTarget(const glm::vec3& t) {
+    camera.target = t;
+    syncCameraYawPitchFromTarget();
+    std::cout << "[Demo3D] Camera target override: (" << t.x << ","
+              << t.y << "," << t.z << ")\n";
+}
+
+void Demo3D::setCameraFovy(float f) {
+    camera.fovy = glm::clamp(f, 20.0f, 110.0f);
+    std::cout << "[Demo3D] Camera fovy override: " << camera.fovy
+              << " (requested " << f << ")\n";
 }
 
 Camera3D Demo3D::getRaylibCamera() const {

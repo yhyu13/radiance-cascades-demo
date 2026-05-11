@@ -26,12 +26,22 @@ void main() {
 
     vec3 avg = vec3(0.0);
     for (int dy = 0; dy < uDirRes; ++dy)
-        for (int dx = 0; dx < uDirRes; ++dx)
-            avg += texelFetch(uAtlas,
+        for (int dx = 0; dx < uDirRes; ++dx) {
+            // 'sample' is a reserved GLSL keyword (multisample qualifier); use 'samp'.
+            vec3 samp = texelFetch(uAtlas,
                 ivec3(probePos.x * uDirRes + dx,
                       probePos.y * uDirRes + dy,
                       probePos.z), 0).rgb;
+            // Step 11 (codex 09 P0): defensive per-sample NaN/Inf reject so a
+            // single bad atlas bin can't poison the whole probe's reduction.
+            samp = mix(samp, vec3(0.0), bvec3(isnan(samp)));
+            samp = mix(samp, vec3(0.0), bvec3(isinf(samp)));
+            avg += samp;
+        }
     avg /= float(uDirRes * uDirRes);
+
+    // Final clamp before write (defense in depth against numerical drift).
+    avg = clamp(avg, vec3(0.0), vec3(100.0));
 
     // Alpha 0.0: packed hit stats no longer written here (atlas alpha holds per-bin hit.a).
     imageStore(oRadiance, probePos, vec4(avg, 0.0));
