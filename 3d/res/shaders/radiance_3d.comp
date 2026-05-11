@@ -37,6 +37,9 @@ uniform vec3  uGridOrigin;     // SDF volume origin in world units (e.g. -2,-2,-
 
 uniform vec3  uLightPos;
 uniform vec3  uLightColor;
+// Step 11: when 1, strip the vec3(0.05) ambient floor from the bake formula
+// so probes store ONLY real-direct-lit bounce. Toggled by stripAmbientFloorBake.
+uniform int   uStripAmbientFloor;
 
 // 4a: environment fill toggle
 uniform int   uUseEnvFill;   // 0 = honest miss (default), 1 = fill with sky
@@ -83,6 +86,16 @@ const float INF = 1e10;
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+// Step 11 (codex 09 P0): defensive sanitization for atlas radiance writes.
+// Replaces NaN/Inf with 0 and clamps to [0, 100] so downstream reduction +
+// probeMeanLum stats can't be poisoned by a single corrupt texel. Alpha is
+// kept separate (used as hit classification: -1=sky, 0=miss, >0=surface).
+vec3 sanitizeRadiance(vec3 v) {
+    v = mix(v, vec3(0.0), bvec3(isnan(v)));
+    v = mix(v, vec3(0.0), bvec3(isinf(v)));
+    return clamp(v, vec3(0.0), vec3(100.0));
+}
 
 vec3 probeToWorld(ivec3 probePos) {
     // Phase 5d: use uProbeCellSize (per-cascade) not uBaseInterval (always C0's 0.125)
@@ -259,7 +272,11 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
                 ? softShadowBake(pos, uLightPos, uSoftShadowK)
                 : (inShadow(pos, uLightPos) ? 1.0 : 0.0);
             float diff       = max(dot(n, lightDir), 0.0) * (1.0 - shadowFact);
-            vec3  color      = albedo * (diff * uLightColor + vec3(0.05));
+            // Step 11: strip the vec3(0.05) ambient floor when toggled so probes
+            // store ONLY real-direct-lit bounce (no source-side ambient).
+            vec3  color      = (uStripAmbientFloor != 0)
+                ? albedo * diff * uLightColor
+                : albedo * (diff * uLightColor + vec3(0.05));
             return vec4(color, t);
         }
 
@@ -402,9 +419,15 @@ void main() {
                     }
                     hist = clamp(hist, nMin, nMax);
                 }
-                imageStore(oAtlas, atlasTxl, mix(hist, vec4(rad, hit.a), uTemporalAlpha));
+                // codex 09 P0: sanitize both history and fresh rad before EMA so
+                // a single NaN-poisoned history texel can't propagate forever.
+                vec3 histClean = sanitizeRadiance(hist.rgb);
+                vec3 radClean  = sanitizeRadiance(rad);
+                vec3 blended   = mix(histClean, radClean, uTemporalAlpha);
+                imageStore(oAtlas, atlasTxl, vec4(blended, hit.a));
             } else {
-                imageStore(oAtlas, atlasTxl, vec4(rad, hit.a));
+                // codex 09 P0: sanitize bake output before write.
+                imageStore(oAtlas, atlasTxl, vec4(sanitizeRadiance(rad), hit.a));
             }
         }
     }

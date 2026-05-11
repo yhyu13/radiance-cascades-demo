@@ -491,7 +491,39 @@ public:
     );
 
     // codex 07 F2/F3 — let main3d.cpp set initial render mode for headless captures
-    void setRenderMode(int m) { raymarchRenderMode = m; }
+    // Step 10 codex 06 F9 (revised Step 11): range covers modes 0-13 with one slot
+    // of headroom (upper bound 14). No clamp; preserves existing shader fallthrough.
+    void setRenderMode(int m) {
+        if (m < 0 || m > 14) {
+            std::cerr << "[Demo3D] WARN: render mode " << m
+                      << " out of range [0,14]; rendering as default\n";
+        }
+        raymarchRenderMode = m;
+    }
+
+    // Step 10 — Camera state CLI/UI setters. Apply AFTER any auto-fit/preset paths.
+    void setCameraPosition(const glm::vec3& p);
+    void setCameraTarget(const glm::vec3& t);
+    void setCameraFovy(float f);
+
+    // Step 11 — Strip the vec3(0.05) ambient floor from the cascade bake (in
+    // radiance_3d.comp:267-269). Toggle invalidates cascade only (4-line
+    // pattern) -- this is a LIGHTING change, not a geometry change.
+    // codex 08 F1 + F4: do NOT set meshSDFReady = false here. The SDF/voxel
+    // texture is unchanged; only the radiance probe values change. The Step 8
+    // dynamic-sphere 5-line pattern includes meshSDFReady because the sphere
+    // modifies geometry; the strip toggle does not. One-frame ~25 ms spike on
+    // Sponza from renderFrameIndex=0 bypassing the per-cascade stagger.
+    void setStripAmbientFloorBake(bool v) {
+        if (stripAmbientFloorBake == v) return;
+        stripAmbientFloorBake = v;
+        cascadeReady        = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex    = 0;
+        historyNeedsSeed    = true;
+        std::cout << "[Demo3D] stripAmbientFloorBake=" << v
+                  << " (cascade rebake triggered; SDF unchanged)\n";
+    }
 
     // codex 07 F1 — let main3d.cpp inject bake failures via CLI for runtime test of the bool-return retry path
     void setInjectBakeFailures(int n) { injectBakeFailures = n; }
@@ -757,6 +789,12 @@ private:
      *  Default OFF (CPU baseline). Flipping invalidates meshSDFReady so the
      *  next render frame re-bakes via the new path. */
     bool useGPUSDF = false;
+
+    /** Step 11: when true, the cascade bake (radiance_3d.comp:262) skips the
+     *  vec3(0.05) ambient floor in the per-surface lighting formula so probes
+     *  store ONLY real-direct-lit bounce. Diagnostic-only — toggle via
+     *  setStripAmbientFloorBake(). Default OFF preserves baseline GI. */
+    bool stripAmbientFloorBake = false;
 
     // Step 8 Phase 2: dynamic sphere overlay state.
     bool       dynamicSphereEnabled    = false;    // ImGui + --dynamic-sphere
@@ -1118,6 +1156,19 @@ private:
     // for OBJ scenes, resetCamera() for analytic. Single helper consumed by both
     // the R key and the ImGui "Reset Camera" button so both paths agree.
     void resetCameraToScenePreset();
+
+    // Step 10 (codex 06 F5): rebuild camera.target from cameraYaw/cameraPitch
+    // around the current camera.position (preserves facing when only the
+    // position changes). Mirrors the inline mouse-look math at demo3d.cpp:481-486.
+    // Clamps cameraPitch to +/-85 deg (matches mouse-look:478) so a near-vertical
+    // sync result doesn't yield a degenerate forward.
+    void rebuildCameraTargetFromYawPitch();
+
+    // Step 10 (codex 06 F11): standalone alpha-validation against meshVoxelData.
+    // Extracted from applyOBJViewPreset() so setters and the ImGui edit handler
+    // can reuse it. Logs inside/outside-volume status with originLabel
+    // ("preset", "CLI", "ImGui edit", ...) to identify which trigger fired.
+    void validateCameraPosition(const glm::vec3& pos, const char* originLabel);
     
     // =============================================================================
     // Performance & Quality
