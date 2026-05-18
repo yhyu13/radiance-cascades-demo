@@ -37,13 +37,46 @@ uniform vec3  uGridOrigin;     // SDF volume origin in world units (e.g. -2,-2,-
 
 uniform vec3  uLightPos;
 uniform vec3  uLightColor;
-// Step 11: when 1, strip the vec3(0.05) ambient floor from the bake formula
-// so probes store ONLY real-direct-lit bounce. Toggled by stripAmbientFloorBake.
-uniform int   uStripAmbientFloor;
+// Step 11 / Lighting controls follow-up: ambient floor strength baked into
+// every cascade source surface (replaces the original hardcoded vec3(0.05)).
+// Slider 0.0 = same effect as the old "strip ambient floor bake" toggle.
+// Default 0.05 matches the original literal so out-of-the-box behavior is unchanged.
+uniform float uAmbientBakeStrength;
 
 // 4a: environment fill toggle
 uniform int   uUseEnvFill;   // 0 = honest miss (default), 1 = fill with sky
 uniform vec3  uSkyColor;     // sky color when uUseEnvFill is on
+
+// Phase 2.5d M1 diagnostic: when set to 1, surface-hit bins write
+// `clamp(sdfBefore / voxelSize, 1e-6, 1)` to alpha INSTEAD of the binary 0.
+// This is for measuring the SDF-before-hit distribution (was 2.5b's failed
+// soft-α derivation input). Sky / miss bins still write 0 / 1 as usual,
+// so the histogram script can identify "diagnostic surface bin" via
+// `0 < α < 1` strictly. Default 0 = normal Phase 2 binary α.
+uniform int   uDiagAlphaMode;
+
+// Phase 3 (bake-side leak fix via 3D WeightedSample): per-corner geometric
+// visibility check at bake time. Replaces the implicit "trust upper cascade
+// unconditionally" of Phase 2's smoothstep merge.
+//   uUseWeightedSample: 0 (default) = bit-exact Phase 2 trilinear merge
+//                       1           = WeightedSample-style per-corner gating
+//   uUpperBinConeSin:   sin(theta_half) for the upper cascade's directional bin.
+//                       Computed CPU-side from uUpperDirRes:
+//                           cos(theta_half) = 1 - 2/D²
+//                           sin(theta_half) = sqrt(1 - cos²)
+//                       D=4 → 0.484, D=8 → 0.248, D=16 → 0.124.
+//                       Critic 7 H2 caveat: octahedral non-uniformity may
+//                       require per-bin LUT (v2 fallback).
+uniform int   uUseWeightedSample;
+uniform float uUpperBinConeSin;
+// 2026-05-18 debug: instrument WHY Phase 3 v2 still reduces GI.
+//   0 = normal (v2)
+//   1 = force aFactor=1.0 in hit branch (test: does GI return if aFactor is bypassed?)
+//   2 = write aFactor as visibility-grayscale into atlas .rgb (visualize where rejection is)
+//   3 = write upperDir.a (visibility fraction) directly into atlas .rgb (visualize WeightedSample's output)
+//   4 = force upperDir from sampleUpperDirTrilinear (test: is sampleUpperDirWeighted .rgb actually different from trilinear when corners visible?)
+uniform int   uPhase3DebugMode;
+uniform float uGIStrength;  // multiplier on upper contribution (default 1.0)
 
 // =============================================================================
 // Texture Bindings
@@ -142,40 +175,34 @@ vec3 binToDir(ivec2 bin, int D) {
 }
 
 // Phase 5f: sample upper cascade atlas with optional directional bilinear interpolation.
+// Phase 2 (interval atlas): returns vec4 — RGB radiance + α transparency interval.
+// α encodes opaque (0) / transparent (1) per the paper's interval composition.
 // Bilinear blends 4 surrounding bin centers instead of snapping to nearest bin.
-// octScaled = oct*D - 0.5 maps bin-k center to integer k, so fract() gives center-to-center weight.
 // All bin indices are clamped to [0, D-1] — no cross-probe reads (GL_NEAREST safe).
-vec3 sampleUpperDir(ivec3 upperProbePos, vec3 rayDir, int D) {
+vec4 sampleUpperDir(ivec3 upperProbePos, vec3 rayDir, int D) {
     if (uUseDirBilinear == 0) {
         ivec2 bin = dirToBin(rayDir, D);
         return texelFetch(uUpperCascadeAtlas,
             ivec3(upperProbePos.x*D+bin.x, upperProbePos.y*D+bin.y, upperProbePos.z),
-            0).rgb;
+            0);
     }
-    // Clamp octScaled to [0, D-1] before floor/fract.
-    // Without this, octScaled < 0 (e.g. -0.1) gives fract = 0.9 → 90% weight on bin 1
-    // even though the direction maps to bin 0. The clamp makes fract(0) = 0 → 100% bin 0.
     vec2 octScaled = clamp(dirToOct(rayDir) * float(D) - 0.5, 0.0, float(D - 1));
-    ivec2 b00 = ivec2(floor(octScaled));          // in [0, D-1] after clamp; no further clamp needed
+    ivec2 b00 = ivec2(floor(octScaled));
     ivec2 b11 = clamp(b00 + ivec2(1), ivec2(0), ivec2(D-1));
     ivec2 b10 = ivec2(b11.x, b00.y);
     ivec2 b01 = ivec2(b00.x, b11.y);
     vec2  f   = fract(octScaled);
     int bx = upperProbePos.x * D, by = upperProbePos.y * D, bz = upperProbePos.z;
-    vec3 s00 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b00.x, by+b00.y, bz), 0).rgb;
-    vec3 s10 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b10.x, by+b10.y, bz), 0).rgb;
-    vec3 s01 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b01.x, by+b01.y, bz), 0).rgb;
-    vec3 s11 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b11.x, by+b11.y, bz), 0).rgb;
+    vec4 s00 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b00.x, by+b00.y, bz), 0);
+    vec4 s10 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b10.x, by+b10.y, bz), 0);
+    vec4 s01 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b01.x, by+b01.y, bz), 0);
+    vec4 s11 = texelFetch(uUpperCascadeAtlas, ivec3(bx+b11.x, by+b11.y, bz), 0);
     return mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
 }
 
 // Phase 5d trilinear: spatially blend 8 surrounding upper probes at the same direction bin.
-// triP000/triF are pre-computed per probe outside the direction loop.
-// Each corner delegates to sampleUpperDir() which handles Phase 5f directional bilinear.
-// +1 corners are clamped to [0, uUpperVolumeSize-1] to prevent OOB texelFetch.
-// At high spatial border triF == 0 so +1 samples carry zero blend weight — the clamp
-// to the border probe is correct (GL_CLAMP_TO_EDGE semantics, same as Phase 5f high edge).
-vec3 sampleUpperDirTrilinear(ivec3 triP000, vec3 triF, vec3 rayDir, int Du) {
+// Phase 2: returns vec4 (RGB radiance + α transparency).
+vec4 sampleUpperDirTrilinear(ivec3 triP000, vec3 triF, vec3 rayDir, int Du) {
     ivec3 hi   = uUpperVolumeSize - ivec3(1);
     ivec3 p100 = clamp(triP000 + ivec3(1,0,0), ivec3(0), hi);
     ivec3 p010 = clamp(triP000 + ivec3(0,1,0), ivec3(0), hi);
@@ -184,21 +211,112 @@ vec3 sampleUpperDirTrilinear(ivec3 triP000, vec3 triF, vec3 rayDir, int Du) {
     ivec3 p101 = clamp(triP000 + ivec3(1,0,1), ivec3(0), hi);
     ivec3 p011 = clamp(triP000 + ivec3(0,1,1), ivec3(0), hi);
     ivec3 p111 = clamp(triP000 + ivec3(1,1,1), ivec3(0), hi);
-    vec3 s000 = sampleUpperDir(triP000, rayDir, Du);
-    vec3 s100 = sampleUpperDir(p100,   rayDir, Du);
-    vec3 s010 = sampleUpperDir(p010,   rayDir, Du);
-    vec3 s110 = sampleUpperDir(p110,   rayDir, Du);
-    vec3 s001 = sampleUpperDir(p001,   rayDir, Du);
-    vec3 s101 = sampleUpperDir(p101,   rayDir, Du);
-    vec3 s011 = sampleUpperDir(p011,   rayDir, Du);
-    vec3 s111 = sampleUpperDir(p111,   rayDir, Du);
-    vec3 sx00 = mix(s000, s100, triF.x);
-    vec3 sx10 = mix(s010, s110, triF.x);
-    vec3 sx01 = mix(s001, s101, triF.x);
-    vec3 sx11 = mix(s011, s111, triF.x);
-    vec3 sxy0 = mix(sx00, sx10, triF.y);
-    vec3 sxy1 = mix(sx01, sx11, triF.y);
+    vec4 s000 = sampleUpperDir(triP000, rayDir, Du);
+    vec4 s100 = sampleUpperDir(p100,   rayDir, Du);
+    vec4 s010 = sampleUpperDir(p010,   rayDir, Du);
+    vec4 s110 = sampleUpperDir(p110,   rayDir, Du);
+    vec4 s001 = sampleUpperDir(p001,   rayDir, Du);
+    vec4 s101 = sampleUpperDir(p101,   rayDir, Du);
+    vec4 s011 = sampleUpperDir(p011,   rayDir, Du);
+    vec4 s111 = sampleUpperDir(p111,   rayDir, Du);
+    vec4 sx00 = mix(s000, s100, triF.x);
+    vec4 sx10 = mix(s010, s110, triF.x);
+    vec4 sx01 = mix(s001, s101, triF.x);
+    vec4 sx11 = mix(s011, s111, triF.x);
+    vec4 sxy0 = mix(sx00, sx10, triF.y);
+    vec4 sxy1 = mix(sx01, sx11, triF.y);
     return mix(sxy0, sxy1, triF.z);
+}
+
+// =============================================================================
+// Phase 3: WeightedSample (3D adaptation of ShaderToy CubeA.glsl:21-42).
+// =============================================================================
+//
+// Per-corner geometric visibility check at bake time. For each of the 8 upper-
+// cascade probes that the lower probe trilinear-interpolates over:
+//   1. Compute the upper probe's world position from uGridOrigin (shared
+//      across cascades) and uUpperProbeCellSize (per-cascade upper cell size).
+//   2. Compute relVec = lowerProbeWorld - upperProbeWorld.
+//   3. Pick the upper probe's bin facing TOWARD the lower probe (the "look-back" bin).
+//   4. Read that bin's stored hit-distance (Phase 2 atlas .a; Phase 1 Mode 4 lineage).
+//   5. Geometric visibility test: length(relVec) < lProbeRayDist * sin(theta_half) + 0.01.
+//   6. If visible, sum the upper probe's FORWARD bin radiance (along rayDir) into the
+//      weighted accumulator. If occluded, skip — this is what zeroes the bake-time leak.
+//
+// Returns vec4(rgb_normalized_over_visible, visibility_fraction). Caller is responsible
+// for gating the merge formula by .a (see "Bake merge formula change" in §3 of plan).
+//
+// Returns SAME shape as sampleUpperDirTrilinear (vec4) so it's a drop-in replacement.
+//
+// HISTORY (do not "fix" without reading critic 13 H1):
+//   The look-back direction is +normalize(relVec), NOT -normalize(relVec). ShaderToy's
+//   2D WeightedSample uses `-dot(relVec, gTan)`; that negation is part of the wall-
+//   attached phi atan2 axis convention (which axis is "positive" in the 2D wall-local
+//   frame), NOT a "direction toward upper" semantic. In 3D world-space the direction
+//   from upper-probe U to lower-probe L is `+normalize(L - U) = +normalize(relVec)`.
+//   Mechanically copying ShaderToy's negation here would flip the look-back bin to
+//   point AWAY from the lower probe, reading nonsense atlas data.
+vec4 sampleUpperDirWeighted(ivec3 triP000, vec3 triF, vec3 rayDir, int Du,
+                            vec3 lowerProbeWorld) {
+    ivec3 hi = uUpperVolumeSize - ivec3(1);
+    ivec3 corners[8] = ivec3[8](
+        ivec3(0,0,0), ivec3(1,0,0), ivec3(0,1,0), ivec3(1,1,0),
+        ivec3(0,0,1), ivec3(1,0,1), ivec3(0,1,1), ivec3(1,1,1));
+
+    vec3  sumRgb        = vec3(0.0);
+    float wVisible      = 0.0;  // sum of spatial weights for visible corners
+    float wTotalSpatial = 0.0;  // sum of all spatial weights (for normalization)
+
+    for (int i = 0; i < 8; ++i) {
+        ivec3 cornerPos = clamp(triP000 + corners[i], ivec3(0), hi);
+
+        // 3D trilinear weight (corner offsets ∈ {0,1}; formula correct only under that)
+        float wx = (corners[i].x == 0) ? (1.0 - triF.x) : triF.x;
+        float wy = (corners[i].y == 0) ? (1.0 - triF.y) : triF.y;
+        float wz = (corners[i].z == 0) ? (1.0 - triF.z) : triF.z;
+        float wSpatial = wx * wy * wz;
+        wTotalSpatial += wSpatial;
+
+        // Upper probe's world position. uGridOrigin is shared across cascades
+        // (verified demo3d.cpp:3092); only cellSize differs per cascade.
+        vec3 upperProbeWorld = uGridOrigin + (vec3(cornerPos) + 0.5) * uUpperProbeCellSize;
+
+        // CRITIC 13 H1: dirToLower = +normalize(relVec), NOT -normalize. See history above.
+        vec3 relVec     = lowerProbeWorld - upperProbeWorld;
+        vec3 dirToLower = normalize(relVec);
+
+        // Look-back bin: read ONLY the stored hit-distance (.a). The .rgb of this bin
+        // is NOT the radiance we want (radiance comes from the FORWARD bin via
+        // sampleUpperDir below). This is a single texelFetch — no need for bilinear
+        // on the look-back since we only consume one scalar.
+        ivec2 lookBackBin = dirToBin(dirToLower, Du);
+        float lProbeRayDist = texelFetch(uUpperCascadeAtlas,
+            ivec3(cornerPos.x * Du + lookBackBin.x,
+                  cornerPos.y * Du + lookBackBin.y,
+                  cornerPos.z), 0).a;
+
+        // Geometric visibility check (translated from ShaderToy WeightedSample line 30-32).
+        // Sky exit (lProbeRayDist < 0): always visible (nothing beyond the sky).
+        // Otherwise: visible if the lower probe is within the cone of the upper bin's
+        // "look toward me" ray, scaled by the bin's half-angle.
+        bool visible = (lProbeRayDist < 0.0)
+                    || (length(relVec) < lProbeRayDist * uUpperBinConeSin + 0.01);
+
+        if (visible) {
+            // CRITIC 13 H3: forward sample uses sampleUpperDir() to preserve Phase 5f's
+            // 4-bin directional bilinear (default uUseDirBilinear==1). A single texelFetch
+            // here would silently regress Phase 5f for any user with bilinear ON.
+            vec4 forward = sampleUpperDir(cornerPos, rayDir, Du);
+            sumRgb   += forward.rgb * wSpatial;
+            wVisible += wSpatial;
+        }
+    }
+
+    // Normalize over visible corners (matches Phase 2 v5 / ShaderToy renormalize-over-visible).
+    // .a = "fraction of corners visible" — must be consumed by the bake merge formula
+    // (see §3 of plan; CRITIC 13 L2). Without that consumer, this whole exercise is a no-op.
+    return vec4(sumRgb / max(0.01, wVisible),
+                wVisible / max(0.01, wTotalSpatial));
 }
 
 bool inShadow(vec3 hitPos, vec3 lightPos) {
@@ -272,11 +390,10 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
                 ? softShadowBake(pos, uLightPos, uSoftShadowK)
                 : (inShadow(pos, uLightPos) ? 1.0 : 0.0);
             float diff       = max(dot(n, lightDir), 0.0) * (1.0 - shadowFact);
-            // Step 11: strip the vec3(0.05) ambient floor when toggled so probes
-            // store ONLY real-direct-lit bounce (no source-side ambient).
-            vec3  color      = (uStripAmbientFloor != 0)
-                ? albedo * diff * uLightColor
-                : albedo * (diff * uLightColor + vec3(0.05));
+            // Lighting controls follow-up: continuous bake-side ambient strength.
+            // uAmbientBakeStrength=0 reproduces the Step 11 strip behavior;
+            // 0.05 reproduces the original literal. ImGui slider tunes it live.
+            vec3  color      = albedo * (diff * uLightColor + vec3(uAmbientBakeStrength));
             return vec4(color, t);
         }
 
@@ -357,50 +474,174 @@ void main() {
                                    probePos.y * uDirRes + dy,
                                    probePos.z);
 
-            // Phase 5c/5f/5d: directional merge (bilinear or nearest-bin) or isotropic fallback.
-            // Directional path: non-co-located uses 8-neighbor spatial trilinear (Phase 5d);
-            //   co-located uses single probe (displacement=0, trilinear trivially exact).
-            // Isotropic path respects uUseDirBilinear:
-            //   ON  → texture() with hardware trilinear (probeGridTexture is GL_LINEAR by default)
-            //   OFF → texelFetch(upperProbePos) — nearest-probe, ignores sampler filter mode
-            vec3 upperDir = vec3(0.0);
+            // Phase 2 (interval atlas): upper cascade carries (RGB radiance + α transparency).
+            // Isotropic fallback paths (no directional merge) lose α — fill α = 1 (transparent)
+            // because the isotropic averages don't have meaningful per-direction occlusion.
+            // Phase 3 v3 (2026-05-18, post critic-15-rev2 + empirical diagnostic):
+            //   v1: renormalize-over-visible rgb + aFactor multiply (KILLED GI ~30%)
+            //   v2: drop aFactor from miss branch (Cornell GI still −6% dim)
+            //   v3: ALWAYS use sampleUpperDirTrilinear's .rgb; consume sampleUpperDirWeighted's
+            //       visibility fraction (.a) only as the merge-formula multiplier.
+            //
+            // Empirical diagnostic (2026-05-18) showed v2's residual 6% dim was NOT from
+            // the `* aFactor` multiply (forcing aFactor=1 made no difference); it was from
+            // sampleUpperDirWeighted's renormalize (`sumRgb / wVisible`) systematically
+            // biasing toward lower values. The look-back test rejects corners NEAR LIT WALLS
+            // (because U near wall → look-back from U toward L hits the wall close →
+            // "occluded"). Those rejected corners carry the strongest GI radiance; visible-
+            // only corners are statistically dimmer. Renormalize amplifies this bias.
+            //
+            // v3 fix: use trilinear.rgb (full 8-corner spatial average, unbiased) for
+            // radiance. Use WeightedSample only for the visibility FRACTION (wVisible /
+            // wTotalSpatial), applied once at merge time as aFactor. Single attenuation
+            // proportional to occluded-corner-fraction, not value-biased.
+            //
+            // For all non-trilinear paths (single-probe, isotropic-bilinear,
+            // isotropic-texelFetch), aFactor stays 1.0 (Phase 2 unconditional-trust).
+            vec4 upperDir = vec4(0.0, 0.0, 0.0, 1.0);
+            vec4 upperDirTrilinear = vec4(0.0, 0.0, 0.0, 1.0);
             if (uHasUpperCascade != 0) {
                 if (uUseDirectionalMerge != 0) {
-                    if (uUpperToCurrentScale == 2 && uUseSpatialTrilinear != 0)
-                        upperDir = sampleUpperDirTrilinear(triP000, triF, rayDir, uUpperDirRes);
-                    else
+                    if (uUpperToCurrentScale == 2 && uUseSpatialTrilinear != 0) {
+                        upperDirTrilinear = sampleUpperDirTrilinear(triP000, triF, rayDir, uUpperDirRes);
+                        if (uUseWeightedSample != 0) {
+                            // v3: take .a (visibility fraction) from WeightedSample,
+                            // .rgb from trilinear (unbiased spatial average).
+                            vec4 ws = sampleUpperDirWeighted(triP000, triF, rayDir,
+                                                              uUpperDirRes, worldPos);
+                            upperDir = vec4(upperDirTrilinear.rgb, ws.a);
+                        } else {
+                            upperDir = upperDirTrilinear;
+                        }
+                    } else {
                         upperDir = sampleUpperDir(upperProbePos, rayDir, uUpperDirRes);
+                        upperDirTrilinear = upperDir;
+                    }
                 } else if (uUseDirBilinear != 0) {
-                    upperDir = texture(uUpperCascade, uvwProbe).rgb;
+                    upperDir = vec4(texture(uUpperCascade, uvwProbe).rgb, 1.0);
+                    upperDirTrilinear = upperDir;
                 } else {
-                    upperDir = texelFetch(uUpperCascade, upperProbePos, 0).rgb;
+                    upperDir = vec4(texelFetch(uUpperCascade, upperProbePos, 0).rgb, 1.0);
+                    upperDirTrilinear = upperDir;
                 }
             }
+            // Debug mode 4 retained for A/B: same as v3 (trilinear.rgb + WS.a). When
+            // uUseWeightedSample==1 it's now a no-op (v3 already does this).
+            if (uPhase3DebugMode == 4) {
+                upperDir = vec4(upperDirTrilinear.rgb, upperDir.a);
+            }
+
+            // Phase 2 — pragmatic "α-only" variant. (Phase 2.5b's soft-α attempt
+            // via SDF-proximity smoothstep was reverted per §3.5 Tier 3 decision
+            // gate: Sponza dimmed by 32% (RMSE 0.098 vs Phase 2 baseline). The
+            // SDF-half-voxel-before-hit metric returns small values for ALL hits
+            // — the smoothstep gave near-zero α to most surface bins. The "soft
+            // α distinguishes head-on from grazing" intuition was wrong: SDF
+            // proximity captures "near a surface" not "head-on hit." Reverted;
+            // soft α design needs rethinking. Filed as Phase 2.6 if revisited.
+            //
+            // alpha encoding (Phase 2 binary, retained for now):
+            //   sky exit (hit.a < 0)    → α = 0  (terminal — nothing beyond)
+            //   surface hit (hit.a > 0) → α = 0  (opaque — bin occluded)
+            //   in-volume miss (hit.a == 0) → α = 1  (transparent — bin visible to far field)
+            //
+            // M1 diagnostic mode (uDiagAlphaMode==1): surface bins write
+            //   sdfBefore_normalized ∈ (0,1] instead of binary 0, so a CPU readback
+            //   can compute the histogram of SDF-before-hit values and confirm
+            //   whether 2.5b's failure root cause was "SDF returns small for ALL
+            //   hits" or some other mechanism. Sky/miss bins unchanged.
+            float alpha;
+            if (hit.a > 0.0) {
+                if (uDiagAlphaMode == 1) {
+                    // SDF voxel size (radiance_3d.comp uses uGridSize/uGridOrigin,
+                    // not uVolumeMax/Min like raymarch.frag). uSDF resolution from
+                    // textureSize. uVolumeSize is the PROBE grid resolution (32 not 128).
+                    ivec3 sdfRes     = textureSize(uSDF, 0);
+                    float voxelSize  = uGridSize.x / float(sdfRes.x);
+                    float sampleDist = max(hit.a - voxelSize * 0.5, 0.0);
+                    float sdfBefore  = sampleSDF(worldPos + rayDir * sampleDist);
+                    // Diagnostic-α range constants (critic 12 L4 named):
+                    //   kDiagAlphaMin (1e-3): well above RGBA16F min normal (~6.1e-5)
+                    //     so denormal-flush drivers don't lose the value.
+                    //   kDiagAlphaMax (0.999): strictly below 1.0 so CPU histogram
+                    //     filter (1e-4, 0.9995) cleanly excludes miss=1.0.
+                    const float kDiagAlphaMin = 1e-3;
+                    const float kDiagAlphaMax = 0.999;
+                    alpha = clamp(sdfBefore / voxelSize, kDiagAlphaMin, kDiagAlphaMax);
+                } else {
+                    alpha = 0.0;
+                }
+            } else if (hit.a < 0.0) {
+                alpha = 0.0;
+            } else {
+                alpha = 1.0;
+            }
+
+            // Original radiance bake (unchanged from pre-Phase-2):
+            //
+            // Phase 3 (CRITIC 13 L2 + CRITIC 14 H1 + 2026-05-17 targeted-scope refinement):
+            // The upper contribution is gated by upperDir.a (visibility fraction from
+            // sampleUpperDirWeighted) ONLY when uUseWeightedSample==1 AND we are in a
+            // bin where leak is physically possible.
+            //
+            // CRITIC 14 H1: the trilinear OFF-path returns upperDir.a from the upper
+            // cascade's stored α (Phase 2 binary 0/1) — applying `* upperDir.a`
+            // unconditionally would silently change the OFF-mode merge. Hence the
+            // `(uUseWeightedSample != 0)` mode gate on aFactor.
+            //
+            // 2026-05-17 TARGETED-SCOPE REFINEMENT: aFactor is now applied ONLY in the
+            // hit branch (where the ray hit something inside the cascade interval and
+            // the smoothstep is blending in some upper contribution that could leak past
+            // the wall the ray hit). It is NOT applied in the miss branch (where the
+            // ray didn't hit anything in [tMin, tMax]; by definition no wall is in the
+            // way, upper's far-field is the physically correct continuation, and the
+            // look-back WeightedSample test is geometrically irrelevant). Prior rev 1
+            // applied aFactor on misses too — killed indirect bouncing in open volumes
+            // (e.g., Cornell box interior) because WeightedSample over-rejects when U
+            // and L can't see each other directly through room walls but share radiance
+            // via the far field. Cerebrum 2026-05-17 has the full physics.
+            //
+            // **DO NOT remove the `aFactor` gating** for "simpler code".
+            float aFactor = (uUseWeightedSample != 0) ? upperDir.a : 1.0;
+            // 2026-05-18 DEBUG mode 1: force aFactor=1 to bypass WeightedSample's
+            // attenuation. If image returns to OFF brightness, confirms aFactor is the
+            // dimming cause; if NOT, the dimming comes from sampleUpperDirWeighted's
+            // .rgb being smaller than trilinear's (different averaging weights).
+            if (uPhase3DebugMode == 1) aFactor = 1.0;
 
             vec3 rad;
             if (hit.a < 0.0) {
-                // Sky sentinel — exited volume, env fill ON
                 rad = hit.rgb;
             } else if (hit.a > 0.0) {
-                // Surface hit — 4c blend zone uses directional upper sample
-                // Phase 7: smoothstep removes the derivative kink at blend zone endpoints,
-                // softening the D4->D8 angular-resolution boundary into a smooth S-curve.
                 float l = (uHasUpperCascade != 0 && blendWidth > 0.0)
                     ? 1.0 - smoothstep(0.0, 1.0,
                           clamp((hit.a - (tMax - blendWidth)) / blendWidth, 0.0, 1.0))
                     : 1.0;
-                rad = hit.rgb * l + upperDir * (1.0 - l);
+                rad = hit.rgb * l + upperDir.rgb * (1.0 - l) * aFactor * uGIStrength;
             } else {
-                // In-volume miss — pull far-field from upper cascade at THIS direction bin
-                rad = upperDir;
+                // Miss bin: no wall in ray's path within [tMin, tMax]; full upper is
+                // the correct continuation. aFactor intentionally NOT applied here
+                // (see 2026-05-17 refinement comment above).
+                rad = upperDir.rgb * uGIStrength;
+            }
+
+            // 2026-05-18 DEBUG modes 2/3: visualize WeightedSample internals.
+            // Override rad with a grayscale visualization so the rendered image shows
+            // per-bin Phase 3 state directly. Useful for "what is WeightedSample doing?"
+            if (uUseWeightedSample != 0) {
+                if (uPhase3DebugMode == 2) {
+                    // Show aFactor: white=visible/full upper, black=fully rejected.
+                    rad = vec3(aFactor);
+                } else if (uPhase3DebugMode == 3) {
+                    // Show upperDir.a directly (raw visibility fraction from WeightedSample,
+                    // before mode-gating to aFactor).
+                    rad = vec3(upperDir.a);
+                }
             }
 
             if (uTemporalActive != 0) {
                 vec4 hist = imageLoad(uAtlasHistory, atlasTxl);
                 if (uClampHistory != 0) {
-                    // AABB from 6 adjacent probes' same direction bin in history.
-                    // ±uDirRes in x/y keeps bin identity: (coord ± D) % D == coord % D.
-                    // ±1 in z moves to adjacent probe layer, same bin.
                     ivec3 atlasMax = ivec3(uVolumeSize.x * uDirRes,
                                           uVolumeSize.y * uDirRes,
                                           uVolumeSize.z);
@@ -417,17 +658,31 @@ void main() {
                         nMin = min(nMin, nh);
                         nMax = max(nMax, nh);
                     }
-                    hist = clamp(hist, nMin, nMax);
+                    // Phase 2: clamp RGB only — alpha (transparency interval) has its own
+                    // valid range and must not be clamped against radiance statistics.
+                    hist.rgb = clamp(hist.rgb, nMin.rgb, nMax.rgb);
                 }
-                // codex 09 P0: sanitize both history and fresh rad before EMA so
-                // a single NaN-poisoned history texel can't propagate forever.
                 vec3 histClean = sanitizeRadiance(hist.rgb);
                 vec3 radClean  = sanitizeRadiance(rad);
                 vec3 blended   = mix(histClean, radClean, uTemporalAlpha);
-                imageStore(oAtlas, atlasTxl, vec4(blended, hit.a));
+                // 2026-05-15 temporal-stability fix: EMA-blend α too. Probe jitter
+                // (Phase 14a/b Halton 8 positions × 2 hold-frames) flips per-bin
+                // hit/miss state every 2 frames; the previous "fresh α only" policy
+                // turned that into visible flicker because raymarch.frag's
+                // sampleProbeDir does `w = wcos * a.a`. EMA on α reduces consecutive-
+                // frame RMSE ~40× (0.014 → 0.0003 measured INTERACTIVELY in a single
+                // session on cornell-orig; max per-pixel 90/255 → 3/255).
+                //
+                // Trade-off: α drifts from Phase 2's binary {0,1} to a soft time-
+                // average of per-bin visibility (more info, but breaks any consumer
+                // that asserts α ∈ {0,1}). The bake-leak metric (counts α<0.001 bins)
+                // still works as a soft threshold; numbers are not directly comparable
+                // to pre-fix baselines. uDiagAlphaMode is unchanged (writes diagnostic
+                // α values that survive the EMA the same way they survived pre-fix).
+                float blendedAlpha = mix(hist.a, alpha, uTemporalAlpha);
+                imageStore(oAtlas, atlasTxl, vec4(blended, blendedAlpha));
             } else {
-                // codex 09 P0: sanitize bake output before write.
-                imageStore(oAtlas, atlasTxl, vec4(sanitizeRadiance(rad), hit.a));
+                imageStore(oAtlas, atlasTxl, vec4(sanitizeRadiance(rad), alpha));
             }
         }
     }

@@ -184,6 +184,9 @@ Demo3D::Demo3D()
     , useScaledDirRes(true)         // D4/D8/D16/D16: upper cascades get finer angular res
     , useDirBilinear(true)
     , useSpatialTrilinear(true)
+    , useWeightedSample(false)  // Phase 3 (default OFF; opt-in via GUI / CLI)
+    , phase3DebugMode(0)
+    , giStrength(1.0f)
     , useShadowRay(true)
     , useDirectionalGI(true)        // cosine-weighted directional atlas lookup
     , useSoftShadow(false)
@@ -327,18 +330,25 @@ Demo3D::Demo3D()
     // Step 8: sdf_3d.comp re-enabled (was disabled in the Step 7 cleanup).
     // Step 9: voxelize.comp re-enabled, rewritten as a 3-pass GPU triangle
     // voxelizer (init / atomicMin owner-index / resolve owner->color).
-    loadShader("sdf_3d.comp");        // Step 8: GPU JFA SDF
-    loadShader("voxelize.comp");      // Step 9: GPU triangle voxelizer
-    loadShader("sdf_analytic.comp");  // Phase 0: Analytic SDF shader
-    loadShader("radiance_3d.comp");
-    loadShader("reduction_3d.comp");    // Phase 5b-1: atlas → isotropic reduction
-    loadShader("temporal_blend.comp"); // Phase 9: temporal probe accumulation
-    loadShader("inject_radiance.comp");
-    loadShader("sdf_debug.frag");     // Phase 0: SDF debug visualization (auto-loads .vert)
-    loadShader("radiance_debug.frag"); // Phase 1: Radiance cascade debug (auto-loads .vert)
-    loadShader("lighting_debug.frag"); // Phase 1: Lighting debug (auto-loads .vert)
-    loadShader("raymarch.frag");       // Phase 1: Final raymarched image (auto-loads .vert)
-    loadShader("gi_blur.frag");        // Phase 9c: Bilateral GI blur (auto-loads .vert)
+    // Per Phase 2.5d critic-10 W1: track critical-shader load failures so the
+    // app can signal nonzero exit if any of the renderer's load-bearing shaders
+    // failed to compile. sdf_3d.comp is the known-broken exception (cerebrum:
+    // imageLoad overload mismatch; unused, replaced by CPU EDT path) — its
+    // failure is expected and doesn't count as a critical failure.
+    loadShader("sdf_3d.comp");        // KNOWN-BROKEN per cerebrum (not critical)
+    bool ok = true;
+    ok &= loadShader("voxelize.comp");          // Step 9: GPU triangle voxelizer (CRITICAL)
+    ok &= loadShader("sdf_analytic.comp");      // Phase 0: Analytic SDF shader (CRITICAL)
+    ok &= loadShader("radiance_3d.comp");       // CRITICAL — main bake pass
+    ok &= loadShader("reduction_3d.comp");      // CRITICAL — atlas → isotropic reduction
+    ok &= loadShader("temporal_blend.comp");    // CRITICAL — temporal probe accumulation
+    ok &= loadShader("inject_radiance.comp");   // CRITICAL — direct light injection
+    ok &= loadShader("sdf_debug.frag");         // Phase 0: SDF debug viz (CRITICAL — used by render)
+    ok &= loadShader("radiance_debug.frag");    // Phase 1: Radiance cascade debug (CRITICAL)
+    ok &= loadShader("lighting_debug.frag");    // Phase 1: Lighting debug (CRITICAL)
+    ok &= loadShader("raymarch.frag");          // CRITICAL — final raymarched image
+    ok &= loadShader("gi_blur.frag");           // Phase 9c: Bilateral GI blur (CRITICAL)
+    criticalShaderLoadOk = ok;
     
     // Step 5: Initialize cascades
     initCascades();
@@ -723,6 +733,14 @@ void Demo3D::render() {
         cascadeReady = false;
         std::cout << "[5d] spatial trilinear: "
                   << (useSpatialTrilinear ? "ON (8-neighbor)" : "OFF (nearest-parent)")
+                  << std::endl;
+    }
+    static bool lastWeightedSample = false;
+    if (useWeightedSample != lastWeightedSample) {
+        lastWeightedSample = useWeightedSample;
+        cascadeReady = false;  // bake-side merge change → full cascade rebuild
+        std::cout << "[3] WeightedSample bake-side visibility: "
+                  << (useWeightedSample ? "ON (per-corner gating)" : "OFF (Phase 2 unconditional)")
                   << std::endl;
     }
     static bool lastShadowRay = true;
@@ -1129,7 +1147,232 @@ void Demo3D::render() {
     // Pass 6: Radiance Cascade Slice Viewer (Phase 1)
     renderRadianceDebug();
 
+    // Phase 2.5a.1: bake-leak baseline measurement. Triggered by --bake-leak-test=path.
+    // Counter increments only when cascade is ready (don't count warm-up frames);
+    // computes when reached the threshold.
+    if (bakeLeakTestPending && !bakeLeakTestDone) {
+        if (cascadeReady) ++bakeLeakElapsedFrames;
+        if (bakeLeakElapsedFrames >= bakeLeakTestFramesAfter) {
+            computeBakeLeakMetric();
+        }
+    }
+
     frameTimeMs = GetFrameTime() * 1000.0;
+}
+
+// Phase 2.5a.1: bake-leak baseline metric.
+// Replicates the shader's octahedral binToDir mapping in C++ so per-bin
+// directions match the atlas indexing exactly.
+namespace {
+glm::vec3 cpuOctToDir(glm::vec2 uv) {
+    uv = uv * 2.0f - 1.0f;
+    glm::vec3 d(uv.x, uv.y, 1.0f - std::abs(uv.x) - std::abs(uv.y));
+    if (d.z < 0.0f) {
+        glm::vec2 sgn(d.x >= 0.0f ? 1.0f : -1.0f, d.y >= 0.0f ? 1.0f : -1.0f);
+        float oldX = d.x, oldY = d.y;
+        d.x = (1.0f - std::abs(oldY)) * sgn.x;
+        d.y = (1.0f - std::abs(oldX)) * sgn.y;
+    }
+    return glm::normalize(d);
+}
+glm::vec3 cpuBinToDir(int dx, int dy, int D) {
+    glm::vec2 oct((dx + 0.5f) / float(D), (dy + 0.5f) / float(D));
+    return cpuOctToDir(oct);
+}
+}  // namespace
+
+void Demo3D::computeBakeLeakMetric() {
+    if (bakeLeakTestDone) return;
+    if (cascadeCount <= 0 || !cascades[0].active || cascades[0].probeAtlasTexture == 0) {
+        std::cerr << "[bake-leak] ERROR: cascade not ready; skipping\n";
+        return;
+    }
+
+    // Per-cascade results. histo[i] counts surface bins with α in [i/16, (i+1)/16).
+    // Only populated when diagAlphaMode==1 (M1 diagnostic mode).
+    struct CascadeResult {
+        int   probeCount = 0;
+        int   probesInRegion = 0;
+        int   binsInspected = 0;
+        int   binsCounted = 0;
+        float leakSum = 0.0f;
+        float leakMax = 0.0f;
+        // M1 diagnostic: histogram of sdfBefore_normalized for surface bins
+        std::vector<int> histo;
+        int               diagSurfaceTotal = 0;
+        float             diagSurfaceSum   = 0.0f;
+    };
+    // Phase 2.5d critic-10 W3: increased histogram from 16 to 64 bins.
+    // 99.2% of M1 data fell in α ≤ 0.25 with the original 16-bin (width 0.0625);
+    // 64-bin (width 0.015625) gives 16× more resolution in the relevant low-α
+    // range without changing the encoding upper bound.
+    constexpr int kDiagHistoBins = 64;
+    std::vector<CascadeResult> results(cascadeCount);
+    if (diagAlphaMode == 1) {
+        for (auto& r : results) r.histo.assign(kDiagHistoBins, 0);
+    }
+
+    // Region-of-interest filter. cornell-orig-alcove has the partition at x=0.30
+    // and the right wall at x=1.0 (Cornell box bounds: x ∈ [-1.02, 1.0]). The
+    // alcove probes are STRICTLY INSIDE the box, in the partition's right side:
+    //   alcoveXMin < probe_world.x < alcoveXMax
+    // The previous (Phase 2.5a.1 v1) implementation used only `x > 0.30`, which
+    // included probes BEYOND the right wall (x > 1.0). Those probes are in
+    // sky-exit territory: their bins satisfy α=0 (the bake's sky-exit encoding)
+    // AND `dot(bdir, toLight) > 0` for many directions, inflating the metric
+    // with legitimate sky-fill radiance that is NOT bake leak. Per critic 11 H1.
+    //
+    // For non-alcove scenes the filter is wide-open (-inf .. +inf): metric is
+    // defined but less rigorous (Sponza spot-checks should be treated as upper-
+    // bound estimates per the impl doc).
+    const bool  isAlcoveScene = (currentOBJPath == "cornell_orig_alcove");
+    constexpr float kAlcovePartitionX = 0.30f;  // matches CornellBox-Original-Alcove.obj partition
+    constexpr float kAlcoveBoxRightX  = 1.00f;  // matches Cornell box right wall
+    const float alcoveXMin = isAlcoveScene ? kAlcovePartitionX : -1e30f;
+    const float alcoveXMax = isAlcoveScene ? kAlcoveBoxRightX  :  1e30f;
+
+    // Light source for the dot(bdir, toLight) > 0 filter.
+    glm::vec3 lightWorld = useDirectionalLight
+        ? -glm::normalize(lightDirection) * 1e6f  // far away in -lightDirection
+        : lightPosition;
+
+    constexpr float kAlphaThreshold = 1e-3f;  // bins with α below this are "occluded" (per Phase 2 binary encoding)
+
+    for (int ci = 0; ci < cascadeCount; ++ci) {
+        if (!cascades[ci].active || cascades[ci].probeAtlasTexture == 0) continue;
+        const int N    = cascades[ci].resolution;
+        const int D    = cascadeDirRes[ci];
+        const int aWH  = N * D;
+        std::vector<float> atlasBuf(static_cast<size_t>(aWH) * aWH * N * 4);
+        glBindTexture(GL_TEXTURE_3D, cascades[ci].probeAtlasTexture);
+        glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, atlasBuf.data());
+        glBindTexture(GL_TEXTURE_3D, 0);
+
+        // Probe world position uses volumeOrigin + (probeIdx + 0.5) × cellSize
+        // (per-cascade cellSize differs in non-co-located mode; volumeOrigin
+        // is shared across cascades). Matches the shader's uAtlasGridOrigin /
+        // uAtlasGridSize / uAtlasVolumeSize derivation.
+        const float     cellSz     = cascades[ci].cellSize;
+        const glm::vec3 gridOrigin = volumeOrigin;
+        const glm::vec3 cellSize(cellSz, cellSz, cellSz);
+
+        results[ci].probeCount = N * N * N;
+        for (int pz = 0; pz < N; ++pz)
+        for (int py = 0; py < N; ++py)
+        for (int px = 0; px < N; ++px) {
+            glm::vec3 probeWorld = gridOrigin + (glm::vec3(float(px), float(py), float(pz)) + 0.5f) * cellSize;
+            if (probeWorld.x <= alcoveXMin || probeWorld.x >= alcoveXMax) continue;  // not in region of interest
+            ++results[ci].probesInRegion;
+
+            glm::vec3 toLight = useDirectionalLight
+                ? -glm::normalize(lightDirection)
+                : glm::normalize(lightWorld - probeWorld);
+
+            for (int dy = 0; dy < D; ++dy)
+            for (int dx = 0; dx < D; ++dx) {
+                glm::vec3 bdir = cpuBinToDir(dx, dy, D);
+                if (glm::dot(bdir, toLight) <= 0.0f) continue;
+                ++results[ci].binsInspected;
+
+                int ax = px * D + dx, ay = py * D + dy;
+                size_t baseIdx = ((static_cast<size_t>(pz) * aWH + ay) * aWH + ax) * 4;
+                float r = atlasBuf[baseIdx + 0];
+                float g = atlasBuf[baseIdx + 1];
+                float b = atlasBuf[baseIdx + 2];
+                float a = atlasBuf[baseIdx + 3];
+
+                if (a < kAlphaThreshold) {
+                    float lum = std::sqrt(r * r + g * g + b * b);
+                    results[ci].leakSum += lum;
+                    results[ci].leakMax  = std::max(results[ci].leakMax, lum);
+                    ++results[ci].binsCounted;
+                }
+
+                // Phase 2.5d M1 diagnostic: in this mode, surface-hit bins
+                // carry sdfBefore_normalized in α (∈(0,1) strictly; sky=0
+                // and miss=1 are excluded by this range check). Bucket into
+                // a 16-bin histogram so we can confirm whether the
+                // distribution is concentrated near 0 (the conceptual
+                // diagnosis) or spread out (refuting it).
+                // Histogram filter: 1e-4 lower bound clears half-float denormal
+                // boundary (~6.1e-5); 0.9995 upper bound clears miss=1.0. The
+                // shader's clamp range is [1e-3, 0.999] which sits cleanly
+                // inside this filter.
+                if (diagAlphaMode == 1 && a > 1e-4f && a < 0.9995f) {
+                    int bucket = std::min(kDiagHistoBins - 1,
+                                          static_cast<int>(a * float(kDiagHistoBins)));
+                    results[ci].histo[bucket]++;
+                    results[ci].diagSurfaceTotal++;
+                    results[ci].diagSurfaceSum += a;
+                }
+            }
+        }
+    }
+
+    // Write JSON
+    std::ofstream out(bakeLeakTestOutPath);
+    if (!out) {
+        std::cerr << "[bake-leak] ERROR: cannot open " << bakeLeakTestOutPath << " for write\n";
+    } else {
+        out << "{\n";
+        // Phase 2.5d critic-10 W6: explicit data_kind so future tooling can
+        // distinguish the two valid output shapes without parsing flag history.
+        // "baseline"  = diagAlphaMode == 0; leak_sum / leak_max are Phase 2
+        //               binary-α leak measurements (comparable to phase 3 target)
+        // "diagnostic" = diagAlphaMode == 1; leak_sum / leak_max are NOT
+        //               comparable across runs (alpha is sdfBefore_normalized,
+        //               not 0/1 binary); diag_histo[] is the primary signal
+        out << "  \"data_kind\": \"" << (diagAlphaMode == 1 ? "diagnostic" : "baseline") << "\",\n";
+        out << "  \"scene\": \"" << currentOBJPath << "\",\n";
+        out << "  \"alpha_threshold\": " << kAlphaThreshold << ",\n";
+        out << "  \"alcove_filter_x_min\": " << alcoveXMin << ",\n";
+        out << "  \"alcove_filter_x_max\": " << alcoveXMax << ",\n";
+        out << "  \"is_alcove_scene\": " << (isAlcoveScene ? "true" : "false") << ",\n";
+        out << "  \"frames_after_pending\": " << bakeLeakTestFramesAfter << ",\n";
+        out << "  \"diag_alpha_mode\": " << diagAlphaMode << ",\n";
+        out << "  \"cascades\": [\n";
+        for (int ci = 0; ci < cascadeCount; ++ci) {
+            out << "    {\"index\": " << ci
+                << ", \"probe_count\": " << results[ci].probeCount
+                << ", \"probes_in_region\": " << results[ci].probesInRegion
+                << ", \"bins_inspected\": " << results[ci].binsInspected
+                << ", \"bins_counted\": " << results[ci].binsCounted
+                << ", \"leak_sum\": " << results[ci].leakSum
+                << ", \"leak_max\": " << results[ci].leakMax;
+            if (diagAlphaMode == 1 && !results[ci].histo.empty()) {
+                out << ", \"diag_surface_total\": " << results[ci].diagSurfaceTotal
+                    << ", \"diag_surface_mean\": "
+                    << (results[ci].diagSurfaceTotal > 0
+                        ? results[ci].diagSurfaceSum / float(results[ci].diagSurfaceTotal)
+                        : 0.0f)
+                    << ", \"diag_histo_bins\": " << results[ci].histo.size()
+                    << ", \"diag_histo\": [";
+                for (size_t i = 0; i < results[ci].histo.size(); ++i)
+                    out << results[ci].histo[i] << (i + 1 < results[ci].histo.size() ? "," : "");
+                out << "]";
+            }
+            out << "}" << (ci + 1 < cascadeCount ? "," : "") << "\n";
+        }
+        out << "  ]\n";
+        out << "}\n";
+        std::cout << "[bake-leak] wrote " << bakeLeakTestOutPath << "\n";
+    }
+
+    // Stdout summary
+    std::cout << "[bake-leak] scene=" << currentOBJPath
+              << " alcove_filter=" << (isAlcoveScene ? "0.30 < x < 1.00 (inside Cornell box, partition right side)" : "all probes (no scene-specific filter)")
+              << " (leak = sum length(rgb) for bins with α<" << kAlphaThreshold
+              << " AND dot(bdir, toLight)>0)\n";
+    for (int ci = 0; ci < cascadeCount; ++ci) {
+        std::cout << "[bake-leak]   C" << ci
+                  << " probes_in_region=" << results[ci].probesInRegion << "/" << results[ci].probeCount
+                  << " bins_counted=" << results[ci].binsCounted << "/" << results[ci].binsInspected
+                  << " leak_sum=" << results[ci].leakSum
+                  << " leak_max=" << results[ci].leakMax
+                  << "\n";
+    }
+
+    bakeLeakTestDone = true;
 }
 
 void Demo3D::voxelizationPass() {
@@ -2078,13 +2321,46 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glm::ivec3 upperVolRes(upperRes);
     glUniform3iv(glGetUniformLocation(prog, "uUpperVolumeSize"), 1, glm::value_ptr(upperVolRes));
     glUniform1i(glGetUniformLocation(prog, "uUseSpatialTrilinear"), useSpatialTrilinear ? 1 : 0);
-    glUniform3fv(glGetUniformLocation(prog, "uLightPos"),  1, glm::value_ptr(lightPosition));
-    glUniform3f(glGetUniformLocation(prog, "uLightColor"), 1.0f, 0.95f, 0.85f);
-    // Step 11: strip vec3(0.05) ambient floor from probe bake when toggled.
-    glUniform1i(glGetUniformLocation(prog, "uStripAmbientFloor"),
-                stripAmbientFloorBake ? 1 : 0);
+
+    // Phase 3 (bake-side leak fix): per-corner WeightedSample gating + cone-correction.
+    //   uUseWeightedSample: gates ONLY the trilinear path (other paths can't carry per-corner info).
+    //   uUpperBinConeSin = sin(theta_half) where cos(theta_half) = 1 - 2/D².
+    //     D=4 → 0.484, D=8 → 0.248, D=16 → 0.124. Critic 7 H2: octahedral non-uniformity
+    //     means actual per-bin half-angle varies; v2 fallback (per-bin LUT) addresses if v1 fails.
+    glUniform1i(glGetUniformLocation(prog, "uUseWeightedSample"), useWeightedSample ? 1 : 0);
+    {
+        const float Du = static_cast<float>(upperCascDirRes);
+        const float cosT = 1.0f - 2.0f / (Du * Du);
+        const float sinT = std::sqrt(std::max(0.0f, 1.0f - cosT * cosT));
+        glUniform1f(glGetUniformLocation(prog, "uUpperBinConeSin"), sinT);
+    }
+    glUniform1i(glGetUniformLocation(prog, "uPhase3DebugMode"), phase3DebugMode);
+    glUniform1f(glGetUniformLocation(prog, "uGIStrength"),     giStrength);
+    // Lighting controls follow-up: directional-light support derives a
+    // far-away point light from `lightDirection` so the existing point-light
+    // formula in radiance_3d.comp degenerates to directional behavior
+    // (lightDir = normalize(uLightPos - pos) ≈ -lightDirection for distant
+    // light; shadow trace exits the volume after a few steps = "not in
+    // shadow", correct for directional). Sponza variants enable this on load.
+    glm::vec3 effectiveLightPos = lightPosition;
+    if (useDirectionalLight) {
+        glm::vec3 volCenter = volumeOrigin + 0.5f * volumeSize;
+        effectiveLightPos = volCenter - glm::normalize(lightDirection) * 100.0f;
+    }
+    glUniform3fv(glGetUniformLocation(prog, "uLightPos"), 1, glm::value_ptr(effectiveLightPos));
+
+    // Lighting controls follow-up: scale the hardcoded base color by intensity.
+    glm::vec3 baseLightColor(1.0f, 0.95f, 0.85f);
+    glm::vec3 scaledLightColor = baseLightColor * lightIntensity;
+    glUniform3fv(glGetUniformLocation(prog, "uLightColor"), 1, glm::value_ptr(scaledLightColor));
+
+    // Lighting controls follow-up: continuous ambient floor for cascade bake
+    // (replaces Step 11 binary uStripAmbientFloor; 0 reproduces strip behavior).
+    glUniform1f(glGetUniformLocation(prog, "uAmbientBakeStrength"), ambientBakeStrength);
     glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
     glUniform3fv(glGetUniformLocation(prog, "uSkyColor"),  1, glm::value_ptr(skyColor));
+    // Phase 2.5d M1 diagnostic: surface-bin α gets sdfBefore_normalized when set.
+    glUniform1i(glGetUniformLocation(prog, "uDiagAlphaMode"), diagAlphaMode);
     glUniform1f(glGetUniformLocation(prog, "uBlendFraction"), blendFraction);
     // 5i: soft shadow in bake shader
     glUniform1i(glGetUniformLocation(prog, "uUseSoftShadowBake"), useSoftShadowBake ? 1 : 0);
@@ -2336,11 +2612,18 @@ void Demo3D::raymarchPass() {
     glUniform1i(glGetUniformLocation(prog, "uRenderMode"), raymarchRenderMode);
 
     // Direct light: near the ceiling (Cornell Box inner room spans y=[-1,1], ceiling at y=1.0)
+    // Lighting controls follow-up: same directional-light derivation as cascade
+    // dispatch (far-away point so existing point-light shadow trace works).
     glm::vec3 lightPos = lightPosition;   // Step 4 (4b ext): per-scene light from member
-    glm::vec3 lightColor(1.0f, 0.95f, 0.85f);
+    if (useDirectionalLight) {
+        glm::vec3 volCenter = volumeOrigin + 0.5f * volumeSize;
+        lightPos = volCenter - glm::normalize(lightDirection) * 100.0f;
+    }
+    glm::vec3 lightColor = glm::vec3(1.0f, 0.95f, 0.85f) * lightIntensity;
     glUniform3fv(glGetUniformLocation(prog, "uLightPos"), 1, glm::value_ptr(lightPos));
     glUniform3fv(glGetUniformLocation(prog, "uLightColor"), 1, glm::value_ptr(lightColor));
-
+    // Lighting controls follow-up: composite-side ambient floor (mode 0/4/10).
+    glUniform1f(glGetUniformLocation(prog, "uAmbientCompositeStrength"), ambientCompositeStrength);
     // SDF texture (sampler binding 0)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -2618,7 +2901,22 @@ bool Demo3D::loadShader(const std::string& shaderName) {
     }
     
     if (program == 0) {
-        std::cerr << "[ERROR] Failed to load shader: " << shaderPath << std::endl;
+        // Phase 2.5d critic-12 H2: shader-load failures previously scrolled past in
+        // stderr and were easy to miss (cost a debug cycle in the M1 implementation
+        // when uVolumeMax/Min didn't exist in radiance_3d.comp). Make the failure
+        // VISUALLY obvious so it can't be overlooked. Don't abort here because
+        // some shaders (sdf_3d.comp per cerebrum) are pre-existing broken; instead,
+        // the loader caller can check the return value if it cares.
+        std::cerr << "\n"
+                  << "*****************************************************************\n"
+                  << "***** [SHADER LOAD FAILURE] " << shaderPath << "\n"
+                  << "***** The renderer will likely produce wrong output if this\n"
+                  << "***** shader is on the critical path. Check the GLSL compile\n"
+                  << "***** error above for the actual cause (usually undefined\n"
+                  << "***** uniform/variable; check uniform names match the file's\n"
+                  << "***** local naming convention).\n"
+                  << "*****************************************************************\n"
+                  << std::endl;
         return false;
     }
     
@@ -3403,23 +3701,25 @@ void Demo3D::addVoxelSphere(const glm::vec3& center, float radius, const glm::ve
     glBindTexture(GL_TEXTURE_3D, 0);
 }
 
+// File-scope ImGui helper used across renderSettingsPanel + renderCascadePanel.
+// Renders a grey "(?)" marker on the same line as the preceding widget; hovering
+// the marker shows `desc` as a tooltip after a short delay. Use for long help
+// text where the user benefits from a discoverable affordance. For short hints
+// on small toggles/sliders, prefer per-widget IsItemHovered+SetTooltip (already
+// used widely; the GUI cleanup pass intentionally did not normalize these — the
+// two styles serve different UX needs).
+//
+// This is a WIDGET (it draws "(?)"), not just a hover-handler — placement
+// matters relative to surrounding ImGui::SameLine / ImGui::Separator calls.
+static void imHelpMarker(const char* desc) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("%s", desc);
+}
+
 void Demo3D::renderUI() {
-    /**
-     * @brief Render complete ImGui interface
-     * 
-     * UI Panels:
-     * 1. Settings Panel (renderSettingsPanel)
-     * 2. Cascade Control (renderCascadePanel)
-     * 3. Tutorial/Info (renderTutorialPanel)
-     * 4. Debug Windows (if enabled)
-     * 
-     * Layout:
-     * - Dockable windows (ImGui docking)
-     * - Collapsible headers
-     * - Real-time value displays
-     */
-    
-    // TODO: Implement UI rendering
+    // Two main control panels (TabBar-organised internally) + tutorial + debug overlays.
     renderSettingsPanel();
     renderCascadePanel();
     renderTutorialPanel();
@@ -3551,7 +3851,7 @@ void Demo3D::renderSettingsPanel() {
     }
 
     ImGui::Separator();
-    ImGui::Text("Cascade GI (Phase 2):");
+    ImGui::Text("Cascade GI:");
     ImGui::Checkbox("Cascade GI", &useCascadeGI);
     if (cascades[0].active)
         ImGui::Text("Probe grid: %d^3  D=%d  rays/probe=%d (all cascades, Phase 5a)",
@@ -3559,56 +3859,90 @@ void Demo3D::renderSettingsPanel() {
     else
         ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Cascade not initialized!");
 
-    // Step 11 (codex 07 F6): GI bake strip toggle, gated on Cascade GI being
-    // enabled (toggle is meaningless without cascades). One-frame ~25 ms
-    // dispatch spike on toggle (codex 07 F10) -- renderFrameIndex=0 bypasses
-    // stagger.
-    ImGui::BeginDisabled(!useCascadeGI);
-    bool sStrip = stripAmbientFloorBake;
-    if (ImGui::Checkbox("Strip 0.05 ambient floor from GI bake (Step 11)", &sStrip))
-        setStripAmbientFloorBake(sStrip);
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        if (!useCascadeGI)
-            ImGui::SetTooltip("Disabled -- requires Cascade GI to be enabled.");
-        else
-            ImGui::SetTooltip("Strips vec3(0.05) ambient floor from radiance_3d.comp:262.\nProbes then store ONLY real-direct-lit bounce.\nToggling triggers a full cascade rebake (~25 ms one-frame spike).");
+    // Lighting controls follow-up: directional/intensity + 2 independent
+    // ambient floor sliders. Replaces the Step 11 binary "strip ambient floor"
+    // toggle (which was 0 vs 0.05) with a continuous slider; the old toggle
+    // is preserved as `setStripAmbientFloorBake` (sets strength to 0 or 0.05).
+    if (ImGui::CollapsingHeader("Lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Directional light toggle (Sponza variants enable on load).
+        bool dirOn = useDirectionalLight;
+        if (ImGui::Checkbox("Directional light (Sponza-style sun)", &dirOn))
+            setUseDirectionalLight(dirOn);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("ON: light is at infinity in the direction below.\nOFF: light is at lightPosition (point light, e.g. Cornell ceiling).\nToggling triggers a cascade rebake.");
+
+        // Direction sliders (only meaningful when directional ON).
+        ImGui::BeginDisabled(!useDirectionalLight);
+        glm::vec3 dirEdit = lightDirection;
+        if (ImGui::SliderFloat3("Light direction", &dirEdit.x, -1.0f, 1.0f, "%.2f"))
+            setLightDirection(dirEdit);
+        ImGui::EndDisabled();
+
+        // Intensity (multiplies the hardcoded vec3(1.0, 0.95, 0.85) base color).
+        float intEdit = lightIntensity;
+        if (ImGui::SliderFloat("Light intensity", &intEdit, 0.0f, 5.0f, "%.2f"))
+            setLightIntensity(intEdit);
+
+        ImGui::Separator();
+
+        // Two independent ambient floors (codex 13 F3 made the bake-vs-composite
+        // distinction explicit; this UI surfaces them as separate sliders).
+        ImGui::BeginDisabled(!useCascadeGI);
+        float bakeEdit = ambientBakeStrength;
+        if (ImGui::SliderFloat("Ambient floor (bake)", &bakeEdit, 0.0f, 0.2f, "%.3f"))
+            setAmbientBakeStrength(bakeEdit);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Adds vec3(N) to every cascade source surface's color.\nBaked into probe radiance -- amplifies through GI bounce.\n0 = Step 11 strip behavior. 0.05 = original literal.\nRequires Cascade GI; triggers cascade rebake.");
+
+        float compEdit = ambientCompositeStrength;
+        if (ImGui::SliderFloat("Ambient floor (composite)", &compEdit, 0.0f, 0.2f, "%.3f"))
+            setAmbientCompositeStrength(compEdit);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Adds vec3(N) at the camera-visible surface direct-light shade.\nAffects mode 0/4/10 directly; no cascade rebake (uniform-only).\n0.05 = original literal. Set to 0 with bake=0 for true ambient-free.");
+
     }
 
     ImGui::Separator();
     ImGui::Text("Debug Render Mode:");
-    ImGui::RadioButton("Final (0)",       &raymarchRenderMode, 0); ImGui::SameLine();
-    ImGui::RadioButton("Normals (1)",     &raymarchRenderMode, 1); ImGui::SameLine();
-    ImGui::RadioButton("Depth (2)",       &raymarchRenderMode, 2); ImGui::SameLine();
-    ImGui::RadioButton("Indirect*5 (3)", &raymarchRenderMode, 3);
-    ImGui::RadioButton("Direct only (4)", &raymarchRenderMode, 4); ImGui::SameLine();
-    ImGui::RadioButton("Steps (5)",       &raymarchRenderMode, 5); ImGui::SameLine();
-    ImGui::RadioButton("GI only (6)",     &raymarchRenderMode, 6); ImGui::SameLine();
-    ImGui::RadioButton("RayDist (7)",     &raymarchRenderMode, 7);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Mode 7: ray travel distance heatmap (continuous float, green=near, red=far).\nCompare with Mode 5 (integer step count). If mode 7 is smooth but mode 5 is banded,\nthe banding is from integer step-count quantization, not SDF resolution.");
-    ImGui::RadioButton("ProbeCell (8)",   &raymarchRenderMode, 8);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Mode 8: probe cell boundary (fract of probe-grid coord as RGB).\nColor transitions occur at probe center positions; halfway = cell boundary.\nCompare with Mode 6 (GI-only): aligned banding = Type A (cell-size limited);\nmisaligned banding = Type B (directional D quantization).");
-    // Step 10 (codex 06 F2 + F10): GI diagnostic modes — isolate the
-    // hidden vec3(0.05) ambient floor that may wash out cascade GI bounce.
-    ImGui::RadioButton("DirectNoAmb (9)", &raymarchRenderMode, 9); ImGui::SameLine();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Mode 9: direct lighting WITHOUT the hidden vec3(0.05) ambient floor.\nFormula: albedo * diff * uLightColor. Compare vs Mode 4 (=Mode 9 + Mode 10).\nDark in scenes with no direct light source.");
-    ImGui::RadioButton("AmbFloor (10)",   &raymarchRenderMode, 10);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Mode 10: ambient floor only (albedo * vec3(0.05)).\nDiagnostic baseline -- if this dominates Mode 6 (GI bounce), the floor\nis washing out cascade GI. Independent of light direction.");
-    // Step 11 (codex 07 F6): GI heatmap modes -- spatial visualization of where
-    // GI is doing work. Same green/yellow/red palette as modes 5 & 7.
-    ImGui::RadioButton("GIHeat-Vis (11)",  &raymarchRenderMode, 11); ImGui::SameLine();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Mode 11: visible-GI heatmap = length(albedo * indirect) / 0.1.\nGreen=low / yellow=mid / red=high contribution at the camera-visible surface.\nRequires Cascade GI -- output is all-green when disabled.\nIf saturated everywhere, retune the divisor in raymarch.frag.");
-    ImGui::RadioButton("GIHeat-Raw (12)",  &raymarchRenderMode, 12); ImGui::SameLine();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Mode 12: raw-GI heatmap = length(indirect) / 0.05.\nProbe radiance magnitude WITHOUT albedo modulation.\nUseful for diagnosing cascade convergence independent of materials.\nRequires Cascade GI -- output is all-green when disabled.");
-    ImGui::RadioButton("GIHeat-Frac (13)", &raymarchRenderMode, 13);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Mode 13: GI-fraction heatmap = indirect / (direct + indirect), naturally [0,1].\nGreen = pixel is mostly direct-lit; red = pixel is mostly GI-lit.\nMost informative for the 'is GI being washed out?' question.\nRequires Cascade GI -- fraction is 0 when indirect is 0.");
+    // Single Combo replaces the previous block of 14 RadioButtons. Per-mode tooltips
+    // shown below the combo when relevant; full text on hover via the (?) marker.
+    static const char* kRenderModeLabels[] = {
+        "0  Final (combined)",
+        "1  Normals",
+        "2  Depth",
+        "3  Indirect x5",
+        "4  Direct only (+ ambient floor)",
+        "5  Steps (integer step count)",
+        "6  GI only (indirect bounce)",
+        "7  RayDist (continuous travel distance)",
+        "8  ProbeCell (fract of probe-grid coord)",
+        "9  DirectNoAmb (direct, no ambient floor)",
+        "10 AmbFloor only",
+        "11 GIHeat-Vis (visible-GI heatmap)",
+        "12 GIHeat-Raw (raw-GI magnitude)",
+        "13 GIHeat-Frac (GI / (direct+GI))",
+    };
+    constexpr int kModeCount = int(sizeof(kRenderModeLabels) / sizeof(kRenderModeLabels[0]));
+    static_assert(kModeCount == 14, "renderModeLabels must enumerate all 14 raymarch modes");
+    // Defensive clamp: setRenderMode warns on out-of-range values but assigns them
+    // anyway (preserves shader fallthrough behaviour). The picker is the only thing
+    // standing between an out-of-range raymarchRenderMode and an OOB array read.
+    // Bound to kModeCount (not magic 13) so adding a label auto-extends picker range.
+    int rmIdx = std::clamp(raymarchRenderMode, 0, kModeCount - 1);
+    if (ImGui::Combo("##RenderMode", &rmIdx, kRenderModeLabels, kModeCount))
+        raymarchRenderMode = rmIdx;
+    imHelpMarker(
+        "Final (0): albedo * (direct + indirect).\n"
+        "Geometry/diagnostic (1-2): normals, depth.\n"
+        "Component split (3,4,6,9,10): isolate direct vs indirect vs ambient floor.\n"
+        "Heatmaps (5,7,8): SDF cost (steps / ray distance) and probe-cell boundaries.\n"
+        "GI heatmaps (11-13): where GI is doing work (visible / raw / fraction).\n"
+        "Notes:\n"
+        "  Mode 5: integer step count. Banded mode 5 + smooth mode 7 → quantization.\n"
+        "  Mode 8: aligned banding = Type A (cell-size); misaligned = Type B (D bins).\n"
+        "  Modes 9/10 split mode 4 into 'direct without ambient' + 'ambient floor only'.\n"
+        "  Modes 11-13 require Cascade GI ON; otherwise output is all-green / zero.");
 
     // Step 3 (3d, F3): gate the analytic SDF toggle in OBJ mode. The analytic shader
     // path has nothing to evaluate against an OBJ mesh, so allowing it would render
@@ -3663,15 +3997,19 @@ void Demo3D::renderSettingsPanel() {
 }
 
 void Demo3D::renderCascadePanel() {
-    // Reusable helper: grey "(?) " that shows a tooltip on hover.
-    auto HelpMarker = [](const char* desc) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("(?)");
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("%s", desc);
-    };
-
     ImGui::Begin("Cascades");
+
+    if (!ImGui::BeginTabBar("##CascadeTabs")) {
+        ImGui::End();
+        return;
+    }
+
+    // ============================================================================
+    // Tab 1 — Hierarchy & Merge
+    //   Cascade structure, layout (co-located vs ShaderToy halving), C0 resolution,
+    //   merge toggles (directional / bilinear / spatial trilinear).
+    // ============================================================================
+    if (ImGui::BeginTabItem("Hierarchy & Merge")) {
 
     // ── Cascade hierarchy ────────────────────────────────────────────────────
     {
@@ -3683,7 +4021,7 @@ void Demo3D::renderCascadePanel() {
                 cascadeC0Res, cascadeC0Res>>1, cascadeC0Res>>2, cascadeC0Res>>3);
         ImGui::Text("Cascade Count: %d  [%s]", cascadeCount, layoutDesc);
     }
-    HelpMarker(
+    imHelpMarker(
         "4-level hierarchical probe grid (C0-C3).\n"
         "Co-located mode: all cascades share the same 32^3 world-space grid.\n"
         "Non-co-located (ShaderToy): C0=32^3 C1=16^3 C2=8^3 C3=4^3.\n\n"
@@ -3712,7 +4050,7 @@ void Demo3D::renderCascadePanel() {
 
     // ── Merge toggle ─────────────────────────────────────────────────────────
     ImGui::Checkbox("Disable Merge (raw per-level)", &disableCascadeMerging);
-    HelpMarker(
+    imHelpMarker(
         "Merge ON (default): each cascade's miss rays pull radiance from\n"
         "the next coarser level (C3->C2->C1->C0).\n\n"
         "Merge OFF (debug): every cascade solved independently with no\n"
@@ -3722,8 +4060,8 @@ void Demo3D::renderCascadePanel() {
     ImGui::TextDisabled(disableCascadeMerging ? "(each level independent)" : "(C3->C2->C1->C0)");
 
     // ── Phase 5c: directional merge toggle (A/B) ─────────────────────────────
-    ImGui::Checkbox("Directional merge (Phase 5c)", &useDirectionalMerge);
-    HelpMarker(
+    ImGui::Checkbox("Directional merge", &useDirectionalMerge);
+    imHelpMarker(
         "ON  (default): per-direction texelFetch from upper cascade atlas.\n"
         "     Each ray's miss pulls the upper cascade value for THAT exact\n"
         "     direction bin, not the probe average.\n\n"
@@ -3735,8 +4073,8 @@ void Demo3D::renderCascadePanel() {
     ImGui::TextDisabled(useDirectionalMerge ? "(directional)" : "(isotropic fallback)");
 
     // ── Phase 5f: directional bilinear interpolation ──────────────────────────
-    ImGui::Checkbox("Directional bilinear merge (Phase 5f)", &useDirBilinear);
-    HelpMarker(
+    ImGui::Checkbox("Directional bilinear merge", &useDirBilinear);
+    imHelpMarker(
         "ON  (default): when reading the upper cascade atlas, blends across\n"
         "     4 surrounding direction bins (bilinear in octahedral space).\n"
         "     Eliminates hard bin-boundary banding and wall-color bleeding.\n"
@@ -3752,9 +4090,9 @@ void Demo3D::renderCascadePanel() {
 
     // ── Phase 5d: co-located vs ShaderToy-style probe layout ─────────────────
     ImGui::Separator();
-    ImGui::Text("Cascade Probe Layout (Phase 5d):");
+    ImGui::Text("Cascade Probe Layout:");
     ImGui::Checkbox("Co-located cascades (all N^3)", &useColocatedCascades);
-    HelpMarker(
+    imHelpMarker(
         "ON (default): all 4 cascades share the same 32^3 probe grid.\n"
         "Upper probe for any cascade is at the same world position,\n"
         "so the directional merge reads the identical atlas texel.\n"
@@ -3779,7 +4117,7 @@ void Demo3D::renderCascadePanel() {
         int curIdx = 3;
         for (int k = 0; k < kC0Count; ++k) if (kC0Options[k] == cascadeC0Res) { curIdx = k; break; }
         ImGui::Text("C0 probe resolution:");
-        HelpMarker(
+        imHelpMarker(
             "Sets the C0 probe grid resolution. All other cascades derive from this:\n"
             "  co-located:     all cascades use the same N^3 grid.\n"
             "  non-co-located: Ci uses (N>>i)^3, halving per level.\n\n"
@@ -3808,8 +4146,8 @@ void Demo3D::renderCascadePanel() {
     {
         bool disabled = useColocatedCascades;
         if (disabled) ImGui::BeginDisabled();
-        ImGui::Checkbox("Spatial trilinear merge (Phase 5d)", &useSpatialTrilinear);
-        HelpMarker(
+        ImGui::Checkbox("Spatial trilinear merge", &useSpatialTrilinear);
+        imHelpMarker(
             "Non-co-located mode only. Has no effect when co-located is ON.\n\n"
             "ON  (default): when a lower cascade misses, blends the 8 surrounding\n"
             "     upper probes using trilinear interpolation weighted by the lower\n"
@@ -3828,10 +4166,47 @@ void Demo3D::renderCascadePanel() {
             ImGui::TextDisabled(useSpatialTrilinear ? "(8-neighbor)" : "(nearest-parent)");
     }
 
+    // Phase 3: WeightedSample bake-side leak fix.
+    // Only active on the trilinear path (non-co-located + uUseSpatialTrilinear).
+    {
+        bool disabled = useColocatedCascades || !useSpatialTrilinear;
+        if (disabled) ImGui::BeginDisabled();
+        ImGui::Checkbox("WeightedSample bake-side visibility (Phase 3)", &useWeightedSample);
+        imHelpMarker(
+            "Phase 3 v3 bake-side leak fix (2026-05-18). Uses trilinear.rgb (unbiased) for\n"
+            "radiance, applies WeightedSample's visibility-fraction (.a) only as a soft attenuation\n"
+            "multiplier in the merge formula.\n\n"
+            "Requires non-co-located + spatial trilinear (other paths can't carry per-corner info).\n\n"
+            "Effect on cornell-orig-alcove leak metric: C0 −11%, C1 −16%, C2 −10%.\n"
+            "Side effect on default Cornell: ~0.7% global dimming (indistinguishable from OFF).\n"
+            "Cost: ~+1.2 ms bake (~3% of 38 ms).\n\n"
+            "Earlier revisions (kept for ref):\n"
+            "  v1 (renormalize + multiply): killed GI ~30% in open volumes.\n"
+            "  v2 (drop aFactor in miss branch): GI still dimmed 6% — renormalize was the cause.\n"
+            "  v3 (trilinear.rgb + .a as multiplier): GI preserved within 1%.\n\n"
+            "OFF (default): Phase 2 unconditional-trust merge. Bit-exact preserved.\n"
+            "See doc/6/claude_plan/visibility_phase3_impl.md \"v3 — Trilinear.rgb + ...\".");
+        if (disabled) ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (disabled)
+            ImGui::TextDisabled("(needs non-colocated + trilinear)");
+        else
+            ImGui::TextDisabled(useWeightedSample ? "(per-corner gating)" : "(Phase 2 unconditional)");
+    }
+
+        ImGui::EndTabItem();
+    } // end "Hierarchy & Merge"
+
+    // ============================================================================
+    // Tab 2 — Sampling
+    //   Direct lighting (shadow ray, soft shadow), GI sampling (directional GI,
+    //   per-cascade D scaling), volume-boundary handling (env fill), ray count.
+    // ============================================================================
+    if (ImGui::BeginTabItem("Sampling")) {
+
     // ── Phase 5h: shadow ray in direct path ─────────────────────────────────
-    ImGui::Separator();
-    ImGui::Checkbox("Shadow ray in direct path (Phase 5h)", &useShadowRay);
-    HelpMarker(
+    ImGui::Checkbox("Shadow ray in direct path", &useShadowRay);
+    imHelpMarker(
         "ON  (default): casts a 32-step SDF shadow ray from each surface hit\n"
         "     toward the light. Uses a normal-offset origin (normal*0.02 +\n"
         "     ldir*0.01) -- better than the bake shader's fixed t=0.05 bias\n"
@@ -3846,8 +4221,8 @@ void Demo3D::renderCascadePanel() {
 
     // ── Phase 5g: directional atlas GI sampling ──────────────────────────────
     ImGui::Separator();
-    ImGui::Checkbox("Directional GI sampling (Phase 5g)", &useDirectionalGI);
-    HelpMarker(
+    ImGui::Checkbox("Directional GI sampling", &useDirectionalGI);
+    imHelpMarker(
         "OFF (default): reads the isotropic average probeGridTexture.\n"
         "     Shadow signal diluted ~8x by direction averaging.\n\n"
         "ON: samples C0 directional atlas with cosine-weighted hemisphere\n"
@@ -3864,9 +4239,9 @@ void Demo3D::renderCascadePanel() {
 
     // ── Phase 5i: soft shadow (display + bake) ───────────────────────────────
     ImGui::Separator();
-    ImGui::Text("Soft Shadow (Phase 5i):");
+    ImGui::Text("Soft Shadow:");
     ImGui::Checkbox("Soft shadow in direct path##5i_display", &useSoftShadow);
-    HelpMarker(
+    imHelpMarker(
         "ON: SDF cone soft shadow (IQ-style) in the final renderer.\n"
         "    shadow = 1 - min(k*h/t) along the shadow ray.\n"
         "    k controls penumbra width (see slider below).\n"
@@ -3880,7 +4255,7 @@ void Demo3D::renderCascadePanel() {
     ImGui::TextDisabled(useSoftShadow ? "(soft)" : "(binary)");
 
     ImGui::Checkbox("Soft shadow in bake shader##5i_bake", &useSoftShadowBake);
-    HelpMarker(
+    imHelpMarker(
         "ON: replaces binary inShadow() in the radiance bake shader with\n"
         "    the same SDF cone shadow. Reduces probe-baked signal\n"
         "    discontinuity at shadow boundaries (Sources 2+3 in banding doc).\n"
@@ -3895,7 +4270,7 @@ void Demo3D::renderCascadePanel() {
     if (ImGui::SliderFloat("Soft shadow k##5i_k", &softShadowK, 1.0f, 16.0f, "k=%.1f")) {
         // k change is a display-only change; bake rebuild is handled by the tracking block
     }
-    HelpMarker(
+    imHelpMarker(
         "Penumbra width for SDF cone soft shadow (display and bake).\n"
         "  k=1  very wide soft shadow (over-softened)\n"
         "  k=4  wide penumbra\n"
@@ -3905,9 +4280,9 @@ void Demo3D::renderCascadePanel() {
 
     // ── Phase 5e: per-cascade D scaling ─────────────────────────────────────
     ImGui::Separator();
-    ImGui::Text("Directional Resolution Scaling (Phase 5e):");
+    ImGui::Text("Directional Resolution Scaling:");
     ImGui::Checkbox("Per-cascade D scaling (C0=D4, C1=D8, C2=D16, C3=D16)", &useScaledDirRes);
-    HelpMarker(
+    imHelpMarker(
         "OFF (default): all 4 cascades use D=4 (16 bins per probe).\n\n"
         "ON: upper cascades use more directional bins (D=min(16, 4<<i)).\n"
         "  C0=D4  (16 bins, unchanged)\n"
@@ -3925,8 +4300,8 @@ void Demo3D::renderCascadePanel() {
 
     // ── Environment fill (4a) ────────────────────────────────────────────────
     ImGui::Separator();
-    ImGui::Text("Environment Fill (4a):");
-    HelpMarker(
+    ImGui::Text("Environment Fill:");
+    imHelpMarker(
         "Controls what happens when a ray exits the SDF volume boundary\n"
         "without hitting any geometry.\n\n"
         "OFF (honest transport): out-of-volume rays return black. Probes\n"
@@ -3948,7 +4323,7 @@ void Demo3D::renderCascadePanel() {
 
     // ── Ray count scaling (4b / 5a) ──────────────────────────────────────────
     ImGui::Separator();
-    ImGui::Text("Ray Count Scaling (4b / 5a):");
+    ImGui::Text("Ray Count Scaling:");
     {
         char raysHelpText[512];
         snprintf(raysHelpText, sizeof(raysHelpText),
@@ -3962,7 +4337,7 @@ void Demo3D::renderCascadePanel() {
             "ray ceiling to 8; a separate integer buffer is needed to\n"
             "raise it safely -- deferred to a cleanup pass.",
             dirRes * dirRes, dirRes);
-        HelpMarker(raysHelpText);
+        imHelpMarker(raysHelpText);
     }
     ImGui::BeginDisabled();
     ImGui::SliderInt("Base rays/probe (retired)", &baseRaysPerProbe, 4, 8);
@@ -3973,7 +4348,7 @@ void Demo3D::renderCascadePanel() {
     // Phase 8: live dirRes — even values only (odd D is degenerate in octahedral encoding)
     {
         ImGui::Text("Dir resolution (D):");
-        HelpMarker(
+        imHelpMarker(
             "Octahedral directional bin count per probe: D*D bins total.\n"
             "Must be even — odd D produces degenerate bin centers on the octahedral fold.\n"
             "D=4 (default): 16 bins, coarse angular resolution.\n"
@@ -3990,10 +4365,18 @@ void Demo3D::renderCascadePanel() {
         ImGui::TextDisabled("D^2=%d bins/probe", dirRes * dirRes);
     }
 
+        ImGui::EndTabItem();
+    } // end "Sampling"
+
+    // ============================================================================
+    // Tab 3 — Temporal
+    //   EMA accumulation, AABB history clamp, probe jitter, cascade stagger.
+    // ============================================================================
+    if (ImGui::BeginTabItem("Temporal")) {
+
     // ── Temporal accumulation + probe jitter (Phase 9) ──────────────────────
-    ImGui::Separator();
-    ImGui::Text("Temporal Accumulation (Phase 9):");
-    HelpMarker(
+    ImGui::Text("Temporal Accumulation:");
+    imHelpMarker(
         "B+C: temporal probe accumulation + stochastic jitter.\n\n"
         "Without jitter: suppresses stochastic noise only — deterministic probe\n"
         "positions produce the same biased GI every rebuild, so accumulation\n"
@@ -4089,10 +4472,19 @@ void Demo3D::renderCascadePanel() {
         useProbeJitter = false;  // auto-disable jitter when accum is off — it only adds noise alone
     }
 
+        ImGui::EndTabItem();
+    } // end "Temporal"
+
+    // ============================================================================
+    // Tab 4 — Debug & Stats
+    //   Interval blend, render-using-cascade selector, radiance debug viewer mode,
+    //   probe fill rate, mean luminance chart, distribution histogram, spot samples.
+    // ============================================================================
+    if (ImGui::BeginTabItem("Debug & Stats")) {
+
     // ── Interval blend (4c) ──────────────────────────────────────────────────
-    ImGui::Separator();
-    ImGui::Text("Interval Blend (4c):");
-    HelpMarker(
+    ImGui::Text("Interval Blend:");
+    imHelpMarker(
         "Controls how sharply the cascade hands off at its interval boundary (tMax).\n\n"
         "0.0 = binary (Phase 3 behaviour): surface hit uses local data only;\n"
         "      miss jumps immediately to upper cascade.\n\n"
@@ -4110,7 +4502,7 @@ void Demo3D::renderCascadePanel() {
 
     // ── Cascade selector ─────────────────────────────────────────────────────
     ImGui::Text("Render using cascade:");
-    HelpMarker(
+    imHelpMarker(
         "Selects which cascade level feeds the indirect lighting in the\n"
         "final raymarch pass (render modes 3 and 6).\n\n"
         "C0 — near-field only; fast, no far-field bounce\n"
@@ -4128,7 +4520,7 @@ void Demo3D::renderCascadePanel() {
     // ── Radiance debug viewer mode ───────────────────────────────────────────
     if (showRadianceDebug) {
         ImGui::Text("Radiance debug mode ([F] to cycle):");
-        HelpMarker(
+        imHelpMarker(
             "Controls what the top-right 400x400 radiance debug viewer shows.\n\n"
             "Slice    — isotropic probeGridTexture 2D cross-section\n"
             "MaxProj  — isotropic probeGridTexture max intensity projection\n"
@@ -4151,8 +4543,16 @@ void Demo3D::renderCascadePanel() {
         ImGui::RadioButton("Bin##rad",      &radianceVisualizeMode, 5); ImGui::SameLine();
         ImGui::RadioButton("Bilinear##rad", &radianceVisualizeMode, 6);
 
-        if (radianceVisualizeMode == 3)
+        if (radianceVisualizeMode == 3) {
             ImGui::TextColored(ImVec4(0.8f,0.8f,1.0f,1), "  Atlas raw — each D%cD block is one probe's directional bins", (char)0xD7);
+            // Phase 2.5d L3: warn that the atlas viewer shows raw RGB without
+            // honoring α. Bake-time leaks (Phase 2 W2 — render-side α-gate
+            // hides them at render but the atlas still contains them) are
+            // VISIBLE here. This is expected, not a renderer bug.
+            ImGui::TextColored(ImVec4(1.0f,0.7f,0.3f,1),
+                "  NOTE: shows raw atlas RGB; ignores α. Bake-time leaks visible here are expected\n"
+                "        (Phase 2: render-side α-gate hides leaks at render but atlas still contains them).");
+        }
         if (radianceVisualizeMode == 4)
             ImGui::TextColored(ImVec4(0.5f,1,0.5f,1), "  G=surf hit  B=sky exit  R=miss  (reads atlas alpha — fixed for Phase 5b-1)");
         if (radianceVisualizeMode == 5 || radianceVisualizeMode == 6) {
@@ -4173,7 +4573,7 @@ void Demo3D::renderCascadePanel() {
         // ── Probe fill rate ──────────────────────────────────────────────────
         ImGui::Separator();
         ImGui::Text("Probe Fill Rate:");
-        HelpMarker(
+        imHelpMarker(
             "GPU readback taken once per cascade update (not every frame).\n"
             "Denominator is per-cascade probe count (32^3 co-located;\n"
             "32^3/16^3/8^3/4^3 non-co-located).\n\n"
@@ -4249,7 +4649,7 @@ void Demo3D::renderCascadePanel() {
             for (int i = 0; i < cascadeCount; ++i)
                 meanLums[i] = probeMeanLum[i];
             ImGui::Text("  Mean lum:");
-            HelpMarker(
+            imHelpMarker(
                 "Average probe luminance per cascade after the last bake.\n"
                 "Bars should be roughly similar — large divergence between\n"
                 "levels may indicate a GI discontinuity across cascade bands.\n"
@@ -4265,7 +4665,7 @@ void Demo3D::renderCascadePanel() {
         // ── Probe-luminance distribution ─────────────────────────────────────
         ImGui::Separator();
         ImGui::Text("Probe-Luminance Distribution:");
-        HelpMarker(
+        imHelpMarker(
             "16-bin histogram of probe luminance values across the full\n"
             "cascade grid, range [0, mean*4] (adaptive).\n\n"
             "This is a SPATIAL distribution metric, not a per-probe noise\n"
@@ -4286,7 +4686,7 @@ void Demo3D::renderCascadePanel() {
         // ── Spot samples ─────────────────────────────────────────────────────
         ImGui::Separator();
         ImGui::Text("C0 Spot Samples:");
-        HelpMarker(
+        imHelpMarker(
             "RGB radiance read from two fixed probe positions in C0\n"
             "after each cascade update. Used to sanity-check the GI output\n"
             "at known scene locations without opening the debug viewer.\n\n"
@@ -4302,6 +4702,10 @@ void Demo3D::renderCascadePanel() {
         ImGui::TextDisabled("  (cascade not yet sampled)");
     }
 
+        ImGui::EndTabItem();
+    } // end "Debug & Stats"
+
+    ImGui::EndTabBar();
     ImGui::End();
 }
 
@@ -4424,10 +4828,11 @@ void Demo3D::renderTutorialPanel() {
             // through the new path. Cache key per-kind means CPU and GPU
             // bakes coexist, so this is fast on the second click each way.
             std::string pathToReload =
-                (currentOBJPath == "cornell")        ? "res/scene/cornell_box.obj" :
-                (currentOBJPath == "cornell_orig")   ? "res/scene/CornellBox-Original/CornellBox-Original.obj" :
-                (currentOBJPath == "sponza")         ? "res/scene/sponza.obj" :
-                (currentOBJPath == "sponza_master")  ? "res/scene/Sponza-master/sponza.obj" : "";
+                (currentOBJPath == "cornell")              ? "res/scene/cornell_box.obj" :
+                (currentOBJPath == "cornell_orig")         ? "res/scene/CornellBox-Original/CornellBox-Original.obj" :
+                (currentOBJPath == "cornell_orig_alcove")  ? "res/scene/CornellBox-Original-Alcove/CornellBox-Original-Alcove.obj" :
+                (currentOBJPath == "sponza")               ? "res/scene/sponza.obj" :
+                (currentOBJPath == "sponza_master")        ? "res/scene/Sponza-master/sponza.obj" : "";
             if (!pathToReload.empty()) {
                 loadOBJMesh(pathToReload);
             }
@@ -5123,6 +5528,16 @@ void Demo3D::applyOBJViewPreset() {
     camera.fovy     = fovy;
     syncCameraYawPitchFromTarget();
     lightPosition   = lightPos;
+
+    // Lighting controls follow-up: Sponza variants get directional light
+    // (sun-style) by default; other OBJs keep the point light derived above.
+    // User can still toggle/edit via ImGui or CLI.
+    bool isSponza = (currentOBJPath == "sponza" || currentOBJPath == "sponza_master");
+    useDirectionalLight = isSponza;
+    if (isSponza) {
+        std::cout << "[Demo3D] Sponza loaded: useDirectionalLight=true (default direction "
+                  << lightDirection.x << "," << lightDirection.y << "," << lightDirection.z << ")\n";
+    }
     std::cout << "[Demo3D] Applied auto-fit view preset (" << currentOBJPath
               << "): bounds=(" << bmin.x << "," << bmin.y << "," << bmin.z
               << ")..(" << bmax.x << "," << bmax.y << "," << bmax.z
@@ -5205,6 +5620,27 @@ void Demo3D::setCameraFovy(float f) {
               << " (requested " << f << ")\n";
 }
 
+// Step 12 scaling experiment (codex 12 F2 + F8): cascade probe-res setter.
+// Mirrors the ImGui handler at demo3d.cpp:793-801 (destroyCascades + initCascades
+// + cascadeReady=false) PLUS the codex 08 lighting-invalidation extras so the
+// EMA history is cleanly seeded and --auto-rdoc captures all 4 cascades.
+// Codex 12 F8 partial reject: do NOT set meshSDFReady=false. The probe-res
+// change reallocates the cascade probe atlases but the SDF voxel grid
+// (sdfTexture, sized by volumeResolution) is unchanged. Probes SAMPLE the
+// SDF; they don't define it. Forcing an SDF rebake here would waste ~3-7 ms.
+void Demo3D::setCascadeC0Res(int v) {
+    if (cascadeC0Res == v) return;
+    cascadeC0Res = v;
+    destroyCascades();
+    initCascades();
+    cascadeReady        = false;
+    forceCascadeRebuild = true;
+    renderFrameIndex    = 0;
+    historyNeedsSeed    = true;
+    std::cout << "[Demo3D] cascadeC0Res=" << v
+              << " (cascade reallocated; SDF unchanged)\n";
+}
+
 Camera3D Demo3D::getRaylibCamera() const {
     /**
      * @brief Convert internal Camera3DConfig to Raylib's Camera3D
@@ -5276,11 +5712,12 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
             sceneDirty           = true;
             // Compute objKey same way as cache-miss path so currentOBJPath stays consistent.
             std::string objKey;
-            if      (filename.find("Sponza-master") != std::string::npos)       objKey = "sponza_master";
-            else if (filename.find("CornellBox-Original") != std::string::npos) objKey = "cornell_orig";
+            if      (filename.find("Sponza-master") != std::string::npos)              objKey = "sponza_master";
+            else if (filename.find("CornellBox-Original-Alcove") != std::string::npos) objKey = "cornell_orig_alcove";
+            else if (filename.find("CornellBox-Original") != std::string::npos)        objKey = "cornell_orig";
             else if (filename.find("sponza") != std::string::npos
-                  || filename.find("Sponza") != std::string::npos)              objKey = "sponza";
-            else                                                                objKey = "cornell";
+                  || filename.find("Sponza") != std::string::npos)                     objKey = "sponza";
+            else                                                                       objKey = "cornell";
             currentOBJPath = objKey;
             applyOBJViewPreset();
             const double loadMs = std::chrono::duration<double, std::milli>(
@@ -5333,10 +5770,11 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
                        || (filename.find("Sponza") != std::string::npos);
     const std::string objKind = isSponza ? "sponza" : "cornell";
     std::string objKey;
-    if (filename.find("Sponza-master") != std::string::npos)            objKey = "sponza_master";
-    else if (filename.find("CornellBox-Original") != std::string::npos) objKey = "cornell_orig";
-    else if (isSponza)                                                  objKey = "sponza";
-    else                                                                objKey = "cornell";
+    if (filename.find("Sponza-master") != std::string::npos)                   objKey = "sponza_master";
+    else if (filename.find("CornellBox-Original-Alcove") != std::string::npos) objKey = "cornell_orig_alcove";
+    else if (filename.find("CornellBox-Original") != std::string::npos)        objKey = "cornell_orig";
+    else if (isSponza)                                                         objKey = "sponza";
+    else                                                                       objKey = "cornell";
     float halfExtent = 1.0f;
     if (objKind == "sponza") {
         halfExtent = 1.9f;

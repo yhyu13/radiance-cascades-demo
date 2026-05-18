@@ -187,6 +187,12 @@ int main(int argc, char* argv[]) {
     bool        autoAnalyze   = false;
     std::string loadObjName;
     std::string screenshotPath;
+    // Continuous-shot capture inside a SINGLE session (critic 15 H2 / H3 follow-up):
+    // capture frames [shotsAfter, shotsAfter + shotsCount) into PREFIX_fN.png.
+    // Lets us measure true interactive frame-to-frame motion rather than cold-start A/B.
+    std::string shotsPrefix;
+    int shotsAfter = 0;
+    int shotsCount = 0;
     int         exitAfterFrames = 0;
     int         switchToScene   = -999;   // codex 09 F1 verification: after --load-obj, switch to analytic scene N
     bool        testResetHelper = false;  // codex 11 F1/F2 verification: programmatically test resetCameraToScenePreset
@@ -196,6 +202,7 @@ int main(int argc, char* argv[]) {
     bool        cliCameraPosSet    = false; glm::vec3 cliCameraPos{0.0f};
     bool        cliCameraTargetSet = false; glm::vec3 cliCameraTarget{0.0f};
     bool        cliFovySet         = false; float     cliFovy = 60.0f;
+    std::string cliCameraPresetName;          // Phase 2.5d critic-10 W4: scene-validation hook
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--auto-analyze") {
@@ -242,8 +249,168 @@ int main(int argc, char* argv[]) {
             std::cout << "[MAIN] --gpu-voxelize (Step 9): GPU triangle voxelizer enabled\n";
         } else if (arg == "--strip-ambient-floor-bake") {
             // Step 11: cascade bake skips the vec3(0.05) floor at radiance_3d.comp:262.
+            // Now equivalent to --ambient-bake-strength=0; kept as a quick flag.
             demo->setStripAmbientFloorBake(true);
             std::cout << "[MAIN] --strip-ambient-floor-bake (Step 11): GI bake without ambient floor\n";
+        } else if (arg.rfind("--ambient-bake-strength=", 0) == 0) {
+            // Lighting controls follow-up: continuous bake-side ambient floor.
+            float v = static_cast<float>(std::atof(arg.substr(24).c_str()));
+            demo->setAmbientBakeStrength(v);
+            std::cout << "[MAIN] --ambient-bake-strength=" << v << "\n";
+        } else if (arg.rfind("--ambient-composite-strength=", 0) == 0) {
+            // Lighting controls follow-up: composite-side ambient floor.
+            float v = static_cast<float>(std::atof(arg.substr(29).c_str()));
+            demo->setAmbientCompositeStrength(v);
+            std::cout << "[MAIN] --ambient-composite-strength=" << v << "\n";
+        } else if (arg.rfind("--light-intensity=", 0) == 0) {
+            // Lighting controls follow-up: scalar multiplier on (1.0, 0.95, 0.85) base.
+            float v = static_cast<float>(std::atof(arg.substr(18).c_str()));
+            demo->setLightIntensity(v);
+            std::cout << "[MAIN] --light-intensity=" << v << "\n";
+        } else if (arg.rfind("--light-direction=", 0) == 0) {
+            // Lighting controls follow-up: directional light (Sponza sun).
+            // Implies --use-directional-light=true. Vector is normalized in setter.
+            float x = 0.0f, y = -1.0f, z = 0.0f;
+            if (std::sscanf(arg.substr(18).c_str(), "%f,%f,%f", &x, &y, &z) == 3) {
+                demo->setUseDirectionalLight(true);
+                demo->setLightDirection(glm::vec3(x, y, z));
+                std::cout << "[MAIN] --light-direction=" << x << "," << y << "," << z
+                          << " (implies useDirectionalLight=true)\n";
+            } else {
+                std::cerr << "[MAIN] --light-direction: expected x,y,z (got: '"
+                          << arg.substr(18) << "')\n";
+            }
+        } else if (arg == "--no-directional-light") {
+            // Lighting controls follow-up: explicit override (e.g. force point
+            // light on Sponza for A/B comparison).
+            demo->setUseDirectionalLight(false);
+            std::cout << "[MAIN] --no-directional-light: forcing point light\n";
+        } else if (arg.rfind("--bake-leak-test=", 0) == 0) {
+            // Phase 2.5a.1: bake-leak quantitative baseline. Argument is the
+            // output JSON path. Combine with --load-obj=cornell-orig-alcove and
+            // --exit-frames=300 (or larger) for a clean measurement run.
+            std::string outPath = arg.substr(17);
+            demo->setBakeLeakTest(outPath);
+        } else if (arg.rfind("--cam-preset=", 0) == 0) {
+            // Phase 2.5d L2 (revised per critic 10 W4): scene-specific camera
+            // presets that the auto-fit doesn't naturally produce. Currently:
+            // "alcove" = view focused on the cornell-orig-alcove right-side
+            // alcove. Validation against the loaded scene happens at apply
+            // time below (search for "cliCameraPresetName") so we know
+            // currentOBJPath was actually set by loadOBJMesh first.
+            std::string preset = arg.substr(13);
+            if (preset == "alcove") {
+                cliCameraPos = glm::vec3(0.6f, 1.0f, 0.5f);
+                cliCameraTarget = glm::vec3(0.6f, 0.0f, -0.5f);
+                cliCameraPosSet = true;
+                cliCameraTargetSet = true;
+                cliCameraPresetName = "alcove";  // for scene validation at apply time
+                std::cout << "[MAIN] --cam-preset=alcove: camera focused on cornell-orig-alcove right side\n"
+                          << "  (will be applied after load-obj; validates scene == cornell-orig-alcove)\n";
+            } else {
+                std::cerr << "[MAIN] WARN: --cam-preset=" << preset
+                          << " unknown (expected: alcove)\n";
+            }
+        } else if (arg.rfind("--diag-alpha-mode=", 0) == 0) {
+            // Phase 2.5d M1: diagnostic mode for the bake's surface-bin α
+            // encoding. 1 = write sdfBefore_normalized for histogram analysis.
+            // Combine with --bake-leak-test=path; the metric output then includes
+            // a 16-bin histogram of surface-bin α values per cascade.
+            int m = std::atoi(arg.substr(18).c_str());
+            demo->setDiagAlphaMode(m);
+            // Critic 12 M4: warn when diag mode is combined with bake-leak-test
+            // because the JSON's leak metric numbers are NOT comparable to the
+            // Phase 2 baseline (alpha values are diagnostic, not 0/1 binary).
+            // The user could accidentally overwrite phase2.5_bake_leak_baseline.json
+            // with diagnostic data; this warning makes the conflict explicit.
+            if (m != 0 && demo->bakeLeakTestActive()) {
+                std::cerr << "[MAIN] WARN: --diag-alpha-mode=" << m
+                          << " combined with --bake-leak-test changes the meaning of\n"
+                          << "  the leak_sum / leak_max numbers (alpha is diagnostic, not\n"
+                          << "  0/1 binary). DO NOT compare against phase2.5_bake_leak_baseline.json.\n"
+                          << "  Save to a different filename to avoid confusion.\n";
+            }
+        } else if (arg.rfind("--shots-prefix=", 0) == 0) {
+            shotsPrefix = arg.substr(15);
+            std::cout << "[MAIN] --shots-prefix=" << shotsPrefix << "\n";
+        } else if (arg.rfind("--shots-after=", 0) == 0) {
+            shotsAfter = std::atoi(arg.substr(14).c_str());
+            std::cout << "[MAIN] --shots-after=" << shotsAfter << "\n";
+        } else if (arg.rfind("--shots-count=", 0) == 0) {
+            shotsCount = std::atoi(arg.substr(14).c_str());
+            std::cout << "[MAIN] --shots-count=" << shotsCount << "\n";
+        } else if (arg.rfind("--use-probe-jitter=", 0) == 0) {
+            int v = std::atoi(arg.substr(19).c_str());
+            demo->setUseProbeJitter(v != 0);
+            std::cout << "[MAIN] --use-probe-jitter=" << v << "\n";
+        } else if (arg.rfind("--use-temporal=", 0) == 0) {
+            int v = std::atoi(arg.substr(15).c_str());
+            demo->setUseTemporalAccum(v != 0);
+            std::cout << "[MAIN] --use-temporal=" << v << "\n";
+        } else if (arg.rfind("--use-history-clamp=", 0) == 0) {
+            int v = std::atoi(arg.substr(20).c_str());
+            demo->setUseHistoryClamp(v != 0);
+            std::cout << "[MAIN] --use-history-clamp=" << v << "\n";
+        } else if (arg.rfind("--stagger=", 0) == 0) {
+            int v = std::atoi(arg.substr(10).c_str());
+            demo->setStaggerMaxInterval(v);
+            std::cout << "[MAIN] --stagger=" << v
+                      << " (1=no stagger / all cascades every frame)\n";
+        } else if (arg.rfind("--phase3-debug=", 0) == 0) {
+            int v = std::atoi(arg.substr(15).c_str());
+            demo->setPhase3DebugMode(v);
+        } else if (arg.rfind("--gi-strength=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(14).c_str()));
+            demo->setGIStrength(v);
+        } else if (arg.rfind("--use-weighted-sample=", 0) == 0) {
+            // Phase 3 (bake-side leak fix): enable/disable the 3D WeightedSample
+            // per-corner visibility gating in the bake. Default OFF; ON gates the
+            // upper-cascade contribution by per-corner geometric visibility.
+            // Only effective on the trilinear path (non-co-located + spatial trilinear).
+            int v = std::atoi(arg.substr(22).c_str());
+            demo->setUseWeightedSample(v != 0);
+            std::cout << "[MAIN] --use-weighted-sample=" << v
+                      << " (1=ON Phase 3 per-corner gating; 0=OFF Phase 2 unconditional)\n";
+        } else if (arg.rfind("--visibility-mode=", 0) == 0) {
+            // Phase 2.5c (revised per critic 11 M3): Phase 2 already shipped to
+            // users with this flag deprecated-but-functional. Silent slip-through
+            // would be worse than the previous warning. Keep the deprecation
+            // warning for one MORE release; flag still does nothing.
+            std::cerr << "[MAIN] WARN: --visibility-mode=" << arg.substr(18)
+                      << " is deprecated and ignored (Phase 2 2C cleanup retired the\n"
+                      << "  visibility-mode switch; Phase 2.5c keeps this warning one more release).\n"
+                      << "  Atlas-side α handles visibility; no runtime mode choice.\n";
+        } else if (arg.rfind("--cascade-c0-res=", 0) == 0) {
+            // Step 12 scaling experiment: cascade C0 probe-grid resolution
+            // (8/16/24/32/48/64). Triggers full destroy/init cycle.
+            int v = std::atoi(arg.substr(17).c_str());
+            if (v > 0) {
+                demo->setCascadeC0Res(v);
+                std::cout << "[MAIN] --cascade-c0-res=" << v << "\n";
+            } else {
+                std::cerr << "[MAIN] --cascade-c0-res: expected positive int (got: '"
+                          << arg.substr(17) << "')\n";
+            }
+        } else if (arg.rfind("--raymarch-steps=", 0) == 0) {
+            // Step 12 scaling experiment: raymarch.frag uSteps uniform.
+            int v = std::atoi(arg.substr(17).c_str());
+            if (v > 0) {
+                demo->setRaymarchSteps(v);
+                std::cout << "[MAIN] --raymarch-steps=" << v << "\n";
+            } else {
+                std::cerr << "[MAIN] --raymarch-steps: expected positive int (got: '"
+                          << arg.substr(17) << "')\n";
+            }
+        } else if (arg.rfind("--gi-blur-radius=", 0) == 0) {
+            // Step 12 scaling experiment: bilateral GI blur kernel radius (clamped to [1, 8]).
+            int v = std::atoi(arg.substr(17).c_str());
+            if (v > 0) {
+                demo->setGIBlurRadius(v);
+                std::cout << "[MAIN] --gi-blur-radius=" << v << "\n";
+            } else {
+                std::cerr << "[MAIN] --gi-blur-radius: expected positive int (got: '"
+                          << arg.substr(17) << "')\n";
+            }
         } else if (arg == "--cache-hit-test") {
             // Step 9 Phase 2 verify hook: after the initial --load-obj fires
             // below, we'll re-invoke loadOBJMesh on the same path. Hits the
@@ -295,13 +462,14 @@ int main(int argc, char* argv[]) {
 
     if (!loadObjName.empty()) {
         std::string path;
-        if      (loadObjName == "sponza")         path = "res/scene/sponza.obj";
-        else if (loadObjName == "cornell")        path = "res/scene/cornell_box.obj";
-        else if (loadObjName == "cornell-orig")   path = "res/scene/CornellBox-Original/CornellBox-Original.obj";
-        else if (loadObjName == "sponza-master")  path = "res/scene/Sponza-master/sponza.obj";
+        if      (loadObjName == "sponza")               path = "res/scene/sponza.obj";
+        else if (loadObjName == "cornell")              path = "res/scene/cornell_box.obj";
+        else if (loadObjName == "cornell-orig")         path = "res/scene/CornellBox-Original/CornellBox-Original.obj";
+        else if (loadObjName == "cornell-orig-alcove")  path = "res/scene/CornellBox-Original-Alcove/CornellBox-Original-Alcove.obj";
+        else if (loadObjName == "sponza-master")        path = "res/scene/Sponza-master/sponza.obj";
         else {
             std::cerr << "[MAIN] --load-obj=" << loadObjName
-                      << ": unknown name (expected sponza|cornell|cornell-orig|sponza-master). Aborting.\n";
+                      << ": unknown name (expected sponza|cornell|cornell-orig|cornell-orig-alcove|sponza-master). Aborting.\n";
             delete demo;
             CloseWindow();
             return 1;
@@ -333,8 +501,23 @@ int main(int argc, char* argv[]) {
     // over loadOBJMesh's auto-fit, --switch-to-scene's resetCamera, AND
     // --test-reset-helper. Order: pos -> target -> fovy. Setting target after
     // position re-syncs yaw/pitch from the user-chosen target.
-    if (cliCameraPosSet)    demo->setCameraPosition(cliCameraPos);
-    if (cliCameraTargetSet) demo->setCameraTarget(cliCameraTarget);
+    // Phase 2.5d critic-10 W4: if the camera came from a NAMED preset, validate
+    // the loaded scene matches the preset's expected scene. Skip + warn on mismatch
+    // rather than silently applying wrong coordinates. Direct --camera-pos /
+    // --camera-target (cliCameraPresetName empty) skip the validation — user
+    // takes responsibility for matching scene to coordinates.
+    bool presetSkipped = false;
+    if (cliCameraPresetName == "alcove") {
+        const std::string sceneName = demo->getCurrentOBJPath();
+        if (sceneName != "cornell_orig_alcove") {
+            std::cerr << "[MAIN] WARN: --cam-preset=alcove requires "
+                      << "--load-obj=cornell-orig-alcove (current scene: '" << sceneName
+                      << "'); preset SKIPPED.\n";
+            presetSkipped = true;
+        }
+    }
+    if (!presetSkipped && cliCameraPosSet)    demo->setCameraPosition(cliCameraPos);
+    if (!presetSkipped && cliCameraTargetSet) demo->setCameraTarget(cliCameraTarget);
     if (cliFovySet)         demo->setCameraFovy(cliFovy);
     int frameCounter = 0;
 
@@ -380,6 +563,24 @@ int main(int argc, char* argv[]) {
                           << screenshotPath << "\n";
             }
 
+            // Continuous-shot capture (critic 15 H2 follow-up): grab consecutive
+            // frames in ONE session so interactive frame-to-frame motion can be
+            // measured directly (not cold-start A/B between independent runs).
+            if (!shotsPrefix.empty() && shotsCount > 0) {
+                int relFrame = static_cast<int>(frameCounter) - shotsAfter;
+                if (relFrame >= 0 && relFrame < shotsCount) {
+                    char buf[512];
+                    std::snprintf(buf, sizeof(buf), "%s_f%d.png",
+                                  shotsPrefix.c_str(), static_cast<int>(frameCounter));
+                    TakeScreenshot(buf);
+                }
+                // Force exit after the last shot is captured.
+                if (relFrame == shotsCount - 1) {
+                    std::cout << "[MAIN] --shots-count reached; exiting after capture.\n";
+                    exitAfterFrames = static_cast<int>(frameCounter) + 1;
+                }
+            }
+
             // --auto-analyze: exit once capture + analysis are done
             if (autoAnalyze && demo->isReadyToClose())
                 break;
@@ -404,7 +605,10 @@ int main(int argc, char* argv[]) {
 
         EndDrawing();
 
-        if (exitAfterFrames > 0 && ++frameCounter >= exitAfterFrames) {
+        // Always advance frameCounter so --shots-after / --shots-count can use it
+        // even when --exit-frames was not specified.
+        ++frameCounter;
+        if (exitAfterFrames > 0 && frameCounter >= exitAfterFrames) {
             std::cout << "[MAIN] --exit-frames reached (" << frameCounter << "), quitting.\n";
             break;
         }
@@ -413,13 +617,39 @@ int main(int argc, char* argv[]) {
         demo->endRdocFrameIfPending();
     }
 
+    // Phase 2.5d L5: warn if --bake-leak-test was scheduled but never fired
+    // (cascade never became ready, OR exit-frames was too short for the
+    // configured framesAfter convergence wait). Without this warning the user
+    // would just see "no JSON written" and have to trace why.
+    if (demo->bakeLeakTestActive() && !demo->bakeLeakTestComplete()) {
+        std::cerr << "[MAIN] WARN: --bake-leak-test was scheduled but never fired. "
+                  << "Either cascade never became ready (check --load-obj), or "
+                  << "--exit-frames was too short for the convergence wait "
+                  << "(default 240 frames). Increase --exit-frames and re-run.\n";
+    }
+
     // Step 7: Cleanup
     std::cout << "[MAIN] Cleaning up..." << std::endl;
+
+    // Phase 2.5d critic-10 W1: signal nonzero exit if any critical shader
+    // failed to load. The banner in stderr already made the failure visible
+    // mid-session; this propagates the failure to the exit code so any
+    // orchestrator (CI, test scripts) can detect it.
+    bool exitNonzeroForShaderFail = !demo->allCriticalShadersOk();
+    if (exitNonzeroForShaderFail) {
+        std::cerr << "[MAIN] EXIT NONZERO: at least one critical shader failed to load this run.\n"
+                  << "  See the banner above for which shader. Output is likely WRONG.\n";
+    }
+
     delete demo;
-    
+
     rlImGuiShutdown();
     CloseWindow();
-    
+
+    if (exitNonzeroForShaderFail) {
+        std::cerr << "[MAIN] Application terminated with shader-load failure (exit 1)." << std::endl;
+        return 1;
+    }
     std::cout << "[MAIN] Application terminated successfully." << std::endl;
     return 0;
 }

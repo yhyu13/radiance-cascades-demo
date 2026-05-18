@@ -506,23 +506,183 @@ public:
     void setCameraTarget(const glm::vec3& t);
     void setCameraFovy(float f);
 
-    // Step 11 — Strip the vec3(0.05) ambient floor from the cascade bake (in
-    // radiance_3d.comp:267-269). Toggle invalidates cascade only (4-line
-    // pattern) -- this is a LIGHTING change, not a geometry change.
-    // codex 08 F1 + F4: do NOT set meshSDFReady = false here. The SDF/voxel
-    // texture is unchanged; only the radiance probe values change. The Step 8
-    // dynamic-sphere 5-line pattern includes meshSDFReady because the sphere
-    // modifies geometry; the strip toggle does not. One-frame ~25 ms spike on
-    // Sponza from renderFrameIndex=0 bypassing the per-cascade stagger.
-    void setStripAmbientFloorBake(bool v) {
-        if (stripAmbientFloorBake == v) return;
-        stripAmbientFloorBake = v;
+    // Lighting controls — continuous bake-side ambient floor strength.
+    // Replaces the original `setStripAmbientFloorBake(bool)` toggle (which
+    // was binary 0 vs 0.05). Strength=0 reproduces the strip behavior.
+    // Lighting change → 4-line invalidation (no meshSDFReady; codex 08 F1).
+    void setAmbientBakeStrength(float v) {
+        if (ambientBakeStrength == v) return;
+        ambientBakeStrength = v;
         cascadeReady        = false;
         forceCascadeRebuild = true;
         renderFrameIndex    = 0;
         historyNeedsSeed    = true;
-        std::cout << "[Demo3D] stripAmbientFloorBake=" << v
+        std::cout << "[Demo3D] ambientBakeStrength=" << v
                   << " (cascade rebake triggered; SDF unchanged)\n";
+    }
+
+    // Backward-compat: `--strip-ambient-floor-bake` CLI flag still works
+    // by calling this — equivalent to setAmbientBakeStrength(0.0f).
+    void setStripAmbientFloorBake(bool v) {
+        setAmbientBakeStrength(v ? 0.0f : 0.05f);
+    }
+
+    // Composite-side ambient floor strength (raymarch.frag's vec3(...) literal).
+    // Independent of the bake-side floor — uniform-only update, no cascade rebake.
+    void setAmbientCompositeStrength(float v) {
+        ambientCompositeStrength = v;
+        std::cout << "[Demo3D] ambientCompositeStrength=" << v << "\n";
+    }
+
+    // Lighting controls — directional light support (Sponza-style sun light).
+    // When useDirectionalLight is true, the cascade bake + raymarch see a
+    // far-away point light derived from `lightDirection` so the existing
+    // point-light shaders naturally degenerate to directional behavior
+    // (no shader changes needed). Sponza variants enable this on load.
+    void setUseDirectionalLight(bool v) {
+        useDirectionalLight = v;
+        cascadeReady        = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex    = 0;
+        historyNeedsSeed    = true;
+        std::cout << "[Demo3D] useDirectionalLight=" << v << " (cascade rebake)\n";
+    }
+    void setLightDirection(const glm::vec3& d) {
+        lightDirection = glm::length(d) > 1e-6f ? glm::normalize(d) : glm::vec3(0, -1, 0);
+        cascadeReady        = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex    = 0;
+        historyNeedsSeed    = true;
+        std::cout << "[Demo3D] lightDirection=(" << lightDirection.x << ","
+                  << lightDirection.y << "," << lightDirection.z << ")\n";
+    }
+    void setLightIntensity(float v) {
+        lightIntensity = v;
+        cascadeReady        = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex    = 0;
+        historyNeedsSeed    = true;
+        std::cout << "[Demo3D] lightIntensity=" << v << " (cascade rebake)\n";
+    }
+
+    // (setVisibilityMode() deprecation stub deleted in Phase 2.5c. The
+    // visibility-mode switch was retired in Phase 2 2C; the deprecation
+    // grace covered Phase 2's release; Phase 2.5 ships in the same release.
+    // Any caller still using setVisibilityMode() will fail to compile —
+    // intended outcome.)
+
+    // Phase 2.5a.1: bake-leak baseline measurement. Set via --bake-leak-test=path.
+    // After bakeLeakTestFramesAfter frames have rendered (default 240, ample for
+    // EMA convergence at α=0.1), reads back C0 atlas via glGetTexImage and
+    // computes the metric per visibility_phase2.5_plan §2.5a.1.
+    void setBakeLeakTest(const std::string& outPath, int framesAfter = 240) {
+        bakeLeakTestOutPath      = outPath;
+        bakeLeakTestFramesAfter  = framesAfter;
+        bakeLeakTestPending      = true;
+        bakeLeakElapsedFrames    = 0;
+        std::cout << "[Demo3D] --bake-leak-test=" << outPath
+                  << " (compute after " << framesAfter << " elapsed frames + cascade ready)\n";
+    }
+    bool bakeLeakTestComplete() const { return bakeLeakTestDone; }
+    bool bakeLeakTestActive()   const { return bakeLeakTestPending; }
+
+    // Phase 2.5d critic-10 W1: true iff all CRITICAL shaders loaded OK at init.
+    // Set by initialize() after the loadShader() chain. main3d uses this to set
+    // a nonzero exit code when a shader-load failure has occurred — the app
+    // continues running (so the *banner* in stderr is visible) but the exit
+    // code signals "this run produced wrong output" to any orchestrator.
+    bool criticalShaderLoadOk    = true;
+    bool allCriticalShadersOk() const { return criticalShaderLoadOk; }
+
+    // Phase 2.5d critic-10 W4: scene-validation accessor for the
+    // --cam-preset=NAME flag in main3d.cpp. Returns the current OBJ key
+    // ("cornell", "cornell_orig", "cornell_orig_alcove", "sponza", "sponza_master")
+    // or empty if no OBJ is loaded.
+    const std::string& getCurrentOBJPath() const { return currentOBJPath; }
+    // Computes metric for the current scene + writes JSON to bakeLeakTestOutPath.
+    // Idempotent: sets bakeLeakTestDone, won't re-run.
+    void computeBakeLeakMetric();
+
+    // Phase 2.5d M1: enable diagnostic alpha mode. When 1, surface bins write
+    // sdfBefore_normalized to alpha (see radiance_3d.comp). MUST also set a
+    // bake-leak test path; the metric then doubles as a histogram source.
+    // Triggers a cascade rebake (uniform changes affect bake output).
+    void setDiagAlphaMode(int m) {
+        // Critic 12 L3: early-return on no-op to avoid redundant cascade rebuild.
+        if (m == diagAlphaMode) return;
+        diagAlphaMode = m;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] diagAlphaMode=" << m
+                  << " (1=write sdfBefore_normalized to surface-bin alpha; cascade rebake)\n";
+    }
+
+    // Phase 3 (bake-side leak fix): toggle for the 3D WeightedSample bake-time
+    // visibility check. Triggers a full cascade rebake (changes baked atlas content).
+    void setUseWeightedSample(bool v) {
+        if (v == useWeightedSample) return;
+        useWeightedSample = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] useWeightedSample=" << (v ? "ON" : "OFF")
+                  << " (Phase 3 bake-side per-corner visibility; cascade rebake)\n";
+    }
+    bool getUseWeightedSample() const { return useWeightedSample; }
+
+    void setPhase3DebugMode(int v) {
+        if (v == phase3DebugMode) return;
+        phase3DebugMode = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] phase3DebugMode=" << v << "\n";
+    }
+    void setGIStrength(float v) {
+        if (v == giStrength) return;
+        giStrength = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] giStrength=" << v << "\n";
+    }
+
+    // Diagnostic CLI setters for temporal/jitter bisection.
+    void setUseProbeJitter(bool v)   { useProbeJitter = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
+    void setUseTemporalAccum(bool v) { useTemporalAccum = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
+    void setUseHistoryClamp(bool v)  { useHistoryClamp = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
+
+    // Diagnostic CLI for cascade-staggering hypothesis testing.
+    void setStaggerMaxInterval(int v) {
+        if (v < 1) v = 1;
+        if (v == staggerMaxInterval) return;
+        staggerMaxInterval = v;
+        cascadeReady = false;
+        renderFrameIndex = 0;
+        std::cout << "[Demo3D] staggerMaxInterval=" << v
+                  << " (1=no stagger; 2/4/8=Ci updates every min(2^i, max) frames)\n";
+    }
+
+    // Step 12 scaling experiment (codex 12 F2 + F8): public CLI setters for
+    // the 3 scaling knobs (cascade probe-res, raymarch step count, GI blur
+    // radius). cascadeC0Res requires destroy/init cycle (definition in cpp);
+    // the other two are uniform-only and inline here.
+    void setCascadeC0Res(int v);    // out-of-line; reallocates cascade textures
+    void setRaymarchSteps(int v) {
+        raymarchSteps = v;
+        std::cout << "[Demo3D] raymarchSteps=" << v << "\n";
+    }
+    void setGIBlurRadius(int v) {
+        // Match ImGui slider range [1, 8].
+        if (v < 1) v = 1;
+        if (v > 8) v = 8;
+        giBlurRadius = v;
+        std::cout << "[Demo3D] giBlurRadius=" << giBlurRadius << "\n";
     }
 
     // codex 07 F1 — let main3d.cpp inject bake failures via CLI for runtime test of the bool-return retry path
@@ -790,11 +950,49 @@ private:
      *  next render frame re-bakes via the new path. */
     bool useGPUSDF = false;
 
-    /** Step 11: when true, the cascade bake (radiance_3d.comp:262) skips the
-     *  vec3(0.05) ambient floor in the per-surface lighting formula so probes
-     *  store ONLY real-direct-lit bounce. Diagnostic-only — toggle via
-     *  setStripAmbientFloorBake(). Default OFF preserves baseline GI. */
-    bool stripAmbientFloorBake = false;
+    /** Lighting controls — continuous ambient floor strengths (replace the
+     *  Step 11 binary `stripAmbientFloorBake` toggle and the original
+     *  hardcoded vec3(0.05) literals). Two independent knobs:
+     *    - ambientBakeStrength: floor baked into cascade probe radiance
+     *      (radiance_3d.comp). Affects GI bounce magnitude. 0 = strip behavior.
+     *    - ambientCompositeStrength: floor added at the camera-visible surface
+     *      shade (raymarch.frag direct + mode 4 + mode 10). Affects what the
+     *      camera sees on unlit surfaces.
+     *  Both default 0.05 to match prior baseline. */
+    float ambientBakeStrength      = 0.05f;
+    float ambientCompositeStrength = 0.05f;
+
+    // Phase 2.5a.1 bake-leak test state. Triggered via setBakeLeakTest().
+    // bakeLeakElapsedFrames is a dedicated counter (renderFrameIndex resets via
+    // rdocForceRebuildCount + useTemporalAccum transitions, so it's unreliable).
+    bool        bakeLeakTestPending     = false;
+    bool        bakeLeakTestDone        = false;
+    int         bakeLeakElapsedFrames   = 0;
+    int         bakeLeakTestFramesAfter = 240;
+    std::string bakeLeakTestOutPath;
+
+    // Phase 2.5d M1 diagnostic: when set, the bake writes sdfBefore_normalized
+    // to alpha for surface bins (instead of the binary 0). Combined with
+    // setBakeLeakTest, the readback computes a histogram of sdfBefore values
+    // to confirm/refute 2.5b's "SDF returns small for ALL hits" diagnosis.
+    int         diagAlphaMode           = 0;
+
+    /** Lighting controls — directional light support (Sponza-style sun light).
+     *  When useDirectionalLight=true, cascade dispatch derives a far-away point
+     *  light from `lightDirection` so existing point-light shaders naturally
+     *  degenerate to directional behavior (no shader changes). Sponza variants
+     *  enable this on load. lightDirection is normalized; default points
+     *  downward + slight angle (typical sun). lightIntensity is a multiplier
+     *  on the hardcoded vec3(1.0, 0.95, 0.85) base color. */
+    bool      useDirectionalLight = false;
+    glm::vec3 lightDirection      = glm::vec3(-0.3f, -1.0f, -0.4f);
+    float     lightIntensity      = 1.0f;
+
+    // visibilityMode member retired in Phase 2 2C cleanup. The atlas's α
+    // channel now handles per-bin visibility natively via sampleProbeDir;
+    // there are no longer multiple visibility modes to choose between. The
+    // setVisibilityMode() setter above is preserved as a deprecation stub
+    // for one release, then removed.
 
     // Step 8 Phase 2: dynamic sphere overlay state.
     bool       dynamicSphereEnabled    = false;    // ImGui + --dynamic-sphere
@@ -995,6 +1193,21 @@ private:
      *  in non-co-located mode. true=trilinear (default), false=nearest-parent (Phase 5d baseline).
      *  No effect in co-located mode (upper probe is at same position; trilinear is trivially exact). */
     bool useSpatialTrilinear;
+
+    /** Phase 3 (bake-side leak fix via 3D WeightedSample): per-corner geometric visibility
+     *  check at bake time. true = sampleUpperDirWeighted (gates upper merge by visibility);
+     *  false (DEFAULT) = sampleUpperDirTrilinear (Phase 2 unconditional-trust merge,
+     *  bit-exact preserved). Only active on the trilinear path (uUpperToCurrentScale==2 +
+     *  uUseSpatialTrilinear). See doc/6/claude_plan/visibility_phase3_plan.md and
+     *  res/shaders/radiance_3d.comp for the algorithm. */
+    bool useWeightedSample;
+
+    /** 2026-05-18 debug: instrument Phase 3 v2 to find WHY GI is still dimmed.
+     *  0=normal, 1=force aFactor=1, 2=visualize aFactor, 3=visualize upperDir.a,
+     *  4=force upperDir.rgb=trilinear.rgb (test if WeightedSample's renormalize differs). */
+    int   phase3DebugMode;
+    /** 2026-05-18 debug: multiplier on upper contribution in the bake (default 1.0). */
+    float giStrength;
 
     /** 5h: Cast shadow ray from surface hit to light in direct path.
      *  true (default): 32-step SDF march gives hard binary shadow in direct term.
