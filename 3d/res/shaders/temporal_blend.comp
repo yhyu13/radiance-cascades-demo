@@ -76,8 +76,16 @@ void main() {
         }
 
         // Clamp history to AABB — rejects stale samples outside current neighborhood.
-        his = clamp(his, nMin, nMax);
+        // RGB only: alpha carries hit-distance / transparency-interval, which has its own
+        // valid range (negative sky sentinel, 0 = miss, positive = hit distance) and must
+        // not be clamped against neighborhood color statistics.
+        his.rgb = clamp(his.rgb, nMin.rgb, nMax.rgb);
     }
 
-    imageStore(oHistory, coord, mix(his, cur, uAlpha));
+    // 2026-05-15 temporal-stability fix: EMA-blend α too (mirrors radiance_3d.comp's
+    // fused-EMA path). The previous "fresh α" policy caused per-frame visibility
+    // flicker under Phase 14a/b probe jitter — see radiance_3d.comp comment for
+    // full rationale and trade-off (binary-α invariant → soft time-averaged α).
+    vec4 blended = mix(his, cur, uAlpha);
+    imageStore(oHistory, coord, blended);
 }

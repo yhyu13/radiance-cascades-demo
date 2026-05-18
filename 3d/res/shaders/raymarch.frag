@@ -82,6 +82,13 @@ uniform vec3 uLightPos;
 /** Direct light color */
 uniform vec3 uLightColor;
 
+/** Lighting controls follow-up: composite-side ambient floor strength
+ *  (replaces the original hardcoded vec3(0.05) at the directColor formulas).
+ *  Independent of uAmbientBakeStrength (cascade-bake-side floor) so the user
+ *  can tune the visible-surface floor and the GI-bounce-source floor separately.
+ *  Default 0.05 matches original literal. */
+uniform float uAmbientCompositeStrength;
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
@@ -287,20 +294,42 @@ vec3 binToDir(ivec2 bin, int D) {
 
 // Cosine-weighted irradiance integral from one probe's D×D atlas tile.
 // Excludes back-facing bins (dot < 0) — they cannot illuminate the surface.
+//
+// Phase 2 (interval atlas): the bake stores α as per-bin transparency (0 =
+// opaque, 1 = transparent). The numerator α-gates bin radiance; the
+// denominator uses the same cos*α weighting (mode-1/2/3/4-style "renormalize
+// over visible directions"). Empirically this matched Phase 1 Mode 4 quality
+// closer than the alternative (cos-only denominator) — the renormalization
+// preserves the over-bright bias that the pre-Phase-2 bake encoded, which
+// happens to compensate for the lost far-field multi-bounce in scenes where
+// most C0 bins hit something (Sponza). See Phase 2 impl doc for the v3-vs-v4
+// experiment that picked this normalization over the geometrically-purer
+// cos-only divisor.
+//
+// Pre-Phase-2 this sampler ignored α entirely (Mode 0 had no visibility check;
+// Modes 1/2 used outer probeVisibility(); Mode 3/4 had their own samplers).
+// After Phase 2, bake handles visibility natively via α; this single sampler
+// is the only correct path. Modes 1/2/3/4 are deprecated — see 2C cleanup.
 vec3 sampleProbeDir(ivec3 pc, vec3 normal, int D) {
     vec3  irrad = vec3(0.0);
     float wsum  = 0.0;
     for (int dy = 0; dy < D; ++dy) {
         for (int dx = 0; dx < D; ++dx) {
             vec3  bdir = binToDir(ivec2(dx, dy), D);
-            float w    = max(0.0, dot(bdir, normal));
-            irrad += texelFetch(uDirectionalAtlas,
-                                ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0).rgb * w;
+            float wcos = max(0.0, dot(bdir, normal));
+            vec4  a    = texelFetch(uDirectionalAtlas,
+                                    ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
+            float w    = wcos * a.a;
+            irrad += a.rgb * w;
             wsum  += w;
         }
     }
     return irrad / max(wsum, 1e-4);
 }
+
+// (sampleProbeDirPerBinOccluded and sampleProbeDirDepthAware removed in Phase 2
+// 2C cleanup. The bake-side α-gate inside sampleProbeDir is now the single
+// visibility path. See Phase 2 impl doc for the rationale.)
 
 // Trilinear spatial blend over the 8 surrounding C0 probes, each cosine-weighted.
 // -0.5 center-aligned offset: same convention as Phase 5d trilinear and Phase 5f bilinear.
@@ -318,19 +347,36 @@ vec3 sampleDirectionalGI(vec3 pos, vec3 normal) {
     ivec3 hi   = uAtlasVolumeSize - ivec3(1);
     int   D    = uAtlasDirRes;
 
-    vec3 s000 = sampleProbeDir(p000,                                    normal, D);
-    vec3 s100 = sampleProbeDir(clamp(p000 + ivec3(1,0,0), ivec3(0), hi), normal, D);
-    vec3 s010 = sampleProbeDir(clamp(p000 + ivec3(0,1,0), ivec3(0), hi), normal, D);
-    vec3 s110 = sampleProbeDir(clamp(p000 + ivec3(1,1,0), ivec3(0), hi), normal, D);
-    vec3 s001 = sampleProbeDir(clamp(p000 + ivec3(0,0,1), ivec3(0), hi), normal, D);
-    vec3 s101 = sampleProbeDir(clamp(p000 + ivec3(1,0,1), ivec3(0), hi), normal, D);
-    vec3 s011 = sampleProbeDir(clamp(p000 + ivec3(0,1,1), ivec3(0), hi), normal, D);
-    vec3 s111 = sampleProbeDir(clamp(p000 + ivec3(1,1,1), ivec3(0), hi), normal, D);
+    // 8 trilinear corner offsets (constant across modes).
+    ivec3 offsets[8] = ivec3[8](
+        ivec3(0,0,0), ivec3(1,0,0), ivec3(0,1,0), ivec3(1,1,0),
+        ivec3(0,0,1), ivec3(1,0,1), ivec3(0,1,1), ivec3(1,1,1));
 
-    vec3 sx00 = mix(s000, s100, f.x);  vec3 sx10 = mix(s010, s110, f.x);
-    vec3 sx01 = mix(s001, s101, f.x);  vec3 sx11 = mix(s011, s111, f.x);
-    vec3 sxy0 = mix(sx00, sx10, f.y);  vec3 sxy1 = mix(sx01, sx11, f.y);
-    return mix(sxy0, sxy1, f.z);
+    // Trilinear weights per corner.
+    float w[8];
+    w[0] = (1.0-f.x)*(1.0-f.y)*(1.0-f.z);
+    w[1] =      f.x *(1.0-f.y)*(1.0-f.z);
+    w[2] = (1.0-f.x)*     f.y *(1.0-f.z);
+    w[3] =      f.x *     f.y *(1.0-f.z);
+    w[4] = (1.0-f.x)*(1.0-f.y)*     f.z;
+    w[5] =      f.x *(1.0-f.y)*     f.z;
+    w[6] = (1.0-f.x)*     f.y *     f.z;
+    w[7] =      f.x *     f.y *     f.z;
+
+    // Phase 2: single α-gated sampling path. Visibility is now baked into the
+    // atlas's alpha channel (radiance_3d.comp); sampleProbeDir handles per-bin
+    // gating. No mode dispatch; no outer probeVisibility() trace; no per-bin
+    // shadow rays. Direct trilinear weighted sum across the 8 surrounding C0
+    // probes. Out-of-bounds corners contribute 0 (their trilinear weight is
+    // small near the volume boundary).
+    vec3 s[8];
+    for (int i = 0; i < 8; ++i) {
+        ivec3 pc = p000 + offsets[i];
+        bool inBounds = !(any(lessThan(pc, ivec3(0))) || any(greaterThan(pc, hi)));
+        s[i] = inBounds ? sampleProbeDir(pc, normal, D) : vec3(0.0);
+    }
+    return s[0]*w[0] + s[1]*w[1] + s[2]*w[2] + s[3]*w[3]
+         + s[4]*w[4] + s[5]*w[5] + s[6]*w[6] + s[7]*w[7];
 }
 
 /**
@@ -519,7 +565,7 @@ void main() {
                                              : shadowRay(pos, normal, uLightPos))
                     : 0.0;
                 float diff4     = max(dot(normal, lightDir4), 0.0) * (1.0 - shadow4);
-                vec3  direct    = albedo * (diff4 * uLightColor + vec3(0.05));
+                vec3  direct    = albedo * (diff4 * uLightColor + vec3(uAmbientCompositeStrength));
                 fragColor = vec4(toneMapACES(direct), 1.0);
                 fragColor.rgb = pow(fragColor.rgb, vec3(1.0 / 2.2));
                 return;
@@ -532,7 +578,7 @@ void main() {
                                          : shadowRay(pos, normal, uLightPos))
                 : 0.0;
             float diff         = max(dot(normal, lightDir), 0.0) * (1.0 - shadow);
-            vec3  directColor  = albedo * (diff * uLightColor + vec3(0.05));
+            vec3  directColor  = albedo * (diff * uLightColor + vec3(uAmbientCompositeStrength));
             vec3  indirectColor = vec3(0.0);
             // Step 11 (codex 07 F3): hoist `indirect` to outer scope so the
             // heatmap modes (12 = raw GI) can read the un-albedo-modulated
@@ -589,7 +635,7 @@ void main() {
             // whether the ambient floor is washing out cascade GI bounce.
             vec3 modeColor;
             if      (uRenderMode == 9)  modeColor = albedo * diff * uLightColor;
-            else if (uRenderMode == 10) modeColor = albedo * vec3(0.05);
+            else if (uRenderMode == 10) modeColor = albedo * vec3(uAmbientCompositeStrength);
             else                        modeColor = directColor + indirectColor;
 
             // Normal path: composite here, tone map after the loop.
