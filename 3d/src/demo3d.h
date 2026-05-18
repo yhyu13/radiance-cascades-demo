@@ -1209,6 +1209,11 @@ private:
     /** 2026-05-18 debug: multiplier on upper contribution in the bake (default 1.0). */
     float giStrength;
 
+    /** 2026-05-18 leak-suspect heatmap (mode 14) sensitivity divisor.
+     *  leak_potential >= this value saturates to red. Sqrt-scaled in shader so
+     *  small reductions near saturation visibly shift color. Default 0.05. */
+    float leakHeatmapDivisor;
+
     /** 5h: Cast shadow ray from surface hit to light in direct path.
      *  true (default): 32-step SDF march gives hard binary shadow in direct term.
      *  false: unshadowed direct (Phase 1-4 behaviour). Display-path only, no cascade rebuild. */
