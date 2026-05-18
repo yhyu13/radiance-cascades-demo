@@ -89,6 +89,12 @@ uniform vec3 uLightColor;
  *  Default 0.05 matches original literal. */
 uniform float uAmbientCompositeStrength;
 
+/** 2026-05-18 leak-suspect heatmap (render mode 14) scale.
+ *  leak_potential >= uLeakHeatmapDivisor saturates to fully red.
+ *  Default 0.05 picked so Phase 3 ON/OFF toggle produces visibly different color.
+ *  Lower = more sensitive (tiny leaks turn red); higher = needs strong leak to turn red. */
+uniform float uLeakHeatmapDivisor;
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
@@ -310,9 +316,39 @@ vec3 binToDir(ivec2 bin, int D) {
 // Modes 1/2 used outer probeVisibility(); Mode 3/4 had their own samplers).
 // After Phase 2, bake handles visibility natively via α; this single sampler
 // is the only correct path. Modes 1/2/3/4 are deprecated — see 2C cleanup.
-vec3 sampleProbeDir(ivec3 pc, vec3 normal, int D) {
-    vec3  irrad = vec3(0.0);
-    float wsum  = 0.0;
+// 2026-05-18 (critic-16 W1 refactor + mode-15 extension): unified function returning
+// irradiance + diagnostic metrics in a single D² loop. Cheap extra ALU per bin;
+// mode-0/6 callers ignore the diagnostics, mode-14/15 callers consume them.
+//
+// ProbeSample fields:
+//   irrad:       vec3, normal cosine-weighted irradiance (mode 0/6 consumer)
+//   leak:        float, leak-suspect luminance (mode 14 consumer)
+//   oscillation: float in [0, 1], temporal-instability metric (mode 15 consumer)
+//
+// **leak** = sum(a.rgb * wcos * (1 - a.a)) over forward bins, luminance-reduced.
+//   Quantifies "radiance the atlas stores in bins Phase 2 marks as occluded" — the
+//   content the render-side α-gate hides from display.
+//   Caveat (critic-16 W2): sky exit (α=0) is a FALSE POSITIVE.
+//   Caveat (critic-16 W4): post EMA-α fix, soft α also reads as "partial leak."
+//
+// **oscillation** = sum(wcos * 4*a.a*(1-a.a)) / sum(wcos).
+//   Per-bin 4*x*(1-x) peaks at 1.0 when x=0.5 (max temporal mixing: hit half the
+//   time, miss the other half due to probe jitter) and is 0 at x=0 or x=1 (fully
+//   converged binary α). Bright = probe is in a temporally-noisy region (sub-cell
+//   geometry edges, jitter probing across walls). After EMA-α fix this is mostly
+//   low; spikes indicate unconverged history or genuinely noise-prone directions.
+struct ProbeSample {
+    vec3  irrad;
+    float leak;
+    float oscillation;
+};
+
+ProbeSample sampleProbeDir(ivec3 pc, vec3 normal, int D) {
+    vec3  irrad   = vec3(0.0);
+    float wsum    = 0.0;        // sum(wcos * a.a) — for irrad normalization
+    float wcosSum = 0.0;        // sum(wcos)        — for oscillation normalization
+    vec3  leakRgb = vec3(0.0);
+    float oscSum  = 0.0;        // sum(wcos * 4*a.a*(1-a.a))
     for (int dy = 0; dy < D; ++dy) {
         for (int dx = 0; dx < D; ++dx) {
             vec3  bdir = binToDir(ivec2(dx, dy), D);
@@ -320,11 +356,18 @@ vec3 sampleProbeDir(ivec3 pc, vec3 normal, int D) {
             vec4  a    = texelFetch(uDirectionalAtlas,
                                     ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
             float w    = wcos * a.a;
-            irrad += a.rgb * w;
-            wsum  += w;
+            irrad   += a.rgb * w;
+            wsum    += w;
+            wcosSum += wcos;
+            leakRgb += a.rgb * wcos * (1.0 - a.a);
+            oscSum  += wcos * 4.0 * a.a * (1.0 - a.a);
         }
     }
-    return irrad / max(wsum, 1e-4);
+    ProbeSample r;
+    r.irrad       = irrad / max(wsum, 1e-4);
+    r.leak        = dot(leakRgb, vec3(0.2126, 0.7152, 0.0722));
+    r.oscillation = oscSum / max(wcosSum, 1e-4);
+    return r;
 }
 
 // (sampleProbeDirPerBinOccluded and sampleProbeDirDepthAware removed in Phase 2
@@ -333,11 +376,13 @@ vec3 sampleProbeDir(ivec3 pc, vec3 normal, int D) {
 
 // Trilinear spatial blend over the 8 surrounding C0 probes, each cosine-weighted.
 // -0.5 center-aligned offset: same convention as Phase 5d trilinear and Phase 5f bilinear.
-// Returns vec3(0) when pos is outside the atlas grid.
-vec3 sampleDirectionalGI(vec3 pos, vec3 normal) {
+// Returns ProbeSample (irradiance / leak / oscillation), trilinear-blended field-by-field.
+ProbeSample sampleDirectionalGI(vec3 pos, vec3 normal) {
+    ProbeSample zero;
+    zero.irrad = vec3(0.0); zero.leak = 0.0; zero.oscillation = 0.0;
     vec3 uvw = (pos - uAtlasGridOrigin) / uAtlasGridSize;
     if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0))))
-        return vec3(0.0);
+        return zero;
 
     // Center-aligned probe-grid coordinate: probe k's center maps to float k
     vec3  pg   = clamp(uvw * vec3(uAtlasVolumeSize) - 0.5,
@@ -347,12 +392,9 @@ vec3 sampleDirectionalGI(vec3 pos, vec3 normal) {
     ivec3 hi   = uAtlasVolumeSize - ivec3(1);
     int   D    = uAtlasDirRes;
 
-    // 8 trilinear corner offsets (constant across modes).
     ivec3 offsets[8] = ivec3[8](
         ivec3(0,0,0), ivec3(1,0,0), ivec3(0,1,0), ivec3(1,1,0),
         ivec3(0,0,1), ivec3(1,0,1), ivec3(0,1,1), ivec3(1,1,1));
-
-    // Trilinear weights per corner.
     float w[8];
     w[0] = (1.0-f.x)*(1.0-f.y)*(1.0-f.z);
     w[1] =      f.x *(1.0-f.y)*(1.0-f.z);
@@ -363,20 +405,18 @@ vec3 sampleDirectionalGI(vec3 pos, vec3 normal) {
     w[6] = (1.0-f.x)*     f.y *     f.z;
     w[7] =      f.x *     f.y *     f.z;
 
-    // Phase 2: single α-gated sampling path. Visibility is now baked into the
-    // atlas's alpha channel (radiance_3d.comp); sampleProbeDir handles per-bin
-    // gating. No mode dispatch; no outer probeVisibility() trace; no per-bin
-    // shadow rays. Direct trilinear weighted sum across the 8 surrounding C0
-    // probes. Out-of-bounds corners contribute 0 (their trilinear weight is
-    // small near the volume boundary).
-    vec3 s[8];
+    ProbeSample r;
+    r.irrad = vec3(0.0); r.leak = 0.0; r.oscillation = 0.0;
     for (int i = 0; i < 8; ++i) {
         ivec3 pc = p000 + offsets[i];
         bool inBounds = !(any(lessThan(pc, ivec3(0))) || any(greaterThan(pc, hi)));
-        s[i] = inBounds ? sampleProbeDir(pc, normal, D) : vec3(0.0);
+        if (!inBounds) continue;
+        ProbeSample s = sampleProbeDir(pc, normal, D);
+        r.irrad       += s.irrad       * w[i];
+        r.leak        += s.leak        * w[i];
+        r.oscillation += s.oscillation * w[i];
     }
-    return s[0]*w[0] + s[1]*w[1] + s[2]*w[2] + s[3]*w[3]
-         + s[4]*w[4] + s[5]*w[5] + s[6]*w[6] + s[7]*w[7];
+    return r;
 }
 
 /**
@@ -546,7 +586,7 @@ void main() {
             // albedo here for energy-conserving Lambertian indirect.
             if (uRenderMode == 6) {
                 vec3 indirect6 = (uUseDirectionalGI != 0 && uUseCascade != 0)
-                    ? sampleDirectionalGI(pos, normal)
+                    ? sampleDirectionalGI(pos, normal).irrad
                     : texture(uRadiance, uvw).rgb;
                 if (uSeparateGI != 0) {
                     fragColor = vec4(0.0);
@@ -590,7 +630,7 @@ void main() {
             // albedo for energy-conserving Lambertian: L_out = albedo_dest * integral(L_in*cos)/integral(cos)
             if (uUseCascade != 0) {
                 indirect = (uUseDirectionalGI != 0)
-                    ? sampleDirectionalGI(pos, normal)
+                    ? sampleDirectionalGI(pos, normal).irrad
                     : texture(uRadiance, uvw).rgb;
                 indirectColor = albedo * indirect;
             }
@@ -609,6 +649,37 @@ void main() {
                     // codex 07 F8: 0.001 threshold safe for current asset albedos.
                     float total = length(directColor + indirectColor);
                     v = (total > 0.001) ? length(indirectColor) / total : 0.0;     // already 0..1
+                }
+                float t8 = clamp(v, 0.0, 1.0);
+                vec3 heatColor = (t8 < 0.5)
+                    ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), t8 * 2.0)
+                    : mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (t8 - 0.5) * 2.0);
+                fragColor = vec4(heatColor, 1.0);
+                return;
+            }
+
+            // Mode 14: leak-suspect heatmap (2026-05-18).
+            // Visualizes per-pixel "leak potential" = the radiance from atlas bins that
+            // Phase 2's render-side α-gate hides from display. Bright red = high leak
+            // potential at this pixel = Phase 3 has the most leverage here. The metric
+            // is computed using only the existing atlas (no Phase 3 mode toggle needed).
+            //
+            // Reading: green = no leak, yellow = some leak in the atlas, red = the atlas
+            // at this probe stored significant radiance in directions marked occluded.
+            // Phase 2 prevents this leak from reaching display; Phase 3 (v3) reduces the
+            // amount that gets baked into the atlas in the first place.
+            if (uRenderMode == 14 || uRenderMode == 15) {
+                ProbeSample ps = (uUseCascade != 0)
+                    ? sampleDirectionalGI(pos, normal)
+                    : ProbeSample(vec3(0.0), 0.0, 0.0);
+                float v;
+                if (uRenderMode == 14) {
+                    // Mode 14 (LeakSuspect): sqrt-scaled leak luminance.
+                    v = sqrt(ps.leak / max(uLeakHeatmapDivisor, 1e-4));
+                } else {
+                    // Mode 15 (TemporalOscillation): already in [0,1]; no divisor needed.
+                    // Optional sqrt for perceptual sensitivity to small oscillation.
+                    v = sqrt(ps.oscillation);
                 }
                 float t8 = clamp(v, 0.0, 1.0);
                 vec3 heatColor = (t8 < 0.5)

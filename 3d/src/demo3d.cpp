@@ -187,6 +187,7 @@ Demo3D::Demo3D()
     , useWeightedSample(false)  // Phase 3 (default OFF; opt-in via GUI / CLI)
     , phase3DebugMode(0)
     , giStrength(1.0f)
+    , leakHeatmapDivisor(0.5f)  // mode 14 sensitivity; sqrt-scaled in shader
     , useShadowRay(true)
     , useDirectionalGI(true)        // cosine-weighted directional atlas lookup
     , useSoftShadow(false)
@@ -2624,6 +2625,8 @@ void Demo3D::raymarchPass() {
     glUniform3fv(glGetUniformLocation(prog, "uLightColor"), 1, glm::value_ptr(lightColor));
     // Lighting controls follow-up: composite-side ambient floor (mode 0/4/10).
     glUniform1f(glGetUniformLocation(prog, "uAmbientCompositeStrength"), ambientCompositeStrength);
+    // 2026-05-18: leak-suspect heatmap (mode 14) sensitivity divisor.
+    glUniform1f(glGetUniformLocation(prog, "uLeakHeatmapDivisor"), leakHeatmapDivisor);
     // SDF texture (sampler binding 0)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -3922,9 +3925,11 @@ void Demo3D::renderSettingsPanel() {
         "11 GIHeat-Vis (visible-GI heatmap)",
         "12 GIHeat-Raw (raw-GI magnitude)",
         "13 GIHeat-Frac (GI / (direct+GI))",
+        "14 LeakSuspect (atlas radiance in α=0 bins)",
+        "15 TemporalOscillation (atlas α stability)",
     };
     constexpr int kModeCount = int(sizeof(kRenderModeLabels) / sizeof(kRenderModeLabels[0]));
-    static_assert(kModeCount == 14, "renderModeLabels must enumerate all 14 raymarch modes");
+    static_assert(kModeCount == 16, "renderModeLabels must enumerate all 16 raymarch modes");
     // Defensive clamp: setRenderMode warns on out-of-range values but assigns them
     // anyway (preserves shader fallthrough behaviour). The picker is the only thing
     // standing between an out-of-range raymarchRenderMode and an OOB array read.
@@ -3938,11 +3943,85 @@ void Demo3D::renderSettingsPanel() {
         "Component split (3,4,6,9,10): isolate direct vs indirect vs ambient floor.\n"
         "Heatmaps (5,7,8): SDF cost (steps / ray distance) and probe-cell boundaries.\n"
         "GI heatmaps (11-13): where GI is doing work (visible / raw / fraction).\n"
+        "\n"
+        "=== Mode 5 (Steps) — integer SDF step count ===\n"
+        "  green = few steps (cheap); red = many steps (expensive).\n"
+        "  INTERPRETATION:\n"
+        "    Mostly green   → SDF traversal is cheap; no perf issue.\n"
+        "    Red along grazing rays → expected (rays parallel to surfaces step slowly).\n"
+        "    Banded patterns → SDF voxel quantization (toggle Analytic SDF to confirm).\n"
+        "    Red everywhere → tMax may be too large; reduce maxRayDistance or check\n"
+        "      that the SDF is correctly built (run mode 5 + mode 7 together).\n"
+        "\n"
+        "=== Mode 11/12/13 (GI heatmaps) — where the GI bounce contribution lives ===\n"
+        "  INTERPRETATION:\n"
+        "    11 (visible-GI) red/yellow → GI is visibly contributing here.\n"
+        "      All green     → GI contribution is below threshold; likely needs more\n"
+        "        bake intensity or the direct light is washing it out.\n"
+        "    12 (raw GI) red/yellow → atlas has bright probes at this position.\n"
+        "      All green     → atlas is empty/dark; check Cascade GI is ON and baked.\n"
+        "    13 (GI fraction) red → GI dominates the lit term (deep indirect bounces).\n"
+        "      All green     → direct lighting dominates (no GI leverage at this view).\n"
+        "\n"
+        "=== Mode 14 (LeakSuspect) — bake-side leak hidden by Phase 2 α-gate ===\n"
+        "  Formula: leak_potential = Σ atlas[bin].rgb × wcos × (1 − atlas[bin].α)\n"
+        "  Color: green=clean, yellow=some leak, red=atlas stored bright radiance in α=0 bins.\n"
+        "  INTERPRETATION:\n"
+        "    Mostly green   → atlas is clean; Phase 3 has nothing to fix here.\n"
+        "    Green interior + red ring around objects → leak concentrated at geometry\n"
+        "      boundaries; some may be SKY FALSE POSITIVES (Phase 2's α=0 conflates\n"
+        "      surface-hit with sky-exit; visually exclude sky-facing regions).\n"
+        "    Red on flat interior walls → real bake-side leak; toggling 'WeightedSample\n"
+        "      bake-side visibility' (Hierarchy & Merge) ON should visibly reduce red.\n"
+        "    Red unchanged ON↔OFF → either the red is sky false-positive, or Phase 3's\n"
+        "      mechanism doesn't apply to this leak source.\n"
+        "  ACTION: pair with the WeightedSample toggle for ON/OFF A/B; lower the divisor\n"
+        "    slider (appears below picker) to surface subtle reductions; if the scene has\n"
+        "    sky bins, mentally subtract sky-facing surfaces from the red count.\n"
+        "\n"
+        "=== Mode 15 (TemporalOscillation) — atlas-α temporal-stability ===\n"
+        "  Formula: oscillation = Σ wcos × 4·α·(1−α) / Σ wcos   (peaks at α=0.5)\n"
+        "  Color: green=binary α (stable), red=soft α (temporally noisy).\n"
+        "  INTERPRETATION:\n"
+        "    All green                → α fully converged binary; no temporal noise.\n"
+        "      Likely Probe Jitter is OFF (--use-probe-jitter=0) OR scene has zero edge\n"
+        "      geometry within jitter scale.\n"
+        "    Green interior + thin orange/yellow at object edges → NORMAL after the\n"
+        "      2026-05-15 EMA-α fix. Edges oscillate because jitter probes flip hit/miss\n"
+        "      across the geometry. Magnitude is small; the temporal EMA smooths it.\n"
+        "    Wide red regions across flat surfaces → ABNORMAL. Possible causes:\n"
+        "      • Bake just rebuilt (history not yet converged; wait 100+ frames).\n"
+        "      • EMA-α temporal fix not loaded (check radiance_3d.comp line ~600).\n"
+        "      • probeJitterScale too large for cell size; lower it (Cascades panel).\n"
+        "    Persistent red on a specific surface → that surface is at sub-cell distance\n"
+        "      from another wall; jitter is genuinely flipping bin classifications there.\n"
+        "  ACTION: toggle Probe Jitter OFF → image should go all-green; toggle Temporal\n"
+        "    Accumulation OFF → image becomes all-binary (most green, sharp red edges).\n"
+        "\n"
         "Notes:\n"
         "  Mode 5: integer step count. Banded mode 5 + smooth mode 7 → quantization.\n"
         "  Mode 8: aligned banding = Type A (cell-size); misaligned = Type B (D bins).\n"
         "  Modes 9/10 split mode 4 into 'direct without ambient' + 'ambient floor only'.\n"
-        "  Modes 11-13 require Cascade GI ON; otherwise output is all-green / zero.");
+        "  Modes 11-13 require Cascade GI ON; otherwise output is all-green / zero.\n"
+        "  Mode 14 requires Cascade GI ON (reads atlas content); pair with WeightedSample\n"
+        "    toggle for A/B comparison; lower the divisor slider to surface subtle changes.\n"
+        "  Mode 15 requires Cascade GI ON; pair with Probe Jitter or Temporal toggles.");
+
+    // Mode 14 inline controls: sensitivity slider + reminder about Phase 3 toggle.
+    if (raymarchRenderMode == 14) {
+        ImGui::TextDisabled("LeakSuspect: pair with Hierarchy & Merge → 'WeightedSample' toggle");
+        ImGui::SliderFloat("Heatmap divisor##leakdiv", &leakHeatmapDivisor, 0.001f, 1.0f, "%.4f", ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("leak_potential >= divisor saturates to red.\n"
+                              "Default 0.5 chosen for Cornell-scale scenes (mean luminance ~0.2).\n"
+                              "Heuristic: divisor ≈ scene_mean_luminance × 2.5.\n"
+                              "Bright outdoor scenes: try 1.0+.  Dark scenes: try 0.1.\n"
+                              "Lower = more sensitive (tiny leaks turn red).\n"
+                              "Higher = needs strong leak to turn red.\n"
+                              "Sqrt-scaled internally for perceptual sensitivity near saturation.");
+        ImGui::TextDisabled("FALSE POSITIVES: sky-exit bins (α=0) flag as red — Phase 2's α encoding");
+        ImGui::TextDisabled("can't distinguish sky from surface-hit. Visually exclude sky-facing areas.");
+    }
 
     // Step 3 (3d, F3): gate the analytic SDF toggle in OBJ mode. The analytic shader
     // path has nothing to evaluate against an OBJ mesh, so allowing it would render
@@ -4177,6 +4256,10 @@ void Demo3D::renderCascadePanel() {
             "radiance, applies WeightedSample's visibility-fraction (.a) only as a soft attenuation\n"
             "multiplier in the merge formula.\n\n"
             "Requires non-co-located + spatial trilinear (other paths can't carry per-corner info).\n\n"
+            "→ TO VISUALIZE THE EFFECT: switch to render mode 14 (LeakSuspect heatmap)\n"
+            "  in Settings panel. Toggle this checkbox ON/OFF — red regions should visibly\n"
+            "  shrink toward yellow/orange with ON. Adjust the divisor slider that appears\n"
+            "  when mode 14 is selected to tune sensitivity.\n\n"
             "Effect on cornell-orig-alcove leak metric: C0 −11%, C1 −16%, C2 −10%.\n"
             "Side effect on default Cornell: ~0.7% global dimming (indistinguishable from OFF).\n"
             "Cost: ~+1.2 ms bake (~3% of 38 ms).\n\n"
@@ -5066,6 +5149,54 @@ void Demo3D::renderTutorialPanel() {
             "  [10] Fused atlas EMA in bake shader  (eliminates atlas temporal_blend dispatch)");
         ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
             "  [10] Reduction workgroup 4x4x4 -> 8x8x4 (better GPU occupancy)");
+    }
+
+    ImGui::NewLine();
+
+    // ====================================================================
+    // GI Leak-reduction chain (Phase 2 → Phase 3 v3, 2026-05-15 → 2026-05-18)
+    // ====================================================================
+    {
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "GI Leak Reduction (complete + opt-in):");
+
+        // Phase 2 — render-side α-gate (always on; no toggle)
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [Phase 2] Render-side α-gate  ON (always; raymarch.frag: w = wcos × a.a)");
+
+        // Phase 3 v3 — bake-side WeightedSample; binds to useWeightedSample toggle
+        {
+            bool p3effective = useWeightedSample && !useColocatedCascades && useSpatialTrilinear;
+            ImVec4 c = p3effective
+                ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f)
+                : (useWeightedSample
+                    ? ImVec4(1.0f, 0.6f, 0.2f, 1.0f)
+                    : ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+            const char* state = p3effective ? "ON (active)" :
+                (useWeightedSample ? "ON (inactive — needs non-colocated + trilinear)" : "OFF (Phase 2 unconditional-trust)");
+            ImGui::TextColored(c, "  [Phase 3 v3] Bake-side WeightedSample  %s", state);
+        }
+
+        // Temporal-α EMA fix (2026-05-15) — bug fix, always on
+        ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+            "  [Temporal-α fix 2026-05-15] EMA-blend atlas α (40× less per-frame flicker)");
+
+        // Leak-suspect heatmap (mode 14) — binds to render mode
+        {
+            ImVec4 c = (raymarchRenderMode == 14)
+                ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f)
+                : ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+            ImGui::TextColored(c, "  [Mode 14] LeakSuspect heatmap  %s  (Settings → Debug Render Mode)",
+                (raymarchRenderMode == 14) ? "ACTIVE" : "off");
+        }
+
+        // Temporal-oscillation heatmap (mode 15)
+        {
+            ImVec4 c = (raymarchRenderMode == 15)
+                ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f)
+                : ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+            ImGui::TextColored(c, "  [Mode 15] TemporalOscillation heatmap  %s",
+                (raymarchRenderMode == 15) ? "ACTIVE" : "off");
+        }
     }
 
     ImGui::End();
