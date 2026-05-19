@@ -213,3 +213,302 @@ Visual A/B (mode 19, cornell-orig + directional light) is the planned validation
 4. **Sponza testing** — verify hybrid behaves on a complex scene (not just Cornell). Plan §5 Day 7 has this scheduled.
 5. **Memory metric** — `4 × 4 × 640 × 360 = ~3.7 MB` for the half-res accumulator at 720p; ~8 MB at 1080p. Cheap.
 6. **(Future v2)** — Cascade bounce-2+ separation: run cascade twice (with/without MB), pixel-difference, add to correction. Eliminates the "lose multi-bounce" tradeoff at default w=1.0.
+
+---
+
+## 8. Post-impl v1.1 fixes (2026-05-19 user feedback)
+
+User tested in Sponza at `doc/5/claude_plan/cam.md` viewpoint and surfaced two issues:
+
+### F1 — Noise too visible (single-sample stochastic MC)
+
+**Fix landed:** Hybrid ON now auto-enables the existing GI bilateral blur (`gi_blur.frag`) in both `raymarchPass()` (sets `uSeparateGI=1` so indirect is written separately) and `render()` (triggers `giBlurPass()`). One-line OR in both call sites:
+```cpp
+const bool giBlurActive = (useGIBlur || useHybrid) && (mode == 0 || mode == 3 || mode == 6);
+```
+- Depth+normal sigmas already tuned for cascade GI; no per-feature tuning needed.
+- Runs at full screen res on the composited `fragGI` MRT output.
+- Edges preserved by depth/normal stops (the noise is volumetric, not edge-aligned).
+- User can still toggle the GI blur checkbox in Hierarchy & Merge tab; the hybrid override is additive (OR), not replacement.
+
+**Implementation cost:** ~2 lines of C++. No new shader code. The existing GI blur was already exactly what hybrid noise needed — surfaced only after visual test.
+
+**Architectural learning (L7):** When adding a feature that emits noise, audit existing denoising paths before designing a dedicated one. The bilateral filter intended for cascade banding cleaned up hybrid stochastic noise just as well — depth+normal edge-stops are agnostic to the noise source.
+
+### F2 — Cascade multi-bounce lost on Sponza at default w=1.0
+
+**User's observed visual:** At the cam.md Sponza viewpoint, hybrid-replaced GI looked dimmer than cascade-only in deep alcove regions where Phase MB's multi-bounce was contributing most. Plan §2.4 documented this tradeoff but Sponza made it visually significant (unlike Cornell where bounce-2+ is ~5% of total).
+
+**Fix landed: `uHybridUseMax` per-pixel max() composition**. New uniform + GUI checkbox + `--hybrid-max=1` flag. When ON:
+```glsl
+indirectColor = max(correction, indirectColor);
+```
+- Pragmatic, not unbiased: in regions where cascade > correction (multi-bounce-dominated alcoves), cascade wins → multi-bounce visible.
+- In regions where correction > cascade (lit walls, cascade under-integrates), correction wins → exact bounce-1.
+- "Worst case" double-counting bounded: where both are similar magnitude, max() picks one rather than summing — at most ~equal to single-bounce.
+- Disables the `mix()` blend weight slider in GUI when active (mutex).
+
+**Why this over plan v2 (separate cascade MB-delta dispatch):**
+- v2 would need running cascade twice per frame (~+15-30 ms bake) + a new texture + composition logic.
+- max() is 1 shader line + 1 GUI + 1 CLI flag for "good enough" results.
+- v2 is still the "correct" fix and remains future work, but max() unblocks Sponza usage TODAY.
+
+**Architectural learning (L8):** When a documented-but-pragmatically-bad default surfaces in real testing, ship a 5-line escape hatch BEFORE building the principled fix. The max() composition is not the right long-term answer — but it lets the user actually use the feature in the scene that exposed the issue. The "right" answer (plan §2.4 v2 with MB-delta dispatch) can land in a future session without rushing.
+
+### Updated GUI layout (Hierarchy & Merge)
+
+```
+[x] Hybrid per-pixel correction (doc/7)        (samples=N)
+[ ] Per-pixel max(correction, cascade)
+  Hybrid blend weight  [=========o====]  0.70   (disabled when max ON)
+  Hybrid EMA alpha     [==o===========]  0.10
+  Hybrid rays/frame    [o=============]  1
+  [ Reset accumulator ]
+  Note: GI bilateral blur is auto-enabled while Hybrid is ON
+        to denoise the single-sample stochastic correction.
+```
+
+### Updated CLI
+
+| Flag | What |
+|---|---|
+| `--use-hybrid=0|1` | Toggle hybrid feature |
+| `--hybrid-weight=F` | Blend weight (ignored when --hybrid-max=1) |
+| `--hybrid-ema=F` | EMA alpha floor (I1 fix) |
+| `--hybrid-rays=N` | Rays per pixel per dispatch |
+| `--hybrid-max=0|1` | Legacy: per-pixel max() composition |
+
+---
+
+## 9. v1.2 cooperative inverse-variance merge (2026-05-19 user pushback)
+
+User correctly identified two architectural mistakes in v1.1:
+
+**(a) Blurring the merged GI** (via auto-enabled `gi_blur.frag`) over-softens cascade. The right thing is to blur the noisy PT correction ALONE in its own pass, then merge with the already-smooth cascade signal.
+
+**(b) `max(correction, cascade)`** is winner-takes-all, not cooperative. The two signals each carry information the other lacks (correction = exact bounce-1; cascade = lossy bounce-1 + MB bounce-2+). They should COMBINE numerically with each contributing based on signal confidence.
+
+### 9.1 New architecture
+
+```
+┌─────────────────────────┐    ┌──────────────────────────┐
+│ hybrid_correction.comp  │    │ hybrid_blur.comp         │
+│ writes:                 │ ─→ │ depth+normal bilateral   │ ─→ hybridFilteredTexture
+│   accum (RGB + E[L²])   │    │ on accum, guided by      │    (.rgb=clean, .a=clean E[L²])
+│   gbuffer (N + depth)   │    │ gbuffer                  │
+└─────────────────────────┘    └──────────────────────────┘
+                                                                      │
+                                                                      ▼
+                                                  ┌─────────────────────────────────────┐
+                                                  │ raymarch.frag mode 0:                │
+                                                  │   correction = sample(filtered)      │
+                                                  │   var_corr = max(E[L²]-L², ε)        │
+                                                  │   var_casc = uHybridCascadeVariance  │
+                                                  │   w_corr = 1/var_corr                │
+                                                  │   w_casc = 1/var_casc                │
+                                                  │   final = (w_c*corr + w_C*casc) /    │
+                                                  │           (w_c + w_C)                │
+                                                  └─────────────────────────────────────┘
+```
+
+### 9.2 Variance tracking in the accumulator
+
+The accumulator's alpha channel — previously hard-coded `1.0` — now stores the EMA-blended luminance second moment `E[L²]`:
+
+```glsl
+// hybrid_correction.comp main():
+float frameLumSq = dot(frameMean, vec3(0.2126, 0.7152, 0.0722));
+frameLumSq *= frameLumSq;
+float mergedLumSq = mix(prev.a, frameLumSq, weight);
+imageStore(oHybridAccum, pix, vec4(merged, mergedLumSq));
+```
+
+Per-pixel variance estimate at consume time:
+```glsl
+float L = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+float var = max(E_L_sq - L*L, 1e-6);
+```
+
+This works for any blend weight (progressive or EMA) — the squared-luminance running mean is the natural companion to the RGB running mean. After convergence with low noise: variance → 0, inverse-variance weight → high. Noisy unconverged pixels keep variance high → cascade dominates.
+
+### 9.3 Half-res GBuffer
+
+`hybrid_correction.comp` writes a second image (`oHybridGBuffer`, image binding 1) at every dispatch:
+
+```glsl
+// On first ray's primary hit (geometry is deterministic per pixel):
+gbufNormal = primary.normal;
+gbufDepth  = length(primary.pos - uCamPos) / uHybridMaxDist;
+// ...
+imageStore(oHybridGBuffer, pix, vec4(gbufNormal * 0.5 + 0.5, gbufDepth));
+```
+
+Format mirrors `raymarch.frag`'s `fragGBuffer` exactly (normal*0.5+0.5 in RGB, linearized depth in alpha, 0=sky/no-surface). The cost is one extra image store per pixel — negligible.
+
+### 9.4 Bilateral blur (`hybrid_blur.comp`)
+
+~90 lines. Single-pass 2D bilateral, default 7×7 kernel (radius 3). Weights:
+- Spatial Gaussian with σ = R/2
+- Depth edge-stop: `exp(-(Δd)²/(2σ_d²))`, default σ_d=0.05 (linearized depth space)
+- Normal edge-stop: `exp(-(1-cos θ)/σ_n)`, default σ_n=0.3 (cosine distance)
+
+Both `.rgb` (radiance) and `.a` (E[L²]) blur with the SAME weights — keeps the variance estimate consistent with the blurred radiance.
+
+### 9.5 Inverse-variance merge in raymarch.frag
+
+```glsl
+if (uHybridUseVarianceMerge != 0) {
+    float corrL    = dot(correction, vec3(0.2126, 0.7152, 0.0722));
+    float corrVar  = max(corrRGBA.a - corrL * corrL, 1e-6);
+    float cascVar  = max(uHybridCascadeVariance, 1e-6);
+    float wCorr    = 1.0 / corrVar;
+    float wCasc    = 1.0 / cascVar;
+    indirectColor  = (wCorr * correction + wCasc * indirectColor) / (wCorr + wCasc);
+}
+```
+
+The cascade variance is a USER-TUNABLE PRIOR (not measured). Default `0.001`. Intuition: smaller → cascade gets more weight → more multi-bounce visible. Larger → correction dominates. On Sponza-like scenes with significant cascade MB content, dial up toward 0.01.
+
+The legacy `mix()` and `max()` paths are retained for A/B comparison but no longer default.
+
+### 9.6 Reverted F1
+
+`giBlurActive` no longer ORs with `useHybrid`. Hybrid noise is denoised by `hybrid_blur.comp` BEFORE merging; the full-frame `gi_blur.frag` is back to being a pure user toggle. This avoids over-softening cascade.
+
+### 9.7 New GUI (Hierarchy & Merge → Hybrid section)
+
+```
+[x] Hybrid per-pixel correction (doc/7)        (samples=N)
+   Composition  [Inverse-variance merge (cooperative) ▼]
+   Cascade variance prior  [logslider]  0.00100
+   Hybrid blend weight    (disabled)
+   Bilateral radius       [====o========]  3
+   Bilateral depth sigma  [===o=========]  0.050
+   Bilateral normal sigma [===o=========]  0.30
+   Hybrid EMA alpha       [==o==========]  0.10
+   Hybrid rays/frame      [o============]  1
+   [ Reset accumulator ]
+   v1.2: PT correction is bilateral-blurred (depth+normal aware)
+         in its own pass, then variance-merged with cascade in raymarch.
+```
+
+### 9.8 New CLI flags
+
+| Flag | What |
+|---|---|
+| `--hybrid-variance-merge=0|1` | Toggle cooperative merge (default 1) |
+| `--hybrid-cascade-var=F` | Cascade variance prior (default 0.001) |
+| `--hybrid-blur-radius=N` | Bilateral kernel radius 0-6 (default 3; 0=off) |
+
+### 9.9 Files touched in v1.2
+
+| File | Change |
+|---|---|
+| `res/shaders/hybrid_correction.comp` | +18 lines: GBuffer image binding + write, L² tracking in accum.a |
+| `res/shaders/hybrid_blur.comp` | NEW, ~90 lines |
+| `res/shaders/raymarch.frag` | +14 lines: variance-merge branch + 2 new uniforms |
+| `src/demo3d.h` | +9 state members + 5 setters |
+| `src/demo3d.cpp` | +60 lines: allocator (3 textures), blur dispatch, uniform binding, GUI block rewrite, F1 revert |
+| `src/main3d.cpp` | +18 lines: 3 new CLI flags |
+
+### 9.10 Learnings (L9, L10)
+
+**L9 — User pushback caught two architectural mistakes that smoke-test missed.** v1.1's F1 (auto-enable gi_blur) and F2 (max() composition) BOTH built clean and produced no crashes — but were wrong. The bugs surfaced only when the user actually LOOKED at the Sponza visual. Smoke tests verify "doesn't crash"; only visual A/B verifies "is the right thing happening." **Rule**: when shipping rendering features, plan a visual A/B verification step BEFORE marking done; don't rely on console-log smoke tests for correctness of visual output.
+
+**L10 — Inverse-variance merge needs the SECOND MOMENT, not the variance directly.** Tracking E[L²] via the same EMA blend as E[L] is the only way to get unbiased per-pixel variance for an accumulator that supports both progressive and EMA modes. Welford's algorithm or M2-tracking would also work but require per-frame state that's harder to fit in 1 alpha channel. The `var = E[L²] - L²` identity is the cheapest variance estimator that survives the bilateral blur step (see §10 J1 for the corrected post-blur semantics).
+
+---
+
+## 10. v1.2.1 self-critic findings (2026-05-19 follow-up)
+
+Audited v1.2 as a fresh critic round. Severity classified.
+
+| ID | Severity | What | Status |
+|---|---|---|---|
+| J1 | HIGH (doc) | Original doc claimed bilateral "preserves variance identity on blurred values" — mathematically wrong | **Fixed (doc rewrite below)** |
+| J4 | HIGH (code) | Absolute variance biases merge against bright pixels (var scales as L²) | **Fixed: relative variance** |
+| J7+J9 | HIGH (code) | First frame after camera reset: N=1, E[L²]=L², var≈0 → wCorr→∞ → flicker | **Fixed: confidence ramp** |
+| J3 | MEDIUM (doc) | Cascade variance is constant prior; real cascade noise spatially varies | Documented as simplification; defer per-pixel estimate |
+| J6 | MEDIUM (perf) | 7×7 kernel = 49 taps × 2 reads × 640×360 ≈ 22M reads | Profile pending; consider separable / 5×5 |
+| J2 | LOW | Bessel correction for sample variance | Negligible for N≥4 |
+| J5 | LOW | Luminance-only variance (RGB collapsed) | Sufficient |
+| J8 | LOW | Image binding output + sampler input on different textures | Correct as-is |
+| J10 | LOW | Sky-pixel passthrough in blur | Correct |
+
+### J1 — Corrected variance semantics after bilateral blur
+
+The previous claim ("blur preserves the variance identity") was wrong. Correct derivation:
+
+Let `L_p`, `S_p = E[L²]_p` be per-pixel pre-blur values with true noise variance `var_p = S_p - L_p²`. After bilateral blur with weights `w_pi` summing to `W_p`:
+
+```
+L_blur  = Σ w_pi L_i / W_p
+S_blur  = Σ w_pi S_i / W_p
+S_blur - L_blur²  =  Σ w_pi (var_i + L_i²) / W_p  -  (Σ w_pi L_i / W_p)²
+                  =  ⟨var⟩_neighborhood   +   spatial_variance(L)_neighborhood
+```
+
+So the post-blur "variance estimate" is **average per-pixel noise + spatial signal variance over the bilateral neighborhood**. In flat regions: spatial term ≈ 0, we get the average noise (correct). At edges: spatial term inflates, total variance reads high → cascade dominates at edges (acceptable: those pixels are where bilateral might smear the most).
+
+This is actually a USEFUL property, not a bug — high "uncertainty" in either temporal noise OR spatial signal disagreement both push the merge toward cascade. The original framing was just imprecise.
+
+### J4 fix — scale-invariant relative variance
+
+Bright pixels have larger absolute variance for the same convergence (variance ∝ L²). Using absolute variance in `1/var` would over-weight cascade in bright regions.
+
+**Code change in `raymarch.frag`:**
+```glsl
+float corrL2     = max(corrL * corrL, 1e-4);
+float corrAbsVar = max(corrRGBA.a - corrL * corrL, 0.0);
+float corrRelVar = max(corrAbsVar / corrL2, 1e-4);   // floor → wCorr ≤ 10000
+float wCorr      = conf / corrRelVar;
+```
+
+`uHybridCascadeVariance` is **reinterpreted as relative** (coefficient-of-variation squared). Default 0.001 ≈ cascade noise CoV of ~3%. The user's tuning intuition transfers directly across scenes regardless of brightness.
+
+### J7+J9 fix — confidence ramp on sample count
+
+Without a gate, `N=1 → var ≈ 0 → wCorr → ∞`. Every camera reset would produce one frame of pure (noisy) correction = visible flicker.
+
+**Code change:**
+```glsl
+float conf = clamp(float(uHybridSampleCount) / float(uHybridConfidenceSamples), 0.0, 1.0);
+float wCorr = conf / corrRelVar;
+```
+
+At spp=0: wCorr=0, cascade-only (smooth fallback during reset). At spp=8 (default threshold): wCorr at full inverse-variance. Linear ramp in between → no visible discontinuity.
+
+GUI exposes `hybridConfidenceSamples` as a slider (1-32; default 8 ≈ 1 second at 60 fps with 1 ray/frame). CLI flag could be added if needed but the default is reasonable.
+
+### Updated CLI summary
+
+| Flag | What |
+|---|---|
+| `--hybrid-variance-merge=0|1` | Toggle cooperative merge |
+| `--hybrid-cascade-var=F` | Cascade RELATIVE variance prior (CoV²) |
+| `--hybrid-blur-radius=N` | Bilateral kernel radius (0=off) |
+
+(`hybridConfidenceSamples` is GUI-only for now; tune-once parameter.)
+
+### Files touched in v1.2.1
+
+| File | Change |
+|---|---|
+| `res/shaders/raymarch.frag` | +12 lines: relative-var + confidence ramp in merge branch; 2 new uniforms |
+| `src/demo3d.h` | +1 state member + 1 setter |
+| `src/demo3d.cpp` | +4 lines: init + uniform binding + GUI slider |
+
+### Learning (L11)
+
+**L11 — Inverse-variance merges are SCALE-DEPENDENT unless you use the coefficient of variation.** Treating variance prior as an absolute number means a value tuned for a dim Cornell scene over-weights cascade in a bright daylight scene (or vice versa). Reformulating as `relVar = var/μ²` makes the prior scene-invariant; the user dials "how noisy is cascade as a fraction of its signal," which is a more meaningful question. **Rule**: whenever an algorithm mixes two signals of unknown magnitude, prefer relative/dimensionless quantities over absolute ones — they're more portable across scenes and require less retuning.
+
+---
+
+## 11. Phase 8 measurement results — two critical bugs caught
+
+Full report: [hybrid_v12_validation_phase8_impl.md](hybrid_v12_validation_phase8_impl.md). Summary:
+
+- **B1 (CRITICAL):** `hybrid_blur.comp` bound 2D textures at GL_TEXTURE0/1, leaking into raymarch.frag where `sampler3D uSDF` is bound at the same units. NVIDIA driver returned BLACK for the 3D sampler under multi-target conflict → all v1.2/v1.2.1 hybrid screenshots were entirely black. Fix: bind blur textures at GL_TEXTURE8/9 instead. (L12)
+- **B2 (HIGH):** Inverse-variance merge produced RMSE 0.083 (identical to cascade-only baseline). Root cause: post-blur variance estimate contains spatial signal variance, not just noise — relVar is huge → cascade dominates 100:1. Bumping `cascadeVariance` from 0.001 to 0.05 only marginally helped. **Default reverted to mix mode at w=1.0** (which Phase 8 measurements show gives RMSE 0.047 = 44% improvement over cascade). Variance merge kept as experimental. (L14)
+
+Both bugs slipped past v1.2 and v1.2.1 smoke tests. Only Phase 8's per-pixel measurement caught them. (L13)

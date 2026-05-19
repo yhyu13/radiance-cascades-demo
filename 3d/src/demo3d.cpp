@@ -199,15 +199,34 @@ Demo3D::Demo3D()
     , deltaHeatmapDivisor(0.2f)   // mode 18 sensitivity for cornell-scale scenes
     // Hybrid correction (doc/7) defaults
     , hybridAccumTexture(0)
+    , hybridGBufferTexture(0)
+    , hybridFilteredTexture(0)
     , hybridAccumWidth(0), hybridAccumHeight(0)
     , hybridSampleCount(0)
     , useHybrid(false)             // opt-in
     , hybridBlendWeight(1.0f)      // pure correction (no double-count per critic-05 H1)
+    , hybridUseMaxComp(false)      // legacy max() composition
     , hybridRaysPerFrame(1)        // stochastic; EMA averages
     , hybridEMAAlpha(0.1f)         // ~10 frames to converge
     , hybridDirty(true)
     , hybridFrameSeed(0)
     , hybridLastCamPos(0.0f), hybridLastCamTarget(0.0f)
+    // v1.2.2 cooperative sample-count merge (replaces broken inverse-variance from v1.2).
+    // Phase 8 found inverse-variance default produced cascade-only (RMSE 0.083 = cascade)
+    // because post-blur variance estimate was contaminated by spatial signal variation.
+    // v1.2.2 replaces the formula with `wCorr = spp/confSamples`, `wCasc = 1.0` — both
+    // signals ALWAYS contribute; correction's share grows with samples (8 samples → 50/50,
+    // 80 samples → 91% correction + 9% cascade). Preserves cascade's smooth color-bleeding
+    // structure AND adds PT-quality detail. Verified visually on Cornell default.
+    , hybridUseVarianceMerge(true)  // restored as default per cooperative-merge redesign
+    , hybridCascadeVariance(0.05f)  // RELATIVE (CoV^2); Phase 8 measurement found 0.001 was so
+                                    // confident in cascade that correction was ignored — variance
+                                    // merge became cascade-only. 0.05 ≈ 22% CoV which is realistic
+                                    // for cascade probe-grid noise on Cornell. Tune up for Sponza.
+    , hybridConfidenceSamples(8)    // J9 fix: ramp wCorr over first 8 samples
+    , hybridBlurRadius(3)           // 7x7 kernel
+    , hybridBlurDepthSigma(0.05f)
+    , hybridBlurNormalSigma(0.3f)
     // Phase 7: PT reference
     , ptAccumTexture(0)
     , ptDirectAccumTexture(0)
@@ -386,6 +405,9 @@ Demo3D::Demo3D()
     // Hybrid correction (doc/7/hybrid_rc_pixel_correction_plan.md). Critical for the
     // hybrid feature; harmless if useHybrid stays false.
     ok &= loadShader("hybrid_correction.comp");
+    // v1.2: bilateral blur pass on the hybrid accumulator (depth+normal aware).
+    // Mandatory companion to hybrid_correction.comp when useHybrid is on.
+    ok &= loadShader("hybrid_blur.comp");
     criticalShaderLoadOk = ok;
     
     // Step 5: Initialize cascades
@@ -1055,7 +1077,10 @@ void Demo3D::render() {
                 && GetTime() > autoCaptureDelaySeconds
                 && cascadeReady
                 && burstState == BurstState::Idle
-                && seqCapState == SeqCapState::Idle) {
+                && seqCapState == SeqCapState::Idle
+                // Phase 8: suppress auto-burst while the A/B sweep is running. The burst
+                // would flip raymarchRenderMode behind our back and contaminate captures.
+                && hybridSweepState == HybridSweepState::Idle) {
             autoCaptured = true;
             if (autoSequencePending) {
                 seqCapState   = SeqCapState::Capturing;
@@ -1181,13 +1206,38 @@ void Demo3D::render() {
         ptDispatchReference();
     }
 
+    // Phase 8 sweep state machine runs BEFORE hybrid dispatch so config changes (setUseHybrid,
+    // composition mode) take effect this frame. The state machine also issues screenshots via
+    // the existing pendingScreenshot pipeline; takeScreenshot runs at end-of-frame.
+    if (hybridSweepState != HybridSweepState::Idle) tickHybridSweep();
+
     // 2026-05-19 Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md).
     // Dispatch every frame when useHybrid is ON so the per-pixel correction accumulator
     // stays current. EMA-blends one sample per pixel into hybridAccumTexture; cost ~10-20 ms
     // at 720p with half-res. Camera-move + dirty-flag invalidation resets the accumulator
     // inside the dispatcher (mirrors PT pattern).
     if (useHybrid) {
-        hybridDispatchCorrection();
+        // Phase 8 Day 3: GL_TIMESTAMP query around the dispatcher (correction + blur combined).
+        if (hybridTimerQueries[0] == 0) glGenQueries(3, hybridTimerQueries);
+        if (hybridTimerInflight) {
+            GLint avail = 0;
+            glGetQueryObjectiv(hybridTimerQueries[2], GL_QUERY_RESULT_AVAILABLE, &avail);
+            if (avail) {
+                GLuint64 t0 = 0, t2 = 0;
+                glGetQueryObjectui64v(hybridTimerQueries[0], GL_QUERY_RESULT, &t0);
+                glGetQueryObjectui64v(hybridTimerQueries[2], GL_QUERY_RESULT, &t2);
+                hybridCorrectionMs = hybridCorrectionMs * 0.8 + (double(t2 - t0) / 1e6) * 0.2;
+                hybridTimerInflight = false;
+            }
+        }
+        if (!hybridTimerInflight) {
+            glQueryCounter(hybridTimerQueries[0], GL_TIMESTAMP);
+            hybridDispatchCorrection();
+            glQueryCounter(hybridTimerQueries[2], GL_TIMESTAMP);
+            hybridTimerInflight = true;
+        } else {
+            hybridDispatchCorrection();  // skip timing if previous frame still pending
+        }
     }
 
     // Pass 4: Raymarching (+ optional bilateral GI blur)
@@ -2811,12 +2861,12 @@ void Demo3D::raymarchPass() {
         glUniform1i(glGetUniformLocation(prog, "uPtAccumValid"), 0);
     }
 
-    // Hybrid RC correction (doc/7). TEXTURE7 is the half-res hybridAccumTexture.
-    // uHybridCorrection gates the in-shader blend; uHybridAccumValid guards against
+    // Hybrid RC correction (doc/7). TEXTURE7 = the bilateral-FILTERED accumulator (v1.2).
+    // uHybridCorrection gates the in-shader merge; uHybridAccumValid guards against
     // sampling an unallocated texture (defensive — should match useHybrid).
-    if (hybridAccumTexture != 0) {
+    if (hybridFilteredTexture != 0) {
         glActiveTexture(GL_TEXTURE7);
-        glBindTexture(GL_TEXTURE_2D, hybridAccumTexture);
+        glBindTexture(GL_TEXTURE_2D, hybridFilteredTexture);
         glUniform1i(glGetUniformLocation(prog, "uHybridAccum"), 7);
         glUniform1i(glGetUniformLocation(prog, "uHybridAccumValid"), 1);
     } else {
@@ -2824,10 +2874,18 @@ void Demo3D::raymarchPass() {
     }
     glUniform1i(glGetUniformLocation(prog, "uHybridCorrection"), useHybrid ? 1 : 0);
     glUniform1f(glGetUniformLocation(prog, "uHybridBlendWeight"), hybridBlendWeight);
+    glUniform1i(glGetUniformLocation(prog, "uHybridUseMax"), hybridUseMaxComp ? 1 : 0);
+    glUniform1i(glGetUniformLocation(prog, "uHybridUseVarianceMerge"), hybridUseVarianceMerge ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uHybridCascadeVariance"), hybridCascadeVariance);
+    glUniform1i(glGetUniformLocation(prog, "uHybridSampleCount"), hybridSampleCount);
+    glUniform1i(glGetUniformLocation(prog, "uHybridConfidenceSamples"), hybridConfidenceSamples);
 
     // GI blur: redirect mode-0/3/6 render to 3-attachment FBO (direct / gbuffer / indirect).
     // Modes 3 and 6 are pure-indirect views so direct=black and blur applies to full output.
     // Other debug modes go directly to the default framebuffer and are unaffected.
+    // (v1.2 reversion of F1: hybrid noise is now denoised by hybrid_blur.comp BEFORE merging
+    // with cascade. Blurring the merged result over-softens cascade. GI blur is back to being
+    // a pure user-controlled toggle.)
     const bool giBlurActive = useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6);
     glUniform1i(glGetUniformLocation(prog, "uSeparateGI"), giBlurActive ? 1 : 0);
 
@@ -3113,6 +3171,206 @@ void Demo3D::ptDispatchReference() {
 }
 
 // =============================================================================
+// Phase 8 — Hybrid v1.2 A/B sweep state machine (doc/7/hybrid_v12_validation_phase8_plan.md)
+// =============================================================================
+
+void Demo3D::startHybridSweepPublic(const std::string& outDir) { startHybridSweep(outDir); }
+
+void Demo3D::startHybridSweep(const std::string& outDir) {
+    hybridSweepOutDir = outDir;
+    hybridSweepState  = HybridSweepState::Warmup;
+    hybridSweepFrameCounter = 0;
+    // Capture original state so we can restore on Done.
+    hybridSweepSavedUseHybrid   = useHybrid;
+    hybridSweepSavedUseVarMerge = hybridUseVarianceMerge;
+    hybridSweepSavedUseMax      = hybridUseMaxComp;
+    hybridSweepSavedBlendWeight = hybridBlendWeight;
+    hybridSweepSavedRenderMode  = raymarchRenderMode;
+    std::cout << "[Sweep] starting: out=" << outDir
+              << " warmup=" << hybridSweepWarmupFrames
+              << " stabilize=" << hybridSweepStabilizeFrames << "\n";
+}
+
+void Demo3D::tickHybridSweep() {
+    if (hybridSweepState == HybridSweepState::Idle ||
+        hybridSweepState == HybridSweepState::Done) return;
+
+    // Helpers
+    auto requestShot = [&](const std::string& tag) {
+        // Set up a screenshot for this frame. The base name uses tag; takeScreenshot's
+        // path-strip behavior is handled by the existing helper logic.
+        pendingScreenshotTag = "_" + tag;
+        pendingScreenshot    = true;
+        lastScreenshotPath.clear();
+    };
+    auto collectShot = [&](int slot, const std::string& tagSuffix) -> bool {
+        // Verify the screenshot landed and stash its path. Returns false on failure.
+        if (lastScreenshotPath.empty() ||
+            lastScreenshotPath.find("_" + tagSuffix + ".png") == std::string::npos) {
+            std::cerr << "[Sweep] capture failed for tag=" << tagSuffix << "\n";
+            hybridSweepState = HybridSweepState::Done;
+            return false;
+        }
+        hybridSweepPaths[slot] = lastScreenshotPath;
+        lastScreenshotPath.clear();
+        return true;
+    };
+    auto advanceAfter = [&](int frames, HybridSweepState next) {
+        if (++hybridSweepFrameCounter >= frames) {
+            hybridSweepFrameCounter = 0;
+            hybridSweepState = next;
+        }
+    };
+
+    switch (hybridSweepState) {
+    case HybridSweepState::Warmup:
+        advanceAfter(hybridSweepWarmupFrames, HybridSweepState::ConfigCascadeOnly);
+        break;
+
+    case HybridSweepState::ConfigCascadeOnly:
+        setUseHybrid(false);
+        raymarchRenderMode = 0;
+        hybridSweepFrameCounter = 0;
+        hybridSweepState = HybridSweepState::StabilizeCascadeOnly;
+        break;
+    case HybridSweepState::StabilizeCascadeOnly:
+        advanceAfter(hybridSweepStabilizeFrames, HybridSweepState::CaptureCascadeOnly);
+        break;
+    case HybridSweepState::CaptureCascadeOnly:
+        raymarchRenderMode = 0;  // defensive: re-assert in case anything flipped it
+        requestShot("cascade_only");
+        hybridSweepState = HybridSweepState::ConfigHybridMix;
+        break;
+
+    case HybridSweepState::ConfigHybridMix:
+        if (!collectShot(0, "cascade_only")) break;
+        setUseHybrid(true);
+        setHybridUseVarianceMerge(false);
+        setHybridUseMaxComp(false);
+        setHybridBlendWeight(1.0f);
+        raymarchRenderMode = 0;
+        hybridSweepFrameCounter = 0;
+        hybridSweepState = HybridSweepState::StabilizeHybridMix;
+        break;
+    case HybridSweepState::StabilizeHybridMix:
+        advanceAfter(hybridSweepStabilizeFrames, HybridSweepState::CaptureHybridMix);
+        break;
+    case HybridSweepState::CaptureHybridMix:
+        raymarchRenderMode = 0;
+        requestShot("hybrid_mix");
+        hybridSweepState = HybridSweepState::ConfigHybridMax;
+        break;
+
+    case HybridSweepState::ConfigHybridMax:
+        if (!collectShot(1, "hybrid_mix")) break;
+        setUseHybrid(true);
+        setHybridUseVarianceMerge(false);
+        setHybridUseMaxComp(true);
+        raymarchRenderMode = 0;
+        hybridSweepFrameCounter = 0;
+        hybridSweepState = HybridSweepState::StabilizeHybridMax;
+        break;
+    case HybridSweepState::StabilizeHybridMax:
+        advanceAfter(hybridSweepStabilizeFrames, HybridSweepState::CaptureHybridMax);
+        break;
+    case HybridSweepState::CaptureHybridMax:
+        raymarchRenderMode = 0;
+        requestShot("hybrid_max");
+        hybridSweepState = HybridSweepState::ConfigHybridVariance;
+        break;
+
+    case HybridSweepState::ConfigHybridVariance:
+        if (!collectShot(2, "hybrid_max")) break;
+        setUseHybrid(true);
+        setHybridUseVarianceMerge(true);
+        setHybridUseMaxComp(false);
+        raymarchRenderMode = 0;
+        hybridSweepFrameCounter = 0;
+        hybridSweepState = HybridSweepState::StabilizeHybridVariance;
+        break;
+    case HybridSweepState::StabilizeHybridVariance:
+        advanceAfter(hybridSweepStabilizeFrames, HybridSweepState::CaptureHybridVariance);
+        break;
+    case HybridSweepState::CaptureHybridVariance:
+        raymarchRenderMode = 0;
+        requestShot("hybrid_variance");
+        hybridSweepState = HybridSweepState::ConfigPtRef;
+        break;
+
+    case HybridSweepState::ConfigPtRef:
+        if (!collectShot(3, "hybrid_variance")) break;
+        setUseHybrid(false);
+        raymarchRenderMode = 16;
+        resetPTAccumulator();
+        // PT needs many more frames for convergence; bump stabilize for this leg.
+        hybridSweepFrameCounter = 0;
+        hybridSweepState = HybridSweepState::StabilizePtRef;
+        break;
+    case HybridSweepState::StabilizePtRef:
+        // 4x stabilize for PT — single-bounce stochastic needs more accumulation.
+        advanceAfter(hybridSweepStabilizeFrames * 4, HybridSweepState::CapturePtRef);
+        break;
+    case HybridSweepState::CapturePtRef:
+        requestShot("pt_reference");
+        hybridSweepState = HybridSweepState::WriteMetadata;
+        break;
+
+    case HybridSweepState::WriteMetadata: {
+        if (!collectShot(4, "pt_reference")) break;
+        // Write minimal metadata.json beside the captures. Use stdio (no JSON lib in project).
+        std::string mdPath = hybridSweepOutDir.empty()
+                             ? std::string("sweep_metadata.json")
+                             : (hybridSweepOutDir + "/sweep_metadata.json");
+        // JSON requires backslashes to be escaped. raylib's TakeScreenshot returns
+        // Windows paths with backslashes; convert to forward slashes (also valid path
+        // separators on Windows and platform-portable).
+        auto fwd = [](std::string s) {
+            for (char& c : s) if (c == '\\') c = '/';
+            return s;
+        };
+        FILE* f = std::fopen(mdPath.c_str(), "w");
+        if (f) {
+            std::fprintf(f, "{\n");
+            std::fprintf(f, "  \"version\": \"v1.2.1\",\n");
+            std::fprintf(f, "  \"warmup_frames\": %d,\n", hybridSweepWarmupFrames);
+            std::fprintf(f, "  \"stabilize_frames\": %d,\n", hybridSweepStabilizeFrames);
+            std::fprintf(f, "  \"hybrid_rays_per_frame\": %d,\n", hybridRaysPerFrame);
+            std::fprintf(f, "  \"hybrid_ema_alpha\": %.4f,\n", hybridEMAAlpha);
+            std::fprintf(f, "  \"hybrid_cascade_variance\": %.6f,\n", hybridCascadeVariance);
+            std::fprintf(f, "  \"hybrid_confidence_samples\": %d,\n", hybridConfidenceSamples);
+            std::fprintf(f, "  \"hybrid_blur_radius\": %d,\n", hybridBlurRadius);
+            std::fprintf(f, "  \"captures\": {\n");
+            std::fprintf(f, "    \"cascade_only\":     \"%s\",\n", fwd(hybridSweepPaths[0]).c_str());
+            std::fprintf(f, "    \"hybrid_mix\":       \"%s\",\n", fwd(hybridSweepPaths[1]).c_str());
+            std::fprintf(f, "    \"hybrid_max\":       \"%s\",\n", fwd(hybridSweepPaths[2]).c_str());
+            std::fprintf(f, "    \"hybrid_variance\":  \"%s\",\n", fwd(hybridSweepPaths[3]).c_str());
+            std::fprintf(f, "    \"pt_reference\":     \"%s\"\n",  fwd(hybridSweepPaths[4]).c_str());
+            std::fprintf(f, "  }\n");
+            std::fprintf(f, "}\n");
+            std::fclose(f);
+            std::cout << "[Sweep] metadata written: " << mdPath << "\n";
+        } else {
+            std::cerr << "[Sweep] failed to open metadata file: " << mdPath << "\n";
+        }
+        // Restore original state.
+        setUseHybrid(hybridSweepSavedUseHybrid);
+        setHybridUseVarianceMerge(hybridSweepSavedUseVarMerge);
+        setHybridUseMaxComp(hybridSweepSavedUseMax);
+        setHybridBlendWeight(hybridSweepSavedBlendWeight);
+        raymarchRenderMode = hybridSweepSavedRenderMode;
+        hybridSweepState = HybridSweepState::Done;
+        std::cout << "[Sweep] DONE. ";
+        if (hybridSweepQuitOnDone) std::cout << "Exiting.\n";
+        else std::cout << "Continuing.\n";
+        break;
+    }
+    case HybridSweepState::Done:
+    case HybridSweepState::Idle:
+        break;
+    }
+}
+
+// =============================================================================
 // Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md)
 // =============================================================================
 
@@ -3124,19 +3382,25 @@ void Demo3D::hybridEnsureAccumAllocated(int viewportW, int viewportH) {
     if (hybridAccumTexture != 0 &&
         hybridAccumWidth == targetW && hybridAccumHeight == targetH) return;
 
-    if (hybridAccumTexture != 0) glDeleteTextures(1, &hybridAccumTexture);
-    glGenTextures(1, &hybridAccumTexture);
-    glBindTexture(GL_TEXTURE_2D, hybridAccumTexture);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, targetW, targetH);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    auto allocOne = [&](GLuint& tex, const char* name) {
+        if (tex != 0) glDeleteTextures(1, &tex);
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, targetW, targetH);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        (void)name;
+    };
+    allocOne(hybridAccumTexture,    "accum");
+    allocOne(hybridGBufferTexture,  "gbuffer");
+    allocOne(hybridFilteredTexture, "filtered");
     hybridAccumWidth  = targetW;
     hybridAccumHeight = targetH;
     hybridDirty = true;
-    std::cout << "[Hybrid] accumulator allocated " << targetW << "x" << targetH << "\n";
+    std::cout << "[Hybrid] accumulator+gbuffer+filtered allocated " << targetW << "x" << targetH << "\n";
 }
 
 void Demo3D::hybridDispatchCorrection() {
@@ -3162,9 +3426,14 @@ void Demo3D::hybridDispatchCorrection() {
 
     if (hybridDirty) {
         std::vector<float> zeros(hybridAccumWidth * hybridAccumHeight * 4, 0.0f);
-        glBindTexture(GL_TEXTURE_2D, hybridAccumTexture);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, hybridAccumWidth, hybridAccumHeight,
-                        GL_RGBA, GL_FLOAT, zeros.data());
+        auto clearOne = [&](GLuint tex) {
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, hybridAccumWidth, hybridAccumHeight,
+                            GL_RGBA, GL_FLOAT, zeros.data());
+        };
+        clearOne(hybridAccumTexture);
+        clearOne(hybridGBufferTexture);
+        clearOne(hybridFilteredTexture);
         glBindTexture(GL_TEXTURE_2D, 0);
         hybridSampleCount = 0;
         hybridDirty = false;
@@ -3224,7 +3493,8 @@ void Demo3D::hybridDispatchCorrection() {
     glUniform1ui(glGetUniformLocation(prog, "uHybridFrameSeed"), hybridFrameSeed);
     glUniform1i(glGetUniformLocation(prog, "uHybridSppBefore"), hybridSampleCount);
 
-    glBindImageTexture(0, hybridAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+    glBindImageTexture(0, hybridAccumTexture,   0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+    glBindImageTexture(1, hybridGBufferTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 
     int groupsX = (hybridAccumWidth  + 7) / 8;
     int groupsY = (hybridAccumHeight + 7) / 8;
@@ -3235,6 +3505,38 @@ void Demo3D::hybridDispatchCorrection() {
 
     hybridSampleCount += hybridRaysPerFrame;
     hybridFrameSeed++;
+
+    // v1.2: bilateral blur pass on the accumulator. Writes hybridFilteredTexture which
+    // raymarch.frag samples for the inverse-variance merge with cascade. Reads accum+gbuffer
+    // via SAMPLER bindings (not image), so we need both textures to be fully written first
+    // (memory barrier above handles that).
+    auto itBlur = shaders.find("hybrid_blur.comp");
+    if (itBlur != shaders.end()) {
+        GLuint blurProg = itBlur->second;
+        glUseProgram(blurProg);
+        // CRITICAL: use HIGH texture units (8, 9) instead of 0/1 because raymarchPass binds
+        // 3D textures (uSDF, uRadiance) at units 0/1. If we bind 2D textures here at 0/1
+        // and the driver keeps both targets active, sampling uSDF as sampler3D may return
+        // black on the next draw (driver-dependent multi-target conflict). Discovered via
+        // Phase 8 bisect — all hybrid screenshots were black because uSDF was incomplete.
+        glActiveTexture(GL_TEXTURE8); glBindTexture(GL_TEXTURE_2D, hybridAccumTexture);
+        glUniform1i(glGetUniformLocation(blurProg, "uHybridAccum"), 8);
+        glActiveTexture(GL_TEXTURE9); glBindTexture(GL_TEXTURE_2D, hybridGBufferTexture);
+        glUniform1i(glGetUniformLocation(blurProg, "uHybridGBuffer"), 9);
+        glUniform1i(glGetUniformLocation(blurProg, "uHybridBlurRadius"), hybridBlurRadius);
+        glUniform1f(glGetUniformLocation(blurProg, "uHybridBlurDepthSigma"), hybridBlurDepthSigma);
+        glUniform1f(glGetUniformLocation(blurProg, "uHybridBlurNormalSigma"), hybridBlurNormalSigma);
+        glUniform2f(glGetUniformLocation(blurProg, "uHybridAccumSize"),
+                    float(hybridAccumWidth), float(hybridAccumHeight));
+        glBindImageTexture(0, hybridFilteredTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "hybrid_blur");
+        glDispatchCompute(groupsX, groupsY, 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        glPopDebugGroup();
+        // Reset active unit back to TEXTURE0 (raymarchPass will re-glActiveTexture, but
+        // belt-and-suspenders).
+        glActiveTexture(GL_TEXTURE0);
+    }
 }
 
 void Demo3D::renderDebugVisualization() {
@@ -4584,6 +4886,9 @@ void Demo3D::renderSettingsPanel() {
         ImGui::Text("  SDF       %.2f ms", sdfTimeMs);
         ImGui::Text("  Cascade   %.2f ms (%d levels)", cascadeTimeMs, cascadeCount);
         ImGui::Text("  Raymarch  %.2f ms", raymarchTimeMs);
+        if (useHybrid) {
+            ImGui::Text("  Hybrid    %.2f ms (GPU, correction+blur, EMA)", hybridCorrectionMs);
+        }
         ImGui::Separator();
         ImGui::Text("  Frame     %.2f ms", frameTimeMs);
         ImGui::Unindent();
@@ -4887,14 +5192,49 @@ void Demo3D::renderCascadePanel() {
         if (useHybrid) {
             ImGui::SameLine();
             ImGui::TextDisabled("(samples=%d)", hybridSampleCount);
+
+            // v1.2: composition mode selector — variance merge is the new default.
+            const char* compModes[] = { "Inverse-variance merge (cooperative)",
+                                        "Mix (blend weight)",
+                                        "Max(correction, cascade)" };
+            int compMode = hybridUseVarianceMerge ? 0 : (hybridUseMaxComp ? 2 : 1);
+            if (ImGui::Combo("Composition##hybridcomp", &compMode, compModes, 3)) {
+                setHybridUseVarianceMerge(compMode == 0);
+                setHybridUseMaxComp(compMode == 2);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Variance merge (default, v1.2): both signals contribute, weighted by\n"
+                                  "  1/variance. Noisy correction → cascade dominates; converged → it dominates.\n"
+                                  "  Cooperative: each helps the other. Tune via 'Cascade variance' slider.\n"
+                                  "Mix: linear interp by 'Blend weight' (legacy).\n"
+                                  "Max: per-pixel winner-takes-all (legacy; can double-count).");
+
+            ImGui::BeginDisabled(!hybridUseVarianceMerge);
+            float cv = hybridCascadeVariance;
+            if (ImGui::SliderFloat("Cascade variance prior##hybridcv", &cv, 1e-5f, 0.1f, "%.5f",
+                                   ImGuiSliderFlags_Logarithmic))
+                setHybridCascadeVariance(cv);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("RELATIVE prior (CoV^2) on cascade signal noise. Lower → cascade\n"
+                                  "gets more weight in the merge (more multi-bounce visible). Higher →\n"
+                                  "correction dominates.\n"
+                                  "Default 0.001 ≈ cascade ~3%% coefficient of variation.\n"
+                                  "Tune up for Sponza-like multi-bounce-heavy scenes.");
+            int cs = hybridConfidenceSamples;
+            if (ImGui::SliderInt("Confidence samples##hybridcs", &cs, 1, 32))
+                setHybridConfidenceSamples(cs);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Samples required before correction reaches full weight (J9 fix).\n"
+                                  "Lower → faster transition from cascade-only to merged (camera-move\n"
+                                  "flicker risk). Higher → smoother but slower convergence after reset.\n"
+                                  "Default 8 ≈ ~1 second at 60 fps with 1 ray/frame.");
+            ImGui::EndDisabled();
+
+            ImGui::BeginDisabled(hybridUseVarianceMerge || hybridUseMaxComp);
             float bw = hybridBlendWeight;
             if (ImGui::SliderFloat("Hybrid blend weight", &bw, 0.0f, 1.0f, "%.2f"))
                 setHybridBlendWeight(bw);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-                ImGui::SetTooltip("Composition: mix(correction, cascade, max(0, 1-w)).\n"
-                                  "1.0 (default) = pure correction (no double-count).\n"
-                                  "0.0 = pure cascade (correction unused — same as OFF).\n"
-                                  "Changing resets accumulator.");
+            ImGui::EndDisabled();
             float ema = hybridEMAAlpha;
             if (ImGui::SliderFloat("Hybrid EMA alpha", &ema, 0.01f, 1.0f, "%.2f"))
                 setHybridEMAAlpha(ema);
@@ -4910,7 +5250,21 @@ void Demo3D::renderCascadePanel() {
                 ImGui::SetTooltip("Bounce rays per pixel per dispatch.\n"
                                   "Higher = faster convergence but linearly more cost.\n"
                                   "Changing resets accumulator.");
+            int br = hybridBlurRadius;
+            if (ImGui::SliderInt("Bilateral radius##hybridbr", &br, 0, 6))
+                setHybridBlurRadius(br);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Radius of the half-res bilateral blur on the hybrid accumulator.\n"
+                                  "0 = no blur (raw stochastic noise). 3 (default) = 7x7 kernel.");
+            float ds = hybridBlurDepthSigma;
+            if (ImGui::SliderFloat("Bilateral depth sigma##hybridds", &ds, 0.005f, 0.5f, "%.3f"))
+                setHybridBlurDepthSigma(ds);
+            float ns = hybridBlurNormalSigma;
+            if (ImGui::SliderFloat("Bilateral normal sigma##hybridns", &ns, 0.05f, 1.0f, "%.2f"))
+                setHybridBlurNormalSigma(ns);
             if (ImGui::Button("Reset accumulator##hybrid")) resetHybridAccumulator();
+            ImGui::TextDisabled("v1.2: PT correction is bilateral-blurred (depth+normal aware)\n"
+                                "in its own pass, then variance-merged with cascade in raymarch.");
         }
     }
 
