@@ -705,6 +705,20 @@ public:
         hybridRaysPerFrame = v < 1 ? 1 : v;
         resetHybridAccumulator();
     }
+    void setHybridUseMaxComp(bool v) {
+        // Composition switch only — no accumulator reset needed; the cached correction
+        // values are still valid, only the per-pixel combination changes.
+        hybridUseMaxComp = v;
+    }
+    // v1.2 cooperative variance merge controls
+    void setHybridUseVarianceMerge(bool v) { hybridUseVarianceMerge = v; }
+    void setHybridCascadeVariance(float v) { hybridCascadeVariance = v < 1e-6f ? 1e-6f : v; }
+    void setHybridConfidenceSamples(int v) { hybridConfidenceSamples = v < 1 ? 1 : v; }
+    // Phase 8 A/B sweep entry point. Triggered by --hybrid-ab-sweep=<dir>; see demo3d.cpp impl.
+    void startHybridSweepPublic(const std::string& outDir);
+    void setHybridBlurRadius(int v)        { hybridBlurRadius = v < 0 ? 0 : (v > 6 ? 6 : v); }
+    void setHybridBlurDepthSigma(float v)  { hybridBlurDepthSigma = v < 1e-4f ? 1e-4f : v; }
+    void setHybridBlurNormalSigma(float v) { hybridBlurNormalSigma = v < 1e-4f ? 1e-4f : v; }
 
     // Phase 7: PT reference setters + invalidation
     void resetPTAccumulator() { ptDirty = true; ptSampleCount = 0; }
@@ -842,6 +856,50 @@ private:
     std::vector<std::string> seqPaths;            // collected frame paths
 
     void launchSequenceAnalysis();
+
+    // =============================================================================
+    // Phase 8 — Hybrid v1.2 validation A/B sweep (doc/7/hybrid_v12_validation_phase8_plan.md)
+    // State machine that flips through 5 configurations (cascade-only, hybrid mix, hybrid max,
+    // hybrid variance, PT reference) and dumps PNGs + metadata to disk for offline analysis.
+    // Driven by --hybrid-ab-sweep=<dir> CLI flag.
+    // =============================================================================
+    enum class HybridSweepState {
+        Idle,
+        Warmup,                 // wait for warmup frames
+        ConfigCascadeOnly,
+        StabilizeCascadeOnly,
+        CaptureCascadeOnly,
+        ConfigHybridMix,
+        StabilizeHybridMix,
+        CaptureHybridMix,
+        ConfigHybridMax,
+        StabilizeHybridMax,
+        CaptureHybridMax,
+        ConfigHybridVariance,
+        StabilizeHybridVariance,
+        CaptureHybridVariance,
+        ConfigPtRef,
+        StabilizePtRef,
+        CapturePtRef,
+        WriteMetadata,
+        Done
+    };
+    HybridSweepState hybridSweepState        = HybridSweepState::Idle;
+    std::string      hybridSweepOutDir;        // base dir for outputs
+    int              hybridSweepFrameCounter  = 0;
+    int              hybridSweepStabilizeFrames = 90;  // post-config wait for accumulator convergence
+    int              hybridSweepWarmupFrames  = 60;    // pre-sweep settle
+    std::string      hybridSweepPaths[5];      // [0]=cascade [1]=mix [2]=max [3]=variance [4]=pt
+    bool             hybridSweepQuitOnDone    = true;  // exit process after Done
+    // Saved state for restore after sweep (idempotent if Idle).
+    bool             hybridSweepSavedUseHybrid       = false;
+    bool             hybridSweepSavedUseVarMerge     = false;
+    bool             hybridSweepSavedUseMax          = false;
+    float            hybridSweepSavedBlendWeight     = 1.0f;
+    int              hybridSweepSavedRenderMode      = 0;
+
+    void startHybridSweep(const std::string& outDir);
+    void tickHybridSweep();
 
     // =============================================================================
     // Scene State
@@ -1292,17 +1350,27 @@ private:
     // ========================================================================
     // Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md)
     // ========================================================================
-    GLuint   hybridAccumTexture;       // RGBA32F, half-viewport
+    GLuint   hybridAccumTexture;       // RGBA32F, half-viewport (.rgb radiance, .a E[L^2])
+    GLuint   hybridGBufferTexture;     // RGBA32F, half-viewport (.rgb normal*0.5+0.5, .a depth)
+    GLuint   hybridFilteredTexture;    // RGBA32F, half-viewport — bilateral-blurred accum
     int      hybridAccumWidth, hybridAccumHeight;
     int      hybridSampleCount;        // total rays-per-pixel accumulated
     bool     useHybrid;                // false default (opt-in)
     float    hybridBlendWeight;        // 1.0 = pure correction (default per critic-05 H1)
+    bool     hybridUseMaxComp;         // legacy: per-pixel max(correction, cascade)
     int      hybridRaysPerFrame;       // default 1 (stochastic, EMA averages)
     float    hybridEMAAlpha;           // default 0.1 (~10 frames to converge)
     bool     hybridDirty;              // reset accumulator next dispatch
     uint32_t hybridFrameSeed;          // RNG seed input
     glm::vec3 hybridLastCamPos;
     glm::vec3 hybridLastCamTarget;
+    // 2026-05-19 v1.2 cooperative inverse-variance merge.
+    bool     hybridUseVarianceMerge;   // ON = inverse-variance weighted merge with cascade
+    float    hybridCascadeVariance;    // RELATIVE (CoV^2) prior for cascade (default 0.001)
+    int      hybridConfidenceSamples;  // samples for full correction trust (default 8); J9 fix
+    int      hybridBlurRadius;         // bilateral kernel radius on hybridAccum (default 3)
+    float    hybridBlurDepthSigma;     // depth edge stop (default 0.05)
+    float    hybridBlurNormalSigma;    // normal edge stop (default 0.3)
 
     // ========================================================================
     // Phase 7: PT reference (doc/7/pt_reference_plan.md)
@@ -1607,6 +1675,14 @@ private:
     
     /** Last frame raymarching time (ms) */
     double raymarchTimeMs;
+
+    /** Phase 8 — Hybrid GPU timer (EMA-smoothed, GL_TIMESTAMP query). 0 when hybrid OFF.
+     *  hybridCorrectionMs measures hybrid_correction.comp dispatch.
+     *  hybridBlurMs       measures hybrid_blur.comp       dispatch. */
+    double hybridCorrectionMs = 0.0;
+    double hybridBlurMs       = 0.0;
+    GLuint hybridTimerQueries[3] = {0, 0, 0};  // start / between / end
+    bool   hybridTimerInflight   = false;       // true while last frame's query is unresolved
     
     /** Total frame time (ms) */
     double frameTimeMs;

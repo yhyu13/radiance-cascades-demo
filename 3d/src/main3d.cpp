@@ -402,6 +402,31 @@ int main(int argc, char* argv[]) {
             demo->setHybridRaysPerFrame(v);
             std::cout << "[MAIN] --hybrid-rays=" << v
                       << " (rays/pixel/dispatch; default 1)\n";
+        } else if (arg.rfind("--hybrid-max=", 0) == 0) {
+            int v = std::atoi(arg.substr(13).c_str());
+            demo->setHybridUseMaxComp(v != 0);
+            std::cout << "[MAIN] --hybrid-max=" << v
+                      << " (legacy: 1=max(correction, cascade); 0=disable)\n";
+        } else if (arg.rfind("--hybrid-variance-merge=", 0) == 0) {
+            int v = std::atoi(arg.substr(24).c_str());
+            demo->setHybridUseVarianceMerge(v != 0);
+            std::cout << "[MAIN] --hybrid-variance-merge=" << v
+                      << " (1=cooperative inverse-variance merge [default]; 0=use mix/max)\n";
+        } else if (arg.rfind("--hybrid-cascade-var=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(21).c_str()));
+            demo->setHybridCascadeVariance(v);
+            std::cout << "[MAIN] --hybrid-cascade-var=" << v
+                      << " (variance prior for cascade signal; default 0.001)\n";
+        } else if (arg.rfind("--hybrid-blur-radius=", 0) == 0) {
+            int v = std::atoi(arg.substr(21).c_str());
+            demo->setHybridBlurRadius(v);
+            std::cout << "[MAIN] --hybrid-blur-radius=" << v
+                      << " (bilateral kernel radius on hybrid accum; 0=off, 3=default)\n";
+        } else if (arg.rfind("--hybrid-ab-sweep=", 0) == 0) {
+            std::string dir = arg.substr(18);
+            demo->startHybridSweepPublic(dir);
+            std::cout << "[MAIN] --hybrid-ab-sweep=" << dir
+                      << " (Phase 8 A/B validation suite; see doc/7/hybrid_v12_validation_phase8_plan.md)\n";
         } else if (arg.rfind("--phase3-debug=", 0) == 0) {
             int v = std::atoi(arg.substr(15).c_str());
             demo->setPhase3DebugMode(v);

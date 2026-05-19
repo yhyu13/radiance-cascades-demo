@@ -121,10 +121,28 @@ uniform sampler2D uPtDirectAccum;
  *      finalIndirect = mix(correction, cascadeIndirect, max(0, 1 - uHybridBlendWeight))
  *  At w=1 (default): pure correction (no double-count, but loses cascade's bounce-2+).
  *  At w<1: bias toward cascade for bounce-2+ at cost of bounce-1 double-counting. */
+// v1.2 cooperative merge: read the BLURRED accumulator (.rgb = clean radiance, .a = E[L^2]).
+// hybrid_blur.comp produces this from the raw accumulator + half-res GBuffer (normal+depth).
 uniform sampler2D uHybridAccum;
 uniform int       uHybridAccumValid;   // 0 = not bound (treat as cascade-only); 1 = bound
-uniform int       uHybridCorrection;   // 0 = off; 1 = apply blend in mode 0
-uniform float     uHybridBlendWeight;  // 0..1; default 1.0 (pure correction per critic-05 H1)
+uniform int       uHybridCorrection;   // 0 = off; 1 = apply merge in mode 0
+// Legacy mix() and max() modes retained for A/B; default is the variance merge below.
+uniform float     uHybridBlendWeight;  // mix() weight: 0..1; default 1.0
+uniform int       uHybridUseMax;       // legacy max(correction, cascade)
+// 2026-05-19 v1.2 inverse-variance cooperative merge.
+// Self-critic J4 (scale-invariance): variance scales as L^2 (bright pixels have higher
+// absolute noise). Using ABSOLUTE variance biases the merge against bright regions.
+// Fix: RELATIVE variance (coefficient-of-variation squared) → scale-invariant weights.
+//   relVar = var / max(L^2, eps);  weight = 1 / relVar
+// uHybridCascadeVariance is therefore a RELATIVE quantity (CoV^2 for cascade signal).
+//
+// Self-critic J7/J9 (first-frame confidence): with N=1 sample, E[L^2] == L^2 so absolute
+// variance ≈ 0 → wCorr → ∞ → 1-frame flicker on every camera reset. Fix: ramp wCorr from
+// 0 → full over first uHybridConfidenceSamples samples via a confidence multiplier.
+uniform int       uHybridUseVarianceMerge;
+uniform float     uHybridCascadeVariance;  // RELATIVE prior for cascade (CoV^2, default 0.001)
+uniform int       uHybridSampleCount;      // current accumulator sample count (confidence gate)
+uniform int       uHybridConfidenceSamples;// samples required for full correction trust (default 8)
 
 // =============================================================================
 // Texture Bindings
@@ -688,9 +706,38 @@ void main() {
             // Sample at the SCREEN-SPACE pixel UV — the accumulator is screen-aligned, not
             // world-aligned, so we use vUV (already in [0,1]) directly. Bilinear filter.
             if (uHybridCorrection != 0 && uHybridAccumValid != 0) {
-                vec3 correction = texture(uHybridAccum, vUV).rgb;
-                float w = clamp(uHybridBlendWeight, 0.0, 1.0);
-                indirectColor = mix(correction, indirectColor, max(0.0, 1.0 - w));
+                vec4 corrRGBA = texture(uHybridAccum, vUV);   // bilateral-filtered correction
+                vec3 correction = corrRGBA.rgb;
+
+                if (uHybridUseVarianceMerge != 0) {
+                    // v1.2.2 (Phase 8 B2 redesign): sample-count cooperative merge.
+                    // The previous post-blur "variance" estimate was contaminated by spatial
+                    // signal variance (every edge inflated it), making cascade always win.
+                    // Replacement: use sample count as confidence proxy. Both signals always
+                    // contribute; correction's share grows with accumulator samples.
+                    //
+                    //   wCorr = uHybridSampleCount / uHybridConfidenceSamples
+                    //   wCasc = 1.0   (baseline)
+                    //   final = (wCorr*corr + wCasc*casc) / (wCorr + wCasc)
+                    //
+                    // At spp=0:           wCorr=0    → 100% cascade (smooth fallback after reset)
+                    // At spp=confSamples: wCorr=1.0 → 50/50 mix
+                    // At spp=10×conf:     wCorr=10  → ~91% correction, 9% cascade (still keeps
+                    //                                  cascade's smooth structure visibly)
+                    // This is COOPERATIVE: cascade contributes its smooth color-bleed +
+                    // multi-bounce; correction adds PT-quality bounce-1 detail. Neither
+                    // dominates entirely.
+                    float wCorr = float(uHybridSampleCount)
+                                  / max(float(uHybridConfidenceSamples), 1.0);
+                    float wCasc = 1.0;
+                    indirectColor = (wCorr * correction + wCasc * indirectColor)
+                                  / (wCorr + wCasc);
+                } else if (uHybridUseMax != 0) {
+                    indirectColor = max(correction, indirectColor);
+                } else {
+                    float w = clamp(uHybridBlendWeight, 0.0, 1.0);
+                    indirectColor = mix(correction, indirectColor, max(0.0, 1.0 - w));
+                }
             }
 
             // Step 11 (codex 07 F3): GI heatmaps. Inserted AFTER the main-path
