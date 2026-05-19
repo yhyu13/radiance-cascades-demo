@@ -306,6 +306,10 @@ public:
     void ptDispatchReference();
     void ptEnsureAccumAllocated(int viewportW, int viewportH);
 
+    // Hybrid correction dispatch + helpers (doc/7/hybrid_rc_pixel_correction_plan.md).
+    void hybridDispatchCorrection();
+    void hybridEnsureAccumAllocated(int viewportW, int viewportH);
+
     /**
      * @brief Debug visualization of intermediate buffers
      * 
@@ -498,9 +502,9 @@ public:
     // Range now covers modes 0-16 (14 LeakSuspect, 15 TemporalOscillation, 16 PT-Reference).
     // No clamp; preserves existing shader fallthrough on out-of-range.
     void setRenderMode(int m) {
-        if (m < 0 || m > 18) {
+        if (m < 0 || m > 19) {
             std::cerr << "[Demo3D] WARN: render mode " << m
-                      << " out of range [0,18]; rendering as default\n";
+                      << " out of range [0,19]; rendering as default\n";
         }
         raymarchRenderMode = m;
     }
@@ -675,6 +679,31 @@ public:
         renderFrameIndex = 0;
         historyNeedsSeed = true;
         std::cout << "[Demo3D] multiBounceGain=" << v << "\n";
+    }
+
+    // Hybrid correction setters + invalidation (doc/7)
+    void resetHybridAccumulator() { hybridDirty = true; hybridSampleCount = 0; }
+    void setUseHybrid(bool v) {
+        if (v == useHybrid) return;
+        useHybrid = v;
+        resetHybridAccumulator();
+        std::cout << "[Hybrid] " << (v ? "ON" : "OFF")
+                  << " (display-path per-pixel correction; reset accumulator)\n";
+    }
+    void setHybridBlendWeight(float v) {
+        if (v == hybridBlendWeight) return;
+        hybridBlendWeight = v;
+        resetHybridAccumulator();
+    }
+    void setHybridEMAAlpha(float v) {
+        if (v == hybridEMAAlpha) return;
+        hybridEMAAlpha = v;
+        // No accumulator reset — EMA change just takes effect on subsequent samples.
+    }
+    void setHybridRaysPerFrame(int v) {
+        if (v == hybridRaysPerFrame) return;
+        hybridRaysPerFrame = v < 1 ? 1 : v;
+        resetHybridAccumulator();
     }
 
     // Phase 7: PT reference setters + invalidation
@@ -1261,9 +1290,27 @@ private:
     float deltaHeatmapDivisor;
 
     // ========================================================================
+    // Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md)
+    // ========================================================================
+    GLuint   hybridAccumTexture;       // RGBA32F, half-viewport
+    int      hybridAccumWidth, hybridAccumHeight;
+    int      hybridSampleCount;        // total rays-per-pixel accumulated
+    bool     useHybrid;                // false default (opt-in)
+    float    hybridBlendWeight;        // 1.0 = pure correction (default per critic-05 H1)
+    int      hybridRaysPerFrame;       // default 1 (stochastic, EMA averages)
+    float    hybridEMAAlpha;           // default 0.1 (~10 frames to converge)
+    bool     hybridDirty;              // reset accumulator next dispatch
+    uint32_t hybridFrameSeed;          // RNG seed input
+    glm::vec3 hybridLastCamPos;
+    glm::vec3 hybridLastCamTarget;
+
+    // ========================================================================
     // Phase 7: PT reference (doc/7/pt_reference_plan.md)
     // ========================================================================
-    GLuint   ptAccumTexture;       // RGBA32F, half-viewport size
+    GLuint   ptAccumTexture;       // RGBA32F, half-viewport size — FULL PT (all bounces)
+    // 2026-05-19 Mode 19: parallel accumulator for DIRECT-ONLY PT (max-bounces=1).
+    // PT_GI = ptAccumTexture - ptDirectAccumTexture per pixel.
+    GLuint   ptDirectAccumTexture;
     int      ptAccumWidth, ptAccumHeight;
     int      ptSampleCount;        // total rays-per-pixel accumulated since reset
     int      ptRaysPerFrame;       // dispatched per frame (default 1 for interactive)

@@ -197,8 +197,20 @@ Demo3D::Demo3D()
     // User can boost to 1.5 for ~6% gain (passes the ≥5% v0.5 gate) or 2.0 for ~10%.
     , multiBounceGain(1.0f)
     , deltaHeatmapDivisor(0.2f)   // mode 18 sensitivity for cornell-scale scenes
+    // Hybrid correction (doc/7) defaults
+    , hybridAccumTexture(0)
+    , hybridAccumWidth(0), hybridAccumHeight(0)
+    , hybridSampleCount(0)
+    , useHybrid(false)             // opt-in
+    , hybridBlendWeight(1.0f)      // pure correction (no double-count per critic-05 H1)
+    , hybridRaysPerFrame(1)        // stochastic; EMA averages
+    , hybridEMAAlpha(0.1f)         // ~10 frames to converge
+    , hybridDirty(true)
+    , hybridFrameSeed(0)
+    , hybridLastCamPos(0.0f), hybridLastCamTarget(0.0f)
     // Phase 7: PT reference
     , ptAccumTexture(0)
+    , ptDirectAccumTexture(0)
     , ptAccumWidth(0), ptAccumHeight(0)
     , ptSampleCount(0)
     , ptRaysPerFrame(1)
@@ -371,6 +383,9 @@ Demo3D::Demo3D()
     ok &= loadShader("gi_blur.frag");           // Phase 9c: Bilateral GI blur (CRITICAL)
     // Phase 7: PT reference (doc/7). Critical for mode 16; harmless if not used.
     ok &= loadShader("pt_reference.comp");
+    // Hybrid correction (doc/7/hybrid_rc_pixel_correction_plan.md). Critical for the
+    // hybrid feature; harmless if useHybrid stays false.
+    ok &= loadShader("hybrid_correction.comp");
     criticalShaderLoadOk = ok;
     
     // Step 5: Initialize cascades
@@ -1156,11 +1171,23 @@ void Demo3D::render() {
         }
     }
 
-    // Phase 7 (PT reference, doc/7): dispatch PT compute shader if mode 16 or 18 is active.
-    // Mode 16 displays PT directly; Mode 18 (2026-05-19) compares cascade vs PT per-pixel.
+    // Phase 7 (PT reference, doc/7): dispatch PT compute shader if mode 16/18/19 active.
+    //   Mode 16 displays PT directly
+    //   Mode 18 (2026-05-19) compares cascade-vs-PT per-pixel
+    //   Mode 19 (2026-05-19) compares cascade_GI-vs-PT_GI per-pixel (requires
+    //     two PT dispatches: full + direct-only, subtract to isolate GI)
     // Runs BEFORE raymarchPass so the texture is up-to-date for display.
-    if (raymarchRenderMode == 16 || raymarchRenderMode == 18) {
+    if (raymarchRenderMode == 16 || raymarchRenderMode == 18 || raymarchRenderMode == 19) {
         ptDispatchReference();
+    }
+
+    // 2026-05-19 Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md).
+    // Dispatch every frame when useHybrid is ON so the per-pixel correction accumulator
+    // stays current. EMA-blends one sample per pixel into hybridAccumTexture; cost ~10-20 ms
+    // at 720p with half-res. Camera-move + dirty-flag invalidation resets the accumulator
+    // inside the dispatcher (mirrors PT pattern).
+    if (useHybrid) {
+        hybridDispatchCorrection();
     }
 
     // Pass 4: Raymarching (+ optional bilateral GI blur)
@@ -2769,18 +2796,34 @@ void Demo3D::raymarchPass() {
     }
     glUniform1i(glGetUniformLocation(prog, "uUseDirectionalGI"), (useDirectionalGI && atlasAvailable) ? 1 : 0);
 
-    // Phase 7 (PT reference): bind ptAccumTexture for mode 16. Use TEXTURE4 to avoid
-    // conflicts with cascade samplers (0/1/2/3). Pass uPtAccumValid=0 if no texture
-    // allocated yet (e.g., before first mode-16 dispatch) so the shader returns black
-    // safely instead of sampling unbound state.
+    // Phase 7 (PT reference): bind ptAccumTexture for mode 16/18/19. Use TEXTURE4
+    // for full PT, TEXTURE6 for direct-only PT (Mode 19's PT_GI = full - direct).
+    // Pass uPtAccumValid=0 if no texture allocated yet so the shader returns black.
     if (ptAccumTexture != 0) {
         glActiveTexture(GL_TEXTURE4);
         glBindTexture(GL_TEXTURE_2D, ptAccumTexture);
         glUniform1i(glGetUniformLocation(prog, "uPtAccum"), 4);
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, ptDirectAccumTexture);
+        glUniform1i(glGetUniformLocation(prog, "uPtDirectAccum"), 6);
         glUniform1i(glGetUniformLocation(prog, "uPtAccumValid"), 1);
     } else {
         glUniform1i(glGetUniformLocation(prog, "uPtAccumValid"), 0);
     }
+
+    // Hybrid RC correction (doc/7). TEXTURE7 is the half-res hybridAccumTexture.
+    // uHybridCorrection gates the in-shader blend; uHybridAccumValid guards against
+    // sampling an unallocated texture (defensive — should match useHybrid).
+    if (hybridAccumTexture != 0) {
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_2D, hybridAccumTexture);
+        glUniform1i(glGetUniformLocation(prog, "uHybridAccum"), 7);
+        glUniform1i(glGetUniformLocation(prog, "uHybridAccumValid"), 1);
+    } else {
+        glUniform1i(glGetUniformLocation(prog, "uHybridAccumValid"), 0);
+    }
+    glUniform1i(glGetUniformLocation(prog, "uHybridCorrection"), useHybrid ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uHybridBlendWeight"), hybridBlendWeight);
 
     // GI blur: redirect mode-0/3/6 render to 3-attachment FBO (direct / gbuffer / indirect).
     // Modes 3 and 6 are pure-indirect views so direct=black and blur applies to full output.
@@ -2928,19 +2971,25 @@ void Demo3D::ptEnsureAccumAllocated(int viewportW, int viewportH) {
     if (ptAccumTexture != 0 && ptAccumWidth == targetW && ptAccumHeight == targetH)
         return;
 
-    if (ptAccumTexture != 0) glDeleteTextures(1, &ptAccumTexture);
-    glGenTextures(1, &ptAccumTexture);
-    glBindTexture(GL_TEXTURE_2D, ptAccumTexture);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, targetW, targetH);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // Helper lambda to allocate one RGBA32F texture.
+    auto alloc = [&](GLuint& tex) {
+        if (tex != 0) glDeleteTextures(1, &tex);
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, targetW, targetH);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    };
+
+    alloc(ptAccumTexture);
+    alloc(ptDirectAccumTexture);  // Mode 19: parallel direct-only accumulator
     ptAccumWidth  = targetW;
     ptAccumHeight = targetH;
     ptDirty = true;  // freshly-allocated texture has garbage; must clear before accumulate
-    std::cout << "[Phase7] PT accumulator allocated " << targetW << "x" << targetH << "\n";
+    std::cout << "[Phase7] PT accumulators (full + direct) allocated " << targetW << "x" << targetH << "\n";
 }
 
 void Demo3D::ptDispatchReference() {
@@ -2966,11 +3015,13 @@ void Demo3D::ptDispatchReference() {
     }
 
     if (ptDirty) {
-        // Clear accumulator to zero.
+        // Clear BOTH accumulators to zero (full + direct-only).
         std::vector<float> zeros(ptAccumWidth * ptAccumHeight * 4, 0.0f);
-        glBindTexture(GL_TEXTURE_2D, ptAccumTexture);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ptAccumWidth, ptAccumHeight,
-                        GL_RGBA, GL_FLOAT, zeros.data());
+        for (GLuint t : {ptAccumTexture, ptDirectAccumTexture}) {
+            glBindTexture(GL_TEXTURE_2D, t);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ptAccumWidth, ptAccumHeight,
+                            GL_RGBA, GL_FLOAT, zeros.data());
+        }
         glBindTexture(GL_TEXTURE_2D, 0);
         ptSampleCount = 0;
         ptDirty = false;
@@ -3026,25 +3077,164 @@ void Demo3D::ptDispatchReference() {
     glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
     glUniform3fv(glGetUniformLocation(prog, "uSkyColor"), 1, &skyColor[0]);
 
-    // PT controls
+    // PT controls (shared across both dispatches)
     glUniform1i(glGetUniformLocation(prog, "uPtRaysPerFrame"), ptRaysPerFrame);
-    glUniform1i(glGetUniformLocation(prog, "uPtMaxBounces"),   ptMaxBounces);
     glUniform1f(glGetUniformLocation(prog, "uPtRussianRoulette"), ptRussianRoulette);
     glUniform1i(glGetUniformLocation(prog, "uPtCascadeMatch"), ptCascadeMatch);
     glUniform1ui(glGetUniformLocation(prog, "uFrameIndex"), ptFrameIndex);
     glUniform1i(glGetUniformLocation(prog, "uSppBefore"), ptSampleCount);
 
-    glBindImageTexture(0, ptAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-
     int groupsX = (ptAccumWidth  + 7) / 8;
     int groupsY = (ptAccumHeight + 7) / 8;
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "pt_reference");
+    GLint maxBouncesLoc = glGetUniformLocation(prog, "uPtMaxBounces");
+
+    // Dispatch 1: FULL PT (uPtMaxBounces = ptMaxBounces). Writes ptAccumTexture.
+    glUniform1i(maxBouncesLoc, ptMaxBounces);
+    glBindImageTexture(0, ptAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "pt_reference_full");
     glDispatchCompute(groupsX, groupsY, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
     glPopDebugGroup();
 
+    // Dispatch 2: DIRECT-ONLY PT (uPtMaxBounces = 1). Writes ptDirectAccumTexture.
+    // Mode 19 computes PT_GI = ptAccumTexture - ptDirectAccumTexture per pixel.
+    // Skips this dispatch when only mode 16 is active (mode 16 doesn't need direct-only).
+    if (raymarchRenderMode == 18 || raymarchRenderMode == 19) {
+        glUniform1i(maxBouncesLoc, 1);
+        glBindImageTexture(0, ptDirectAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "pt_reference_direct");
+        glDispatchCompute(groupsX, groupsY, 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        glPopDebugGroup();
+    }
+
     ptSampleCount += ptRaysPerFrame;
     ptFrameIndex++;
+}
+
+// =============================================================================
+// Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md)
+// =============================================================================
+
+void Demo3D::hybridEnsureAccumAllocated(int viewportW, int viewportH) {
+    int targetW = viewportW / 2;
+    int targetH = viewportH / 2;
+    if (targetW < 1) targetW = 1;
+    if (targetH < 1) targetH = 1;
+    if (hybridAccumTexture != 0 &&
+        hybridAccumWidth == targetW && hybridAccumHeight == targetH) return;
+
+    if (hybridAccumTexture != 0) glDeleteTextures(1, &hybridAccumTexture);
+    glGenTextures(1, &hybridAccumTexture);
+    glBindTexture(GL_TEXTURE_2D, hybridAccumTexture);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, targetW, targetH);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    hybridAccumWidth  = targetW;
+    hybridAccumHeight = targetH;
+    hybridDirty = true;
+    std::cout << "[Hybrid] accumulator allocated " << targetW << "x" << targetH << "\n";
+}
+
+void Demo3D::hybridDispatchCorrection() {
+    auto it = shaders.find("hybrid_correction.comp");
+    if (it == shaders.end()) return;
+
+    // Viewport from same source raymarch.frag sees (mirror PT pattern).
+    GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+    int vw = vp[2], vh = vp[3];
+    if (vw <= 0 || vh <= 0) return;
+    hybridEnsureAccumAllocated(vw, vh);
+
+    // Camera-move invalidation (threshold-based; same pattern as PT).
+    const Camera3D& cam = getRaylibCamera();
+    glm::vec3 camPos   (cam.position.x, cam.position.y, cam.position.z);
+    glm::vec3 camTarget(cam.target.x,   cam.target.y,   cam.target.z);
+    if (glm::length(camPos - hybridLastCamPos) > 1e-4f ||
+        glm::length(camTarget - hybridLastCamTarget) > 1e-4f) {
+        resetHybridAccumulator();
+        hybridLastCamPos = camPos;
+        hybridLastCamTarget = camTarget;
+    }
+
+    if (hybridDirty) {
+        std::vector<float> zeros(hybridAccumWidth * hybridAccumHeight * 4, 0.0f);
+        glBindTexture(GL_TEXTURE_2D, hybridAccumTexture);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, hybridAccumWidth, hybridAccumHeight,
+                        GL_RGBA, GL_FLOAT, zeros.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
+        hybridSampleCount = 0;
+        hybridDirty = false;
+    }
+
+    GLuint prog = it->second;
+    glUseProgram(prog);
+
+    // Camera basis (same derivation as PT — see ptDispatchReference §5.1b).
+    glm::vec3 worldUp(cam.up.x, cam.up.y, cam.up.z);
+    glm::vec3 forward = glm::normalize(camTarget - camPos);
+    glm::vec3 right   = glm::normalize(glm::cross(forward, worldUp));
+    glm::vec3 up      = glm::cross(right, forward);
+    glm::mat3 basis;
+    basis[0] = right;
+    basis[1] = up;
+    basis[2] = -forward;
+    float tanHalfFovY = std::tan(glm::radians(cam.fovy * 0.5f));
+
+    glUniform3fv(glGetUniformLocation(prog, "uCamPos"), 1, &camPos[0]);
+    glUniformMatrix3fv(glGetUniformLocation(prog, "uCamBasis"), 1, GL_FALSE, &basis[0][0]);
+    glUniform1f(glGetUniformLocation(prog, "uTanHalfFovY"), tanHalfFovY);
+    glUniform2f(glGetUniformLocation(prog, "uViewportSize"),
+                float(hybridAccumWidth), float(hybridAccumHeight));
+
+    // Scene uniforms
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_3D, sdfTexture);
+    glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_3D, albedoTexture);
+    glUniform1i(glGetUniformLocation(prog, "uAlbedo"), 1);
+    glUniform3fv(glGetUniformLocation(prog, "uGridOrigin"), 1, &volumeOrigin[0]);
+    glUniform3fv(glGetUniformLocation(prog, "uGridSize"),   1, &volumeSize[0]);
+
+    glm::vec3 effectiveLightPos = lightPosition;
+    if (useDirectionalLight) {
+        glm::vec3 volCenter = volumeOrigin + 0.5f * volumeSize;
+        effectiveLightPos = volCenter - glm::normalize(lightDirection) * 100.0f;
+    }
+    glUniform3fv(glGetUniformLocation(prog, "uLightPos"), 1, &effectiveLightPos[0]);
+    glm::vec3 baseLightColor(1.0f, 0.95f, 0.85f);
+    glm::vec3 scaledLightColor = baseLightColor * lightIntensity;
+    glUniform3fv(glGetUniformLocation(prog, "uLightColor"), 1, &scaledLightColor[0]);
+    glUniform3fv(glGetUniformLocation(prog, "uLightDir"), 1, &lightDirection[0]);
+    glUniform1i(glGetUniformLocation(prog, "uUseDirectionalLight"), useDirectionalLight ? 1 : 0);
+    glm::vec3 volCenter = volumeOrigin + 0.5f * volumeSize;
+    glUniform3fv(glGetUniformLocation(prog, "uVolCenter"), 1, &volCenter[0]);
+    glUniform1i(glGetUniformLocation(prog, "uUseSoftShadowBake"), useSoftShadowBake ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uSoftShadowK"), softShadowK);
+    glUniform1f(glGetUniformLocation(prog, "uAmbientBakeStrength"), ambientBakeStrength);
+    glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
+    glUniform3fv(glGetUniformLocation(prog, "uSkyColor"), 1, &skyColor[0]);
+
+    // Hybrid controls
+    glUniform1i(glGetUniformLocation(prog, "uHybridRaysPerFrame"), hybridRaysPerFrame);
+    glUniform1f(glGetUniformLocation(prog, "uHybridMaxDist"), glm::length(volumeSize));
+    glUniform1f(glGetUniformLocation(prog, "uHybridEMAAlpha"), hybridEMAAlpha);
+    glUniform1ui(glGetUniformLocation(prog, "uHybridFrameSeed"), hybridFrameSeed);
+    glUniform1i(glGetUniformLocation(prog, "uHybridSppBefore"), hybridSampleCount);
+
+    glBindImageTexture(0, hybridAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+
+    int groupsX = (hybridAccumWidth  + 7) / 8;
+    int groupsY = (hybridAccumHeight + 7) / 8;
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "hybrid_correction");
+    glDispatchCompute(groupsX, groupsY, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+    glPopDebugGroup();
+
+    hybridSampleCount += hybridRaysPerFrame;
+    hybridFrameSeed++;
 }
 
 void Demo3D::renderDebugVisualization() {
@@ -4148,10 +4338,11 @@ void Demo3D::renderSettingsPanel() {
         "15 TemporalOscillation (atlas α stability)",
         "16 PT-Reference (path-traced ground truth)",
         "17 GI-Only (pure indirect; toggle MB to see contribution)",
-        "18 Cascade-vs-PT Delta (bipolar heatmap)",
+        "18 Cascade-vs-PT Delta (total brightness)",
+        "19 Cascade_GI-vs-PT_GI Delta (indirect only)",
     };
     constexpr int kModeCount = int(sizeof(kRenderModeLabels) / sizeof(kRenderModeLabels[0]));
-    static_assert(kModeCount == 19, "renderModeLabels must enumerate all 19 raymarch modes");
+    static_assert(kModeCount == 20, "renderModeLabels must enumerate all 20 raymarch modes");
     // Defensive clamp: setRenderMode warns on out-of-range values but assigns them
     // anyway (preserves shader fallthrough behaviour). The picker is the only thing
     // standing between an out-of-range raymarchRenderMode and an OOB array read.
@@ -4229,6 +4420,22 @@ void Demo3D::renderSettingsPanel() {
         "    toggle for A/B comparison; lower the divisor slider to surface subtle changes.\n"
         "  Mode 15 requires Cascade GI ON; pair with Probe Jitter or Temporal toggles.\n"
         "\n"
+        "=== Mode 19 (CascadeGIDelta) — per-pixel cascade_GI-vs-PT_GI bipolar heatmap ===\n"
+        "  Formula: cascade_GI = indirectColor (cascade indirect)\n"
+        "           PT_GI = full_PT − direct_only_PT  (subtracts direct → pure indirect)\n"
+        "           delta = cascade_GI − PT_GI → bipolar colormap\n"
+        "  REQUIRES PT to dispatch TWICE per frame (full + direct-only); ~2× PT cost.\n"
+        "  WHY this exists (vs mode 18): mode 18 measures TOTAL brightness; can be deceived\n"
+        "    when cascade over-saturates direct AND under-integrates GI — the two cancel\n"
+        "    in total but the GI signal is much weaker (user-reported on dir-light Cornell).\n"
+        "    Mode 19 strips direct from BOTH sides → exposes pure GI gap.\n"
+        "  INTERPRETATION:\n"
+        "    Dominant BLUE       → cascade GI weak vs PT GI (common; multi-bounce missing)\n"
+        "    Dominant RED        → cascade GI over-strong (high MB gain over-shooting)\n"
+        "    White               → GI matches\n"
+        "  ACTION: pair with mode 16 cascade-match for apples-to-apples; tune MB gain\n"
+        "    until image goes mostly white. Mode 19 IS the diagnostic for color-bleed strength.\n"
+        "\n"
         "=== Mode 18 (CascadeDelta) — per-pixel cascade-vs-PT bipolar heatmap ===\n"
         "  Formula: signed_lum_delta(cascade - PT) → bipolar colormap (red/white/blue).\n"
         "  Color:  red = cascade brighter than PT (over-integration)\n"
@@ -4273,21 +4480,27 @@ void Demo3D::renderSettingsPanel() {
         ImGui::TextDisabled("can't distinguish sky from surface-hit. Visually exclude sky-facing areas.");
     }
 
-    // Mode 18 (cascade-vs-PT delta heatmap, 2026-05-19) inline controls.
-    if (raymarchRenderMode == 18) {
-        ImGui::TextDisabled("Cascade-vs-PT Delta: requires PT to converge (~10s+ wall-clock)");
+    // Mode 18 (cascade-vs-PT TOTAL delta) / Mode 19 (cascade_GI-vs-PT_GI delta) inline.
+    if (raymarchRenderMode == 18 || raymarchRenderMode == 19) {
+        ImGui::TextDisabled(raymarchRenderMode == 18
+            ? "Cascade-vs-PT TOTAL delta: can be misled when over-direct cancels under-GI"
+            : "Cascade_GI-vs-PT_GI delta: isolates indirect — the right tool for color-bleed gap");
+        ImGui::TextDisabled("Requires PT to converge (~10s+ wall-clock). Move camera = reset.");
         ImGui::TextDisabled("PT cascade-match should be ON (Render Mode 16 panel) for apples-to-apples");
+        if (raymarchRenderMode == 19)
+            ImGui::TextDisabled("Note: Mode 19 dispatches PT TWICE per frame (full + direct-only). ~2x PT cost.");
         ImGui::SliderFloat("Delta divisor##deltadiv", &deltaHeatmapDivisor, 0.001f, 2.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("|delta_lum| >= divisor saturates to full red/blue.\n"
                               "Default 0.2 picked for Cornell-scale radiance ~0.3.\n"
                               "Lower = more sensitive (subtle differences visible).\n"
                               "Higher = only large gaps stand out.\n\n"
+                              "Mode 18 (total): can hide composition errors when direct+GI cancel.\n"
+                              "Mode 19 (GI-only): isolates indirect → exposes weak GI even when totals match.\n\n"
                               "INTERPRETATION:\n"
-                              "  Red regions = cascade brighter than PT (over-integration)\n"
-                              "  Blue regions = cascade dimmer than PT (under-integration — common)\n"
-                              "  White = match\n\n"
-                              "Expected on cornell-orig: dominant BLUE (cascade is ~42% darker than PT)");
+                              "  Red regions = cascade brighter than PT\n"
+                              "  Blue regions = cascade dimmer than PT (typical for GI)\n"
+                              "  White = match");
     }
 
     // Phase 7 (PT reference, doc/7) inline controls: shown when mode 16 is selected.
@@ -4582,6 +4795,43 @@ void Demo3D::renderCascadePanel() {
             ImGui::TextDisabled(useWeightedSample ? "(per-corner gating)" : "(Phase 2 unconditional)");
     }
 
+    // 2026-05-19 GI Quality Presets — quick-set bundles of (MB, gain, Phase 3) found
+    // via parameter sweep on cornell-orig + directional light. See doc/7/gi_presets.md.
+    ImGui::SeparatorText("GI Quality Presets");
+    if (ImGui::Button("Cheap (single-bounce)##preset")) {
+        setUseMultiBounce(false);
+        setUseWeightedSample(false);
+        std::cout << "[Preset] Cheap: MB OFF, Phase 3 OFF\n";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Balanced##preset")) {
+        setUseMultiBounce(true);
+        setMultiBounceGain(1.0f);
+        setUseWeightedSample(true);
+        std::cout << "[Preset] Balanced: MB g=1.0 + Phase 3 ON\n";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Color-bleed##preset")) {
+        setUseMultiBounce(true);
+        setMultiBounceGain(1.5f);
+        setUseWeightedSample(false);
+        std::cout << "[Preset] Color-bleed: MB g=1.5, Phase 3 OFF\n";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Max GI##preset")) {
+        setUseMultiBounce(true);
+        setMultiBounceGain(2.0f);
+        setUseWeightedSample(true);
+        std::cout << "[Preset] Max GI: MB g=2.0 + Phase 3 ON\n";
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Sweep on cornell-orig + directional light:\n"
+                          "  Cheap:    Cascade_GI 1.0x PT_GI avg, no over-bright, ~0 ms extra\n"
+                          "  Balanced: 1.35x avg, modest bleed visible, ~1 ms extra\n"
+                          "  ColorB:   2.0x avg, strong visible bleed, ~1 ms extra\n"
+                          "  Max GI:   1.8x avg w/ Phase 3 leak fix, strongest bleed + reduced leak\n"
+                          "All four are temporally stable; default still OFF (Cheap).");
+
     // Phase MB (multi-bounce temporal feedback) — see doc/7/multi_bounce_temporal_plan.md.
     {
         bool mb = useMultiBounce;
@@ -4612,6 +4862,55 @@ void Demo3D::renderCascadePanel() {
                                   "Changes trigger cascade rebake.");
             ImGui::SameLine();
             ImGui::TextDisabled("(shared C0 history; ~5-30 ms bake overhead)");
+        }
+    }
+
+    // Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md).
+    // Display-path-only feature: per-pixel exact bounce-1 via one stochastic SDF raymarch
+    // per pixel + EMA accumulator. Default w=1.0 = pure correction (per critic-05 H1).
+    {
+        ImGui::Separator();
+        bool hy = useHybrid;
+        if (ImGui::Checkbox("Hybrid per-pixel correction (doc/7)", &hy)) setUseHybrid(hy);
+        imHelpMarker(
+            "Per-pixel exact bounce-1 GI via one stochastic SDF raymarch per pixel,\n"
+            "EMA-blended into a half-res accumulator. REPLACES cascade's bounce-1 at\n"
+            "default blend weight (w=1.0). Cost ~10-20 ms/frame at 720p.\n\n"
+            "OFF (default): pure cascade GI (existing behavior).\n"
+            "ON at w=1.0:  pure exact-bounce-1 correction; loses cascade's bounce-2+\n"
+            "              (Phase MB feedback). Best per-pixel GI quality.\n"
+            "ON at w<1.0:  biases toward cascade for bounce-2+ at cost of bounce-1\n"
+            "              double-counting (critic-05 H1).\n\n"
+            "Pair with render mode 19 (cascade_GI-vs-PT_GI delta heatmap) to verify\n"
+            "the dominant-blue gap closes when this is ON. Camera move / scene change\n"
+            "resets the accumulator (mirrors PT pattern).");
+        if (useHybrid) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(samples=%d)", hybridSampleCount);
+            float bw = hybridBlendWeight;
+            if (ImGui::SliderFloat("Hybrid blend weight", &bw, 0.0f, 1.0f, "%.2f"))
+                setHybridBlendWeight(bw);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Composition: mix(correction, cascade, max(0, 1-w)).\n"
+                                  "1.0 (default) = pure correction (no double-count).\n"
+                                  "0.0 = pure cascade (correction unused — same as OFF).\n"
+                                  "Changing resets accumulator.");
+            float ema = hybridEMAAlpha;
+            if (ImGui::SliderFloat("Hybrid EMA alpha", &ema, 0.01f, 1.0f, "%.2f"))
+                setHybridEMAAlpha(ema);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Temporal smoothing on the accumulator.\n"
+                                  "0.1 (default) = ~10 frames to converge from new sample.\n"
+                                  "1.0 = no temporal accumulation (raw stochastic noise).\n"
+                                  "Lower = smoother but slower to react to camera move.");
+            int rpf = hybridRaysPerFrame;
+            if (ImGui::SliderInt("Hybrid rays/frame", &rpf, 1, 8))
+                setHybridRaysPerFrame(rpf);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Bounce rays per pixel per dispatch.\n"
+                                  "Higher = faster convergence but linearly more cost.\n"
+                                  "Changing resets accumulator.");
+            if (ImGui::Button("Reset accumulator##hybrid")) resetHybridAccumulator();
         }
     }
 
