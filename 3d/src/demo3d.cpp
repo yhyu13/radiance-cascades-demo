@@ -188,6 +188,26 @@ Demo3D::Demo3D()
     , phase3DebugMode(0)
     , giStrength(1.0f)
     , leakHeatmapDivisor(0.5f)  // mode 14 sensitivity; sqrt-scaled in shader
+    // Phase MB (multi-bounce temporal feedback) defaults
+    , useMultiBounce(false)
+    // gain=1.0 is physically grounded (energy-conserving Lambertian: outgoing = albedo × irradiance).
+    // Empirical: gives ~3-4% brightness gain on cornell-orig (cascade integration losses limit
+    // the effective hemi_factor to ~0.05 vs the 0.5 theory predicted; see impl doc).
+    // Stable at gain=1.0 because the small hemi_factor keeps geometric series safe.
+    // User can boost to 1.5 for ~6% gain (passes the ≥5% v0.5 gate) or 2.0 for ~10%.
+    , multiBounceGain(1.0f)
+    , deltaHeatmapDivisor(0.2f)   // mode 18 sensitivity for cornell-scale scenes
+    // Phase 7: PT reference
+    , ptAccumTexture(0)
+    , ptAccumWidth(0), ptAccumHeight(0)
+    , ptSampleCount(0)
+    , ptRaysPerFrame(1)
+    , ptMaxBounces(8)
+    , ptRussianRoulette(0.9f)
+    , ptCascadeMatch(0)
+    , ptDirty(true)
+    , ptFrameIndex(0)
+    , ptLastCamPos(0.0f), ptLastCamTarget(0.0f)
     , useShadowRay(true)
     , useDirectionalGI(true)        // cosine-weighted directional atlas lookup
     , useSoftShadow(false)
@@ -349,6 +369,8 @@ Demo3D::Demo3D()
     ok &= loadShader("lighting_debug.frag");    // Phase 1: Lighting debug (CRITICAL)
     ok &= loadShader("raymarch.frag");          // CRITICAL — final raymarched image
     ok &= loadShader("gi_blur.frag");           // Phase 9c: Bilateral GI blur (CRITICAL)
+    // Phase 7: PT reference (doc/7). Critical for mode 16; harmless if not used.
+    ok &= loadShader("pt_reference.comp");
     criticalShaderLoadOk = ok;
     
     // Step 5: Initialize cascades
@@ -1132,6 +1154,13 @@ void Demo3D::render() {
                 }
             }
         }
+    }
+
+    // Phase 7 (PT reference, doc/7): dispatch PT compute shader if mode 16 or 18 is active.
+    // Mode 16 displays PT directly; Mode 18 (2026-05-19) compares cascade vs PT per-pixel.
+    // Runs BEFORE raymarchPass so the texture is up-to-date for display.
+    if (raymarchRenderMode == 16 || raymarchRenderMode == 18) {
+        ptDispatchReference();
     }
 
     // Pass 4: Raymarching (+ optional bilateral GI blur)
@@ -2337,6 +2366,49 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     }
     glUniform1i(glGetUniformLocation(prog, "uPhase3DebugMode"), phase3DebugMode);
     glUniform1f(glGetUniformLocation(prog, "uGIStrength"),     giStrength);
+
+    // Phase MB (multi-bounce temporal feedback) — bind C0's previous-frame atlas
+    // history as the shared feedback source for ALL cascades (critic-03 M2).
+    // Fastest convergence + highest spatial resolution. Default OFF preserves
+    // bit-exact single-bounce behavior.
+    //
+    // Critic-04 M2: STRICT history-only gate. Don't fall back to probeAtlasTexture
+    // (the currently-being-written texture) — that's read-while-write UB on some
+    // drivers. First-frame OR no-temporal-accum = MB silently OFF until history exists.
+    {
+        const int kMBHistUnit = 5;  // critic-04 M3: prefer named constant
+        GLuint c0HistTex = cascades[0].probeAtlasHistory;
+        bool hasFeedback = useMultiBounce && c0HistTex != 0 && !historyNeedsSeed;
+        glUniform1i(glGetUniformLocation(prog, "uUseMultiBounce"), hasFeedback ? 1 : 0);
+        glUniform1f(glGetUniformLocation(prog, "uMultiBounceGain"), multiBounceGain);
+        glUniform1i(glGetUniformLocation(prog, "uHasPrevFrame"),    hasFeedback ? 1 : 0);
+        glUniform1i(glGetUniformLocation(prog, "uPrevFrameC0DirRes"), cascadeDirRes[0]);
+        glm::ivec3 c0Vol(cascades[0].resolution);
+        glUniform3iv(glGetUniformLocation(prog, "uC0VolumeSize"), 1, glm::value_ptr(c0Vol));
+        if (hasFeedback) {
+            glActiveTexture(GL_TEXTURE0 + kMBHistUnit);
+            glBindTexture(GL_TEXTURE_3D, c0HistTex);
+            glUniform1i(glGetUniformLocation(prog, "uPrevFrameC0Atlas"), kMBHistUnit);
+        }
+        // Phase MB v2 (stochastic single-bin): per-frame seed entropy for cosine
+        // sampling. renderFrameIndex changes each frame → stochastic sample direction
+        // varies → temporal EMA accumulates many directions over time.
+        glUniform1ui(glGetUniformLocation(prog, "uMBFrameSeed"),
+                     static_cast<unsigned int>(renderFrameIndex));
+        // Critic-04 L2: log state changes for this cascade (only the first cascade since
+        // all share the same C0 history; avoid log spam from C1/C2/C3 updates).
+        if (cascadeIndex == 0) {
+            static bool lastMBState = false;
+            if (hasFeedback != lastMBState) {
+                std::cout << "[MB] cascade-bake feedback "
+                          << (hasFeedback ? "ACTIVE" : "inactive")
+                          << "  (useMultiBounce=" << useMultiBounce
+                          << " c0Hist=" << c0HistTex
+                          << " needsSeed=" << historyNeedsSeed << ")\n";
+                lastMBState = hasFeedback;
+            }
+        }
+    }
     // Lighting controls follow-up: directional-light support derives a
     // far-away point light from `lightDirection` so the existing point-light
     // formula in radiance_3d.comp degenerates to directional behavior
@@ -2627,6 +2699,8 @@ void Demo3D::raymarchPass() {
     glUniform1f(glGetUniformLocation(prog, "uAmbientCompositeStrength"), ambientCompositeStrength);
     // 2026-05-18: leak-suspect heatmap (mode 14) sensitivity divisor.
     glUniform1f(glGetUniformLocation(prog, "uLeakHeatmapDivisor"), leakHeatmapDivisor);
+    // 2026-05-19: cascade-vs-PT delta heatmap (mode 18) sensitivity divisor.
+    glUniform1f(glGetUniformLocation(prog, "uDeltaHeatmapDivisor"), deltaHeatmapDivisor);
     // SDF texture (sampler binding 0)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -2694,6 +2768,19 @@ void Demo3D::raymarchPass() {
         atlasAvailable = true;
     }
     glUniform1i(glGetUniformLocation(prog, "uUseDirectionalGI"), (useDirectionalGI && atlasAvailable) ? 1 : 0);
+
+    // Phase 7 (PT reference): bind ptAccumTexture for mode 16. Use TEXTURE4 to avoid
+    // conflicts with cascade samplers (0/1/2/3). Pass uPtAccumValid=0 if no texture
+    // allocated yet (e.g., before first mode-16 dispatch) so the shader returns black
+    // safely instead of sampling unbound state.
+    if (ptAccumTexture != 0) {
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, ptAccumTexture);
+        glUniform1i(glGetUniformLocation(prog, "uPtAccum"), 4);
+        glUniform1i(glGetUniformLocation(prog, "uPtAccumValid"), 1);
+    } else {
+        glUniform1i(glGetUniformLocation(prog, "uPtAccumValid"), 0);
+    }
 
     // GI blur: redirect mode-0/3/6 render to 3-attachment FBO (direct / gbuffer / indirect).
     // Modes 3 and 6 are pure-indirect views so direct=black and blur applies to full output.
@@ -2826,6 +2913,138 @@ void Demo3D::giBlurPass() {
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+// =============================================================================
+// Phase 7: PT reference (doc/7/pt_reference_plan.md)
+// =============================================================================
+
+void Demo3D::ptEnsureAccumAllocated(int viewportW, int viewportH) {
+    // Half-resolution accumulator (W5: same source raymarch.frag sees implicitly).
+    int targetW = viewportW / 2;
+    int targetH = viewportH / 2;
+    if (targetW < 1) targetW = 1;
+    if (targetH < 1) targetH = 1;
+    if (ptAccumTexture != 0 && ptAccumWidth == targetW && ptAccumHeight == targetH)
+        return;
+
+    if (ptAccumTexture != 0) glDeleteTextures(1, &ptAccumTexture);
+    glGenTextures(1, &ptAccumTexture);
+    glBindTexture(GL_TEXTURE_2D, ptAccumTexture);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, targetW, targetH);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    ptAccumWidth  = targetW;
+    ptAccumHeight = targetH;
+    ptDirty = true;  // freshly-allocated texture has garbage; must clear before accumulate
+    std::cout << "[Phase7] PT accumulator allocated " << targetW << "x" << targetH << "\n";
+}
+
+void Demo3D::ptDispatchReference() {
+    auto it = shaders.find("pt_reference.comp");
+    if (it == shaders.end()) return;
+
+    // W5: viewport from the same source raymarch.frag implicitly reads (gl_FragCoord).
+    GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+    int vw = vp[2], vh = vp[3];
+    if (vw <= 0 || vh <= 0) return;
+    ptEnsureAccumAllocated(vw, vh);
+
+    // Camera-move invalidation with simple delta-threshold check (debounced via the
+    // threshold itself — small mouse-wiggles below threshold don't reset).
+    const Camera3D& cam = getRaylibCamera();
+    glm::vec3 camPos    (cam.position.x, cam.position.y, cam.position.z);
+    glm::vec3 camTarget (cam.target.x,   cam.target.y,   cam.target.z);
+    if (glm::length(camPos - ptLastCamPos) > 1e-4f ||
+        glm::length(camTarget - ptLastCamTarget) > 1e-4f) {
+        resetPTAccumulator();
+        ptLastCamPos = camPos;
+        ptLastCamTarget = camTarget;
+    }
+
+    if (ptDirty) {
+        // Clear accumulator to zero.
+        std::vector<float> zeros(ptAccumWidth * ptAccumHeight * 4, 0.0f);
+        glBindTexture(GL_TEXTURE_2D, ptAccumTexture);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ptAccumWidth, ptAccumHeight,
+                        GL_RGBA, GL_FLOAT, zeros.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
+        ptSampleCount = 0;
+        ptDirty = false;
+    }
+
+    GLuint prog = it->second;
+    glUseProgram(prog);
+
+    // Camera basis derivation (per plan §5.1b).
+    glm::vec3 worldUp(cam.up.x, cam.up.y, cam.up.z);
+    glm::vec3 forward = glm::normalize(camTarget - camPos);
+    glm::vec3 right   = glm::normalize(glm::cross(forward, worldUp));
+    glm::vec3 up      = glm::cross(right, forward);
+    // Column-major mat3: columns = (right, up, -forward)
+    glm::mat3 basis;
+    basis[0] = right;
+    basis[1] = up;
+    basis[2] = -forward;
+    float tanHalfFovY = std::tan(glm::radians(cam.fovy * 0.5f));
+
+    glUniform3fv(glGetUniformLocation(prog, "uCamPos"), 1, &camPos[0]);
+    glUniformMatrix3fv(glGetUniformLocation(prog, "uCamBasis"), 1, GL_FALSE, &basis[0][0]);
+    glUniform1f(glGetUniformLocation(prog, "uTanHalfFovY"), tanHalfFovY);
+    glUniform2f(glGetUniformLocation(prog, "uViewportSize"),
+                float(ptAccumWidth), float(ptAccumHeight));
+
+    // Scene uniforms (mirror cascade renderer)
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_3D, sdfTexture);
+    glUniform1i(glGetUniformLocation(prog, "uSDF"), 0);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_3D, albedoTexture);
+    glUniform1i(glGetUniformLocation(prog, "uAlbedo"), 1);
+
+    glUniform3fv(glGetUniformLocation(prog, "uGridOrigin"), 1, &volumeOrigin[0]);
+    glUniform3fv(glGetUniformLocation(prog, "uGridSize"),   1, &volumeSize[0]);
+
+    // Light setup mirrors updateSingleCascade()'s effectiveLightPos logic.
+    glm::vec3 effectiveLightPos = lightPosition;
+    if (useDirectionalLight) {
+        glm::vec3 volCenter = volumeOrigin + 0.5f * volumeSize;
+        effectiveLightPos = volCenter - glm::normalize(lightDirection) * 100.0f;
+    }
+    glUniform3fv(glGetUniformLocation(prog, "uLightPos"), 1, &effectiveLightPos[0]);
+    glm::vec3 baseLightColor(1.0f, 0.95f, 0.85f);
+    glm::vec3 scaledLightColor = baseLightColor * lightIntensity;
+    glUniform3fv(glGetUniformLocation(prog, "uLightColor"), 1, &scaledLightColor[0]);
+    glUniform3fv(glGetUniformLocation(prog, "uLightDir"), 1, &lightDirection[0]);
+    glUniform1i(glGetUniformLocation(prog, "uUseDirectionalLight"), useDirectionalLight ? 1 : 0);
+    glm::vec3 volCenter = volumeOrigin + 0.5f * volumeSize;
+    glUniform3fv(glGetUniformLocation(prog, "uVolCenter"), 1, &volCenter[0]);
+    glUniform1i(glGetUniformLocation(prog, "uUseSoftShadowBake"), useSoftShadowBake ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uSoftShadowK"), softShadowK);
+    glUniform1f(glGetUniformLocation(prog, "uAmbientBakeStrength"), ambientBakeStrength);
+    glUniform1i(glGetUniformLocation(prog, "uUseEnvFill"), useEnvFill ? 1 : 0);
+    glUniform3fv(glGetUniformLocation(prog, "uSkyColor"), 1, &skyColor[0]);
+
+    // PT controls
+    glUniform1i(glGetUniformLocation(prog, "uPtRaysPerFrame"), ptRaysPerFrame);
+    glUniform1i(glGetUniformLocation(prog, "uPtMaxBounces"),   ptMaxBounces);
+    glUniform1f(glGetUniformLocation(prog, "uPtRussianRoulette"), ptRussianRoulette);
+    glUniform1i(glGetUniformLocation(prog, "uPtCascadeMatch"), ptCascadeMatch);
+    glUniform1ui(glGetUniformLocation(prog, "uFrameIndex"), ptFrameIndex);
+    glUniform1i(glGetUniformLocation(prog, "uSppBefore"), ptSampleCount);
+
+    glBindImageTexture(0, ptAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+
+    int groupsX = (ptAccumWidth  + 7) / 8;
+    int groupsY = (ptAccumHeight + 7) / 8;
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "pt_reference");
+    glDispatchCompute(groupsX, groupsY, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+    glPopDebugGroup();
+
+    ptSampleCount += ptRaysPerFrame;
+    ptFrameIndex++;
 }
 
 void Demo3D::renderDebugVisualization() {
@@ -3927,9 +4146,12 @@ void Demo3D::renderSettingsPanel() {
         "13 GIHeat-Frac (GI / (direct+GI))",
         "14 LeakSuspect (atlas radiance in α=0 bins)",
         "15 TemporalOscillation (atlas α stability)",
+        "16 PT-Reference (path-traced ground truth)",
+        "17 GI-Only (pure indirect; toggle MB to see contribution)",
+        "18 Cascade-vs-PT Delta (bipolar heatmap)",
     };
     constexpr int kModeCount = int(sizeof(kRenderModeLabels) / sizeof(kRenderModeLabels[0]));
-    static_assert(kModeCount == 16, "renderModeLabels must enumerate all 16 raymarch modes");
+    static_assert(kModeCount == 19, "renderModeLabels must enumerate all 19 raymarch modes");
     // Defensive clamp: setRenderMode warns on out-of-range values but assigns them
     // anyway (preserves shader fallthrough behaviour). The picker is the only thing
     // standing between an out-of-range raymarchRenderMode and an OOB array read.
@@ -4005,7 +4227,35 @@ void Demo3D::renderSettingsPanel() {
         "  Modes 11-13 require Cascade GI ON; otherwise output is all-green / zero.\n"
         "  Mode 14 requires Cascade GI ON (reads atlas content); pair with WeightedSample\n"
         "    toggle for A/B comparison; lower the divisor slider to surface subtle changes.\n"
-        "  Mode 15 requires Cascade GI ON; pair with Probe Jitter or Temporal toggles.");
+        "  Mode 15 requires Cascade GI ON; pair with Probe Jitter or Temporal toggles.\n"
+        "\n"
+        "=== Mode 18 (CascadeDelta) — per-pixel cascade-vs-PT bipolar heatmap ===\n"
+        "  Formula: signed_lum_delta(cascade - PT) → bipolar colormap (red/white/blue).\n"
+        "  Color:  red = cascade brighter than PT (over-integration)\n"
+        "          blue = cascade dimmer than PT (under-integration — common)\n"
+        "          white = exact match\n"
+        "  INTERPRETATION:\n"
+        "    Dominant BLUE       → cascade is missing radiance; integration losses (typical)\n"
+        "    Dominant RED        → cascade over-integrating; check leak/ambient bias\n"
+        "    Mostly white        → cascade matches PT (best case)\n"
+        "    Red+blue patches    → cascade has both over- and under-integration regions\n"
+        "  ACTION: pair with --pt-cascade-match=1 for apples-to-apples; PT must converge\n"
+        "    (~10+ seconds); identify which regions/surfaces have biggest delta and\n"
+        "    investigate WHY (which integration step loses the most radiance there).\n"
+        "    Mode 18 IS THE diagnostic tool for the cascade-vs-PT 38% integration gap.\n"
+        "\n"
+        "=== Mode 17 (GI-Only) — pure indirect bounce; no direct/ambient/shadow ===\n"
+        "  Shows ONLY the indirect contribution from the cascade atlas.\n"
+        "  Toggle 'Temporal multi-bounce (Phase MB)' in Hierarchy & Merge ON/OFF —\n"
+        "    the image visibly brightens with MB ON because multi-bounce adds to\n"
+        "    the atlas. Differs from mode 6 (which composites direct via uSeparateGI):\n"
+        "    mode 17 is the pure-GI viewer specifically for MB A/B comparisons.\n"
+        "  INTERPRETATION:\n"
+        "    Image is brighter   → MB is contributing (more bounces in atlas)\n"
+        "    Image is dark/dim  → MB OFF or scene doesn't bounce much (low albedo / open)\n"
+        "    Color shifts toward wall hues → multi-bounce color bleed working\n"
+        "  ACTION: pair with MB toggle + gain slider; lower-then-higher gain shows\n"
+        "    the cascade integration's response curve.");
 
     // Mode 14 inline controls: sensitivity slider + reminder about Phase 3 toggle.
     if (raymarchRenderMode == 14) {
@@ -4021,6 +4271,61 @@ void Demo3D::renderSettingsPanel() {
                               "Sqrt-scaled internally for perceptual sensitivity near saturation.");
         ImGui::TextDisabled("FALSE POSITIVES: sky-exit bins (α=0) flag as red — Phase 2's α encoding");
         ImGui::TextDisabled("can't distinguish sky from surface-hit. Visually exclude sky-facing areas.");
+    }
+
+    // Mode 18 (cascade-vs-PT delta heatmap, 2026-05-19) inline controls.
+    if (raymarchRenderMode == 18) {
+        ImGui::TextDisabled("Cascade-vs-PT Delta: requires PT to converge (~10s+ wall-clock)");
+        ImGui::TextDisabled("PT cascade-match should be ON (Render Mode 16 panel) for apples-to-apples");
+        ImGui::SliderFloat("Delta divisor##deltadiv", &deltaHeatmapDivisor, 0.001f, 2.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("|delta_lum| >= divisor saturates to full red/blue.\n"
+                              "Default 0.2 picked for Cornell-scale radiance ~0.3.\n"
+                              "Lower = more sensitive (subtle differences visible).\n"
+                              "Higher = only large gaps stand out.\n\n"
+                              "INTERPRETATION:\n"
+                              "  Red regions = cascade brighter than PT (over-integration)\n"
+                              "  Blue regions = cascade dimmer than PT (under-integration — common)\n"
+                              "  White = match\n\n"
+                              "Expected on cornell-orig: dominant BLUE (cascade is ~42% darker than PT)");
+    }
+
+    // Phase 7 (PT reference, doc/7) inline controls: shown when mode 16 is selected.
+    if (raymarchRenderMode == 16) {
+        ImGui::TextDisabled("PT-Reference: progressive path-traced ground truth. Move camera = reset.");
+        ImGui::Text("Samples/pixel: %d", ptSampleCount);
+        // Convergence indicator (target = 10,000 spp default; relative bar).
+        const int kPtTarget = 10000;
+        float frac = float(ptSampleCount) / float(kPtTarget);
+        if (frac > 1.0f) frac = 1.0f;
+        ImGui::ProgressBar(frac, ImVec2(-1, 0));
+        if (ImGui::Button("Reset accumulator##pt")) resetPTAccumulator();
+        ImGui::SameLine();
+        bool cmBool = (ptCascadeMatch != 0);
+        if (ImGui::Checkbox("CascadeMatch mode##pt", &cmBool)) setPtCascadeMatch(cmBool ? 1 : 0);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("OFF (default): UNBIASED PT — no ambient floor. True ground-truth reference.\n"
+                              "ON: adds uAmbientBakeStrength at primary hit only — cascade's converged target.\n"
+                              "Use OFF to measure absolute correctness; ON to measure cascade integration error.\n"
+                              "(Plan §10 W2: PT-vs-cascade A/B in BOTH modes separates integration error from bias.)");
+        int rpf = ptRaysPerFrame;
+        if (ImGui::SliderInt("Rays/frame##pt", &rpf, 1, 16)) setPtRaysPerFrame(rpf);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Rays cast per pixel per dispatch.\n"
+                              "Higher = faster convergence but slower per-frame.\n"
+                              "Changing resets accumulator.");
+        int mb = ptMaxBounces;
+        if (ImGui::SliderInt("Max bounces##pt", &mb, 1, 16)) setPtMaxBounces(mb);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Hard cap on path length. Russian roulette usually terminates earlier.\n"
+                              "1 = direct only; 2+ = indirect bouncing.");
+        float rr = ptRussianRoulette;
+        if (ImGui::SliderFloat("Russian roulette##pt", &rr, 0.5f, 0.99f, "%.2f"))
+            setPtRussianRoulette(rr);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Survival probability per bounce. Higher = longer paths (more accurate but slower).\n"
+                              "0.9 default; should be ≥ max scene albedo to stay unbiased.");
+        ImGui::TextDisabled("Half-resolution accumulator (%dx%d).", ptAccumWidth, ptAccumHeight);
     }
 
     // Step 3 (3d, F3): gate the analytic SDF toggle in OBJ mode. The analytic shader
@@ -4275,6 +4580,39 @@ void Demo3D::renderCascadePanel() {
             ImGui::TextDisabled("(needs non-colocated + trilinear)");
         else
             ImGui::TextDisabled(useWeightedSample ? "(per-corner gating)" : "(Phase 2 unconditional)");
+    }
+
+    // Phase MB (multi-bounce temporal feedback) — see doc/7/multi_bounce_temporal_plan.md.
+    {
+        bool mb = useMultiBounce;
+        if (ImGui::Checkbox("Temporal multi-bounce (Phase MB)", &mb)) setUseMultiBounce(mb);
+        imHelpMarker(
+            "Adds previous-frame C0 atlas at bake-time surface hits to capture multi-bounce indirect.\n\n"
+            "OFF (default): single-bounce only (current behavior, bit-exact preserved).\n"
+            "ON: each frame's bake includes previous frame's indirect via cosine-weighted hemisphere\n"
+            "    integration around the hit normal. Converges over ~5-10 frames.\n\n"
+            "Empirical effect on cornell-orig (PT cascade-match reference at 0.421 brightness):\n"
+            "  OFF cascade: 0.242  ratio-to-PT 0.575\n"
+            "  ON gain=1.0: 0.251  ratio 0.595  (+3.5% gain closure)\n"
+            "  ON gain=1.5: 0.257  ratio 0.611  (+6.2%)\n"
+            "  ON gain=2.0: 0.266  ratio 0.632  (+9.9%)\n\n"
+            "Stability: gain × albedo × hemi_factor < 1 required (geometric series). Empirical\n"
+            "hemi_factor on Cornell is ~0.05 (much smaller than theoretical 0.5), so gain up to\n"
+            "~10 is technically stable — but quality saturates by gain~2. Default 1.0 = physical.\n\n"
+            "Pair with render mode 16 (PT reference) for visual A/B and quality measurement.");
+        if (useMultiBounce) {
+            float gain = multiBounceGain;
+            if (ImGui::SliderFloat("MB Gain", &gain, 0.0f, 3.0f, "%.2f")) setMultiBounceGain(gain);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Multiplier on multi-bounce feedback term.\n"
+                                  "0.0 = no feedback (same as OFF).\n"
+                                  "1.0 (default) = energy-conserving Lambertian.\n"
+                                  "1.5-2.0 = boost for stronger multi-bounce effect.\n"
+                                  ">3.0 = risk of amplification on bright closed scenes.\n"
+                                  "Changes trigger cascade rebake.");
+            ImGui::SameLine();
+            ImGui::TextDisabled("(shared C0 history; ~5-30 ms bake overhead)");
+        }
     }
 
         ImGui::EndTabItem();

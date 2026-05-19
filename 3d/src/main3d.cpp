@@ -356,6 +356,32 @@ int main(int argc, char* argv[]) {
             demo->setStaggerMaxInterval(v);
             std::cout << "[MAIN] --stagger=" << v
                       << " (1=no stagger / all cascades every frame)\n";
+        } else if (arg.rfind("--use-multi-bounce=", 0) == 0) {
+            int v = std::atoi(arg.substr(19).c_str());
+            demo->setUseMultiBounce(v != 0);
+            std::cout << "[MAIN] --use-multi-bounce=" << v
+                      << " (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)\n";
+        } else if (arg.rfind("--multi-bounce-gain=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(20).c_str()));
+            demo->setMultiBounceGain(v);
+            std::cout << "[MAIN] --multi-bounce-gain=" << v << "\n";
+        } else if (arg.rfind("--pt-cascade-match=", 0) == 0) {
+            int v = std::atoi(arg.substr(19).c_str());
+            demo->setPtCascadeMatch(v);
+            std::cout << "[MAIN] --pt-cascade-match=" << v
+                      << " (0=unbiased default, 1=match cascade ambient)\n";
+        } else if (arg.rfind("--pt-rays-per-frame=", 0) == 0) {
+            int v = std::atoi(arg.substr(20).c_str());
+            demo->setPtRaysPerFrame(v);
+            std::cout << "[MAIN] --pt-rays-per-frame=" << v << "\n";
+        } else if (arg.rfind("--pt-max-bounces=", 0) == 0) {
+            int v = std::atoi(arg.substr(17).c_str());
+            demo->setPtMaxBounces(v);
+            std::cout << "[MAIN] --pt-max-bounces=" << v << "\n";
+        } else if (arg.rfind("--pt-russian-roulette=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(22).c_str()));
+            demo->setPtRussianRoulette(v);
+            std::cout << "[MAIN] --pt-russian-roulette=" << v << "\n";
         } else if (arg.rfind("--phase3-debug=", 0) == 0) {
             int v = std::atoi(arg.substr(15).c_str());
             demo->setPhase3DebugMode(v);

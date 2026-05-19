@@ -69,6 +69,30 @@ uniform int   uDiagAlphaMode;
 //                       require per-bin LUT (v2 fallback).
 uniform int   uUseWeightedSample;
 uniform float uUpperBinConeSin;
+
+// 2026-05-18 Phase MB (multi-bounce temporal feedback) — see doc/7/multi_bounce_temporal_plan.md
+//   uUseMultiBounce: 0 (default) = single-bounce; 1 = add previous-frame C0-atlas
+//                    indirect at bake-time surface hits
+//   uMultiBounceGain: multiplier on feedback term. Default 0.7 for stability margin
+//                     (critic-03 H1: with albedo=0.9 and gain=1.0 a closed white-walled
+//                     room would amplify to direct/0.1 = 10× direct; 0.7 caps at ~2.7×).
+//   uPrevFrameC0Atlas: C0's probeAtlasHistory bound at texture unit 5. Shared across
+//                      all cascades (critic-03 M2) for fastest convergence + highest
+//                      spatial resolution.
+//   uHasPrevFrame: 0 = history not bound (first frame); shader uses 0 feedback.
+//   uPrevFrameC0DirRes: D for C0 atlas (= cascadeDirRes[0]; varies with Phase 5e D-scaling).
+//   uC0VolumeSize: ivec3, C0 probe grid dimensions (e.g. 32) for trilinear-blend clamping.
+uniform int       uUseMultiBounce;
+uniform float     uMultiBounceGain;
+uniform sampler3D uPrevFrameC0Atlas;
+uniform int       uHasPrevFrame;
+uniform int       uPrevFrameC0DirRes;
+uniform ivec3     uC0VolumeSize;
+// 2026-05-18 Phase MB v2 (stochastic single-bin sampling):
+// Per-frame Monte Carlo sample replaces full-hemisphere integration.
+// Existing temporal EMA averages stochastic samples over time → same equilibrium
+// at ~100× lower per-frame cost. Required uniform: per-frame seed entropy.
+uniform uint      uMBFrameSeed;
 // 2026-05-18 debug: instrument WHY Phase 3 v2 still reduces GI.
 //   0 = normal (v2)
 //   1 = force aFactor=1.0 in hit branch (test: does GI return if aFactor is bypassed?)
@@ -351,6 +375,123 @@ float softShadowBake(vec3 hitPos, vec3 lightPos, float k) {
     return 1.0 - clamp(res, 0.0, 1.0);
 }
 
+// =============================================================================
+// Phase MB v2: Multi-bounce indirect feedback (2026-05-18)
+// =============================================================================
+//
+// v1 (2026-05-18 morning) did full-hemisphere integration per hit: 8 corners ×
+// D² bins = 128-512 atlas fetches per surface hit. Cost was 50-100 ms per cascade
+// bake — dominated by C1's worst combo of probe count + D².
+//
+// v2: STOCHASTIC SINGLE-BIN sampling per hit. Pick a random cosine-sampled direction
+// in the upper hemisphere around the normal; sample THAT atlas bin only (8 fetches
+// for trilinear blend across 8 probes). The existing temporal EMA averages
+// stochastic samples over many frames → converges to the SAME equilibrium as v1's
+// full hemisphere integration, but at ~100× lower per-frame cost.
+//
+// Monte Carlo formula:
+//   Render eq:   L_o = (albedo/π) × ∫ L_i × cos(θ) dω
+//   MC estimator: L_o ≈ (albedo/π) × L_i(ω) × cos(θ) / p(ω)
+//   Cosine PDF:  p(ω) = cos(θ)/π
+//   Substituting: L_o ≈ albedo × L_i(ω)   (cos and π cancel)
+// → just `albedo × atlas_sample`. No additional normalization.
+
+// PCG RNG + helpers — same shape as pt_reference.comp.
+uint mbHash(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+uint mbPcg(inout uint state) {
+    state = state * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+float mbRand1(inout uint state) { return float(mbPcg(state)) / 4294967296.0; }
+vec2  mbRand2(inout uint state) { return vec2(mbRand1(state), mbRand1(state)); }
+
+// Tangent-basis (Frisvad-style, no branches).
+void mbGenTB(vec3 N, out vec3 T, out vec3 B) {
+    float s = N.z < 0.0 ? -1.0 : 1.0;
+    float a = -1.0 / (s + N.z);
+    float b = N.x * N.y * a;
+    T = vec3(1.0 + s * N.x * N.x * a, s * b, -s * N.x);
+    B = vec3(b, s + N.y * N.y * a, -N.y);
+}
+vec3 mbCosineSample(vec3 N, vec2 r) {
+    vec3 T, B; mbGenTB(N, T, B);
+    r.x *= 2.0 * PI;
+    float s = sqrt(1.0 - r.y);
+    return T * (cos(r.x) * s) + B * (sin(r.x) * s) + N * sqrt(r.y);
+}
+
+// Trilinear-blend 8 C0 probe corners at ONE specific bin (8 fetches total).
+// Returns radiance × visibility for that bin, blended spatially.
+vec3 sampleC0AtlasOneBin(vec3 pos, ivec2 bin, int D) {
+    if (uHasPrevFrame == 0) return vec3(0.0);
+    vec3 uvw = (pos - uGridOrigin) / uGridSize;
+    if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0))))
+        return vec3(0.0);
+
+    vec3 pg = clamp(uvw * vec3(uC0VolumeSize) - 0.5,
+                    vec3(0.0), vec3(uC0VolumeSize - ivec3(1)));
+    ivec3 p000 = ivec3(floor(pg));
+    vec3  f    = fract(pg);
+    ivec3 hi   = uC0VolumeSize - ivec3(1);
+
+    // 8 corner trilinear weights
+    ivec3 offsets[8] = ivec3[8](
+        ivec3(0,0,0), ivec3(1,0,0), ivec3(0,1,0), ivec3(1,1,0),
+        ivec3(0,0,1), ivec3(1,0,1), ivec3(0,1,1), ivec3(1,1,1));
+    float w[8];
+    w[0] = (1.0-f.x)*(1.0-f.y)*(1.0-f.z);
+    w[1] =      f.x *(1.0-f.y)*(1.0-f.z);
+    w[2] = (1.0-f.x)*     f.y *(1.0-f.z);
+    w[3] =      f.x *     f.y *(1.0-f.z);
+    w[4] = (1.0-f.x)*(1.0-f.y)*     f.z;
+    w[5] =      f.x *(1.0-f.y)*     f.z;
+    w[6] = (1.0-f.x)*     f.y *     f.z;
+    w[7] =      f.x *     f.y *     f.z;
+
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 8; ++i) {
+        ivec3 pc = clamp(p000 + offsets[i], ivec3(0), hi);
+        // Per critic-15 N3 + v2 brightness analysis: atlas .a is Phase 2 visibility.
+        // For stochastic MC (cosine PDF cancels with cos in render eq), the proper
+        // estimator is `albedo × L_i` — NO additional visibility weighting. The
+        // atlas's .rgb at opaque-hit bins contains the surface's direct-lit color
+        // (e.g., a lit wall), which IS legitimate multi-bounce source radiance.
+        // Removing the `a.a` factor here matches v1 hemisphere's effective output
+        // (which renormalizes over visible bins, also factoring out a.a).
+        vec4 a = texelFetch(uPrevFrameC0Atlas,
+                            ivec3(pc.x * D + bin.x, pc.y * D + bin.y, pc.z), 0);
+        acc += a.rgb * w[i];
+    }
+    return acc;
+}
+
+// Stochastic single-bin feedback: pick a cosine-weighted random direction around
+// the surface normal, sample that bin. Returns `L_i × albedo` factor only — the
+// final albedo multiply is in the caller (matches existing convention).
+vec3 sampleC0AtlasStochastic(vec3 pos, vec3 normal, uint baseSeed) {
+    if (uHasPrevFrame == 0 || uPrevFrameC0DirRes <= 0) return vec3(0.0);
+
+    // Seed: pixel-position + frame index. Each ray has its own (probePos, rayBin)
+    // so we re-hash here per-hit for additional decorrelation.
+    uint rng = mbHash(baseSeed ^ floatBitsToUint(pos.x) ^ (floatBitsToUint(pos.y) << 13) ^ floatBitsToUint(pos.z));
+    mbPcg(rng);  // burn one
+
+    vec2 r2  = mbRand2(rng);
+    vec3 dir = mbCosineSample(normal, r2);
+
+    int   D   = uPrevFrameC0DirRes;
+    ivec2 bin = dirToBin(dir, D);
+    return sampleC0AtlasOneBin(pos, bin, D);
+}
+
 // Return conventions:
 //   vec4(color, 1.0)  — surface hit
 //   vec4(sky,  -1.0)  — exited simulation volume and uUseEnvFill is on
@@ -394,6 +535,20 @@ vec4 raymarchSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
             // uAmbientBakeStrength=0 reproduces the Step 11 strip behavior;
             // 0.05 reproduces the original literal. ImGui slider tunes it live.
             vec3  color      = albedo * (diff * uLightColor + vec3(uAmbientBakeStrength));
+
+            // Phase MB v2 (stochastic single-bin temporal feedback): replaces v1's
+            // full-hemisphere integration (8 corners × D² fetches/hit, ~100 ms total)
+            // with a single cosine-sampled bin per hit (~8 fetches). Temporal EMA
+            // averages stochastic samples over many frames → SAME equilibrium as v1
+            // at ~100× lower per-frame cost.
+            //
+            // MC formula: outgoing = albedo × atlas_sample (cosine PDF cancels with
+            // cosine in render equation). See sampleC0AtlasStochastic doc.
+            if (uUseMultiBounce != 0 && uHasPrevFrame != 0) {
+                vec3 stochSample = sampleC0AtlasStochastic(pos, n, uMBFrameSeed);
+                color += albedo * stochSample * uMultiBounceGain;
+            }
+
             return vec4(color, t);
         }
 

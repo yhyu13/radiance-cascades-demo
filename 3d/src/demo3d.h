@@ -301,7 +301,11 @@ public:
 
     /** Apply bilateral blur to the GI FBO color output; writes to default framebuffer. */
     void giBlurPass();
-    
+
+    // Phase 7: PT reference dispatch + helpers (doc/7/pt_reference_plan.md).
+    void ptDispatchReference();
+    void ptEnsureAccumAllocated(int viewportW, int viewportH);
+
     /**
      * @brief Debug visualization of intermediate buffers
      * 
@@ -490,13 +494,13 @@ public:
         int localSize = 8
     );
 
-    // codex 07 F2/F3 — let main3d.cpp set initial render mode for headless captures
-    // Step 10 codex 06 F9 (revised Step 11): range covers modes 0-13 with one slot
-    // of headroom (upper bound 14). No clamp; preserves existing shader fallthrough.
+    // codex 07 F2/F3 — let main3d.cpp set initial render mode for headless captures.
+    // Range now covers modes 0-16 (14 LeakSuspect, 15 TemporalOscillation, 16 PT-Reference).
+    // No clamp; preserves existing shader fallthrough on out-of-range.
     void setRenderMode(int m) {
-        if (m < 0 || m > 14) {
+        if (m < 0 || m > 18) {
             std::cerr << "[Demo3D] WARN: render mode " << m
-                      << " out of range [0,14]; rendering as default\n";
+                      << " out of range [0,18]; rendering as default\n";
         }
         raymarchRenderMode = m;
     }
@@ -651,6 +655,34 @@ public:
         historyNeedsSeed = true;
         std::cout << "[Demo3D] giStrength=" << v << "\n";
     }
+
+    // Phase MB (multi-bounce temporal feedback) setters — trigger cascade rebake
+    // since atlas content depends on the toggle/gain.
+    void setUseMultiBounce(bool v) {
+        if (v == useMultiBounce) return;
+        useMultiBounce = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] useMultiBounce=" << (v ? "ON" : "OFF") << "\n";
+    }
+    void setMultiBounceGain(float v) {
+        if (v == multiBounceGain) return;
+        multiBounceGain = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] multiBounceGain=" << v << "\n";
+    }
+
+    // Phase 7: PT reference setters + invalidation
+    void resetPTAccumulator() { ptDirty = true; ptSampleCount = 0; }
+    void setPtRaysPerFrame(int v) { ptRaysPerFrame = v < 1 ? 1 : v; resetPTAccumulator(); }
+    void setPtMaxBounces(int v)   { ptMaxBounces   = v < 1 ? 1 : v; resetPTAccumulator(); }
+    void setPtRussianRoulette(float v) { ptRussianRoulette = v; resetPTAccumulator(); }
+    void setPtCascadeMatch(int v) { ptCascadeMatch = v; resetPTAccumulator(); }
 
     // Diagnostic CLI setters for temporal/jitter bisection.
     void setUseProbeJitter(bool v)   { useProbeJitter = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
@@ -1213,6 +1245,36 @@ private:
      *  leak_potential >= this value saturates to red. Sqrt-scaled in shader so
      *  small reductions near saturation visibly shift color. Default 0.05. */
     float leakHeatmapDivisor;
+
+    /** Phase MB (multi-bounce temporal feedback) — see doc/7/multi_bounce_temporal_plan.md.
+     *  false (default): single-bounce only (current behavior, bit-exact preserved).
+     *  true: bake-time surface hits sample previous-frame C0 atlas for indirect.
+     *  Converges to multi-bounce equilibrium over ~5-10 frames. */
+    bool  useMultiBounce;
+    /** Multiplier on multi-bounce feedback term. Default 0.7 for stability margin.
+     *  gain × albedo × hemi_factor < 1 required for stable geometric series. */
+    float multiBounceGain;
+
+    /** 2026-05-19 Mode 18 (cascade-vs-PT delta heatmap) sensitivity divisor.
+     *  Signed bipolar colormap: |delta| >= divisor saturates. Default 0.2 picked for
+     *  Cornell-scale scenes (typical radiance ~0.3). */
+    float deltaHeatmapDivisor;
+
+    // ========================================================================
+    // Phase 7: PT reference (doc/7/pt_reference_plan.md)
+    // ========================================================================
+    GLuint   ptAccumTexture;       // RGBA32F, half-viewport size
+    int      ptAccumWidth, ptAccumHeight;
+    int      ptSampleCount;        // total rays-per-pixel accumulated since reset
+    int      ptRaysPerFrame;       // dispatched per frame (default 1 for interactive)
+    int      ptMaxBounces;         // hard cap on path length (default 8)
+    float    ptRussianRoulette;    // survival probability (default 0.9)
+    int      ptCascadeMatch;       // 0 = unbiased (default), 1 = match cascade ambient
+    bool     ptDirty;              // true → reset accumulator next dispatch
+    uint32_t ptFrameIndex;         // RNG seed input
+    // Camera-change debounce (W5 of /loop discussion):
+    glm::vec3 ptLastCamPos;
+    glm::vec3 ptLastCamTarget;
 
     /** 5h: Cast shadow ray from surface hit to light in direct path.
      *  true (default): 32-step SDF march gives hard binary shadow in direct term.
