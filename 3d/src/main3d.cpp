@@ -382,6 +382,26 @@ int main(int argc, char* argv[]) {
             float v = static_cast<float>(std::atof(arg.substr(22).c_str()));
             demo->setPtRussianRoulette(v);
             std::cout << "[MAIN] --pt-russian-roulette=" << v << "\n";
+        } else if (arg.rfind("--use-hybrid=", 0) == 0) {
+            int v = std::atoi(arg.substr(13).c_str());
+            demo->setUseHybrid(v != 0);
+            std::cout << "[MAIN] --use-hybrid=" << v
+                      << " (1=ON per-pixel correction, 0=OFF cascade-only) doc/7\n";
+        } else if (arg.rfind("--hybrid-weight=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(16).c_str()));
+            demo->setHybridBlendWeight(v);
+            std::cout << "[MAIN] --hybrid-weight=" << v
+                      << " (1.0=pure correction, 0.0=pure cascade; default 1.0)\n";
+        } else if (arg.rfind("--hybrid-ema=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(13).c_str()));
+            demo->setHybridEMAAlpha(v);
+            std::cout << "[MAIN] --hybrid-ema=" << v
+                      << " (default 0.1; lower = smoother but slower convergence)\n";
+        } else if (arg.rfind("--hybrid-rays=", 0) == 0) {
+            int v = std::atoi(arg.substr(14).c_str());
+            demo->setHybridRaysPerFrame(v);
+            std::cout << "[MAIN] --hybrid-rays=" << v
+                      << " (rays/pixel/dispatch; default 1)\n";
         } else if (arg.rfind("--phase3-debug=", 0) == 0) {
             int v = std::atoi(arg.substr(15).c_str());
             demo->setPhase3DebugMode(v);

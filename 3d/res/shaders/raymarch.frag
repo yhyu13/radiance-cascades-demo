@@ -108,6 +108,24 @@ uniform int       uPtAccumValid;  // 0 = no PT accum bound (don't read); 1 = bou
  *  gap without over-saturating. Lower = more sensitive. */
 uniform float uDeltaHeatmapDivisor;
 
+/** 2026-05-19 Mode 19: PT direct-only accumulator (max-bounces=1) for GI-only delta.
+ *  PT_GI = uPtAccum.rgb - uPtDirectAccum.rgb (full minus direct = pure indirect). */
+uniform sampler2D uPtDirectAccum;
+
+/** 2026-05-19 Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md).
+ *  Half-res RGBA32F accumulator written by hybrid_correction.comp. Stores per-pixel
+ *  exact bounce-1 indirect (albedo × direct_at_random_bounce_hit) EMA-averaged over frames.
+ *  Mode 0 path replaces cascade's bounce-1 contribution with this when uHybridCorrection != 0.
+ *
+ *  Composition (per critic-05 H1/H2):
+ *      finalIndirect = mix(correction, cascadeIndirect, max(0, 1 - uHybridBlendWeight))
+ *  At w=1 (default): pure correction (no double-count, but loses cascade's bounce-2+).
+ *  At w<1: bias toward cascade for bounce-2+ at cost of bounce-1 double-counting. */
+uniform sampler2D uHybridAccum;
+uniform int       uHybridAccumValid;   // 0 = not bound (treat as cascade-only); 1 = bound
+uniform int       uHybridCorrection;   // 0 = off; 1 = apply blend in mode 0
+uniform float     uHybridBlendWeight;  // 0..1; default 1.0 (pure correction per critic-05 H1)
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
@@ -661,6 +679,20 @@ void main() {
                 indirectColor = albedo * indirect;
             }
 
+            // 2026-05-19 Hybrid RC + Per-Pixel Correction (doc/7).
+            // Replace (or blend) cascade's bounce-1 with exact MC-integrated bounce-1
+            // from hybridAccumTexture. Composition per critic-05 H1/H2:
+            //   finalIndirect = mix(correction, cascadeIndirect, max(0, 1 - w))
+            // At w=1: pure correction (default; no double-count; loses cascade's bounce-2+).
+            // At w<1: bias toward cascade (adds bounce-2+ but double-counts bounce-1).
+            // Sample at the SCREEN-SPACE pixel UV — the accumulator is screen-aligned, not
+            // world-aligned, so we use vUV (already in [0,1]) directly. Bilinear filter.
+            if (uHybridCorrection != 0 && uHybridAccumValid != 0) {
+                vec3 correction = texture(uHybridAccum, vUV).rgb;
+                float w = clamp(uHybridBlendWeight, 0.0, 1.0);
+                indirectColor = mix(correction, indirectColor, max(0.0, 1.0 - w));
+            }
+
             // Step 11 (codex 07 F3): GI heatmaps. Inserted AFTER the main-path
             // lighting computation (line 535-544) so they CONSUME directColor /
             // indirectColor / indirect -- unlike modes 4/6 which compute their
@@ -694,6 +726,36 @@ void main() {
             // should typically run in --pt-cascade-match=1 mode for apples-to-apples
             // (otherwise the ambient-floor bias contaminates the delta).
             //
+            // 2026-05-19 Mode 19: cascade_GI-vs-PT_GI delta heatmap.
+            // Same as mode 18 but isolates the GI/indirect component on BOTH sides.
+            // Necessary because mode 18 can be deceived: when cascade over-saturates
+            // direct lighting AND under-integrates GI, the total brightness can match
+            // PT total while the GI signal is much weaker. Mode 19 strips direct and
+            // shows the pure indirect comparison — the user's "5× weaker GI" claim
+            // becomes visible here.
+            //
+            // PT_GI = full_PT - direct_only_PT (both accumulators populated by C++ in
+            // two PT dispatches; see ptDispatchReference). cascade_GI = indirectColor
+            // (computed by the standard cascade display path).
+            if (uRenderMode == 19) {
+                vec3 cascadeGI = indirectColor;  // standard cascade indirect-only
+                vec3 ptFull   = (uPtAccumValid != 0) ? texture(uPtAccum, vUV).rgb : vec3(0.0);
+                vec3 ptDirect = (uPtAccumValid != 0) ? texture(uPtDirectAccum, vUV).rgb : vec3(0.0);
+                vec3 ptGI     = max(ptFull - ptDirect, vec3(0.0));  // pure indirect; clamp neg
+                vec3 delta    = cascadeGI - ptGI;
+                float deltaLum = dot(delta, vec3(0.2126, 0.7152, 0.0722));
+                float normalized = clamp(deltaLum / max(uDeltaHeatmapDivisor, 1e-4), -1.0, 1.0);
+                vec3 heatColor;
+                if (normalized < 0.0) {
+                    float t = -normalized;
+                    heatColor = mix(vec3(1.0), vec3(0.0, 0.4, 1.0), t);
+                } else {
+                    heatColor = mix(vec3(1.0), vec3(1.0, 0.2, 0.0), normalized);
+                }
+                fragColor = vec4(heatColor, 1.0);
+                return;
+            }
+
             // On cornell-orig, we expect BLUE dominates (cascade is 42% darker per PT).
             if (uRenderMode == 18) {
                 vec3 cascadeOutput = directColor + indirectColor;
