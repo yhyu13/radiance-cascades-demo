@@ -95,6 +95,19 @@ uniform float uAmbientCompositeStrength;
  *  Lower = more sensitive (tiny leaks turn red); higher = needs strong leak to turn red. */
 uniform float uLeakHeatmapDivisor;
 
+/** Phase 7 (PT reference, doc/7): half-res accumulator the PT compute shader writes.
+ *  Mode 16 reads this directly; cascade-pipeline-derived data is bypassed at the
+ *  output stage. The texture is GL_LINEAR / CLAMP_TO_EDGE so we just sample with
+ *  normalized UVs from the fragment position. */
+uniform sampler2D uPtAccum;
+uniform int       uPtAccumValid;  // 0 = no PT accum bound (don't read); 1 = bound
+
+/** 2026-05-19 Mode 18: cascade-vs-PT delta heatmap sensitivity divisor.
+ *  delta_magnitude >= uDeltaHeatmapDivisor saturates to fully red/blue (signed bipolar).
+ *  Default 0.2: typical Cornell radiance is ~0.3, so 0.2 captures most of the cascade-PT
+ *  gap without over-saturating. Lower = more sensitive. */
+uniform float uDeltaHeatmapDivisor;
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
@@ -485,6 +498,19 @@ void main() {
     fragGBuffer = vec4(0.0);
     fragGI      = vec4(0.0);
 
+    // Phase 7 (PT reference): mode 16 displays ptAccumTexture directly. Skip the
+    // entire SDF raymarch + GI pipeline — pure texture display + tonemap. This is
+    // intentionally short-circuited at the TOP so the expensive cascade work isn't
+    // wasted on a pixel we're going to overwrite. (Cascade BAKE still runs upstream
+    // — that's the cascade-overhead noted in plan §8 W7.)
+    if (uRenderMode == 16) {
+        vec3 ptRgb = (uPtAccumValid != 0) ? texture(uPtAccum, vUV).rgb : vec3(0.0);
+        // Same tonemap as mode 0 for apples-to-apples comparison (W7 of plan: tonemap consistency).
+        vec3 mapped = toneMapACES(ptRgb);
+        fragColor = vec4(pow(mapped, vec3(1.0 / 2.2)), 1.0);
+        return;
+    }
+
     // Generate ray from camera
     vec3 rayDir = calculateRayDirection(vUV);
     
@@ -658,6 +684,43 @@ void main() {
                 return;
             }
 
+            // 2026-05-19 Mode 18: cascade-vs-PT delta heatmap.
+            // Computes the SIGNED per-pixel delta between cascade output and PT truth.
+            // Bipolar colormap: red = cascade brighter than PT, blue = cascade dimmer.
+            // White = exact match. Use to find WHERE cascade integration approximation
+            // diverges from the truth.
+            //
+            // Requires: render mode 18 ALSO triggers PT dispatch (in demo3d.cpp); PT
+            // should typically run in --pt-cascade-match=1 mode for apples-to-apples
+            // (otherwise the ambient-floor bias contaminates the delta).
+            //
+            // On cornell-orig, we expect BLUE dominates (cascade is 42% darker per PT).
+            if (uRenderMode == 18) {
+                vec3 cascadeOutput = directColor + indirectColor;
+                vec3 ptTruth = (uPtAccumValid != 0)
+                    ? texture(uPtAccum, vUV).rgb
+                    : vec3(0.0);
+                vec3 delta = cascadeOutput - ptTruth;
+                // Signed luminance delta — positive = cascade brighter, negative = dimmer.
+                float deltaLum = dot(delta, vec3(0.2126, 0.7152, 0.0722));
+                float normalized = clamp(deltaLum / max(uDeltaHeatmapDivisor, 1e-4), -1.0, 1.0);
+                // Bipolar colormap:
+                //   normalized = -1 → deep blue (cascade much dimmer than PT)
+                //   normalized =  0 → white (exact match)
+                //   normalized = +1 → deep red (cascade much brighter than PT)
+                vec3 heatColor;
+                if (normalized < 0.0) {
+                    // Cascade dim: white → blue
+                    float t = -normalized;
+                    heatColor = mix(vec3(1.0), vec3(0.0, 0.4, 1.0), t);
+                } else {
+                    // Cascade bright: white → red
+                    heatColor = mix(vec3(1.0), vec3(1.0, 0.2, 0.0), normalized);
+                }
+                fragColor = vec4(heatColor, 1.0);
+                return;
+            }
+
             // Mode 14: leak-suspect heatmap (2026-05-18).
             // Visualizes per-pixel "leak potential" = the radiance from atlas bins that
             // Phase 2's render-side α-gate hides from display. Bright red = high leak
@@ -707,6 +770,13 @@ void main() {
             vec3 modeColor;
             if      (uRenderMode == 9)  modeColor = albedo * diff * uLightColor;
             else if (uRenderMode == 10) modeColor = albedo * vec3(uAmbientCompositeStrength);
+            // 2026-05-19 Mode 17: GI-only isolated. Pure indirect bounce from cascade
+            // atlas; NO direct light, NO ambient floor, NO shadow. Toggle "Temporal
+            // multi-bounce (Phase MB)" in Hierarchy & Merge tab — image visibly
+            // brightens with MB ON because multi-bounce adds to the atlas. Differs
+            // from mode 6 which still composites direct via uSeparateGI path; mode 17
+            // is the pure-GI viewer for MB A/B comparisons.
+            else if (uRenderMode == 17) modeColor = indirectColor;
             else                        modeColor = directColor + indirectColor;
 
             // Normal path: composite here, tone map after the loop.
