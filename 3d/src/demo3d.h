@@ -719,6 +719,16 @@ public:
     void setHybridBlurRadius(int v)        { hybridBlurRadius = v < 0 ? 0 : (v > 6 ? 6 : v); }
     void setHybridBlurDepthSigma(float v)  { hybridBlurDepthSigma = v < 1e-4f ? 1e-4f : v; }
     void setHybridBlurNormalSigma(float v) { hybridBlurNormalSigma = v < 1e-4f ? 1e-4f : v; }
+    void setHybridBlurLumSigma(float v)    { hybridBlurLumSigma = v < 0.0f ? 0.0f : v; }
+    void setHybridAabbClamp(bool v)        { hybridAabbClamp = v; }
+    void setHybridAabbSlack(float v)       { hybridAabbSlack = v < 1.0f ? 1.0f : v; }
+    void setHybridAabbMinSpp(int v)        { hybridAabbMinSpp = v < 0 ? 0 : v; }
+    // v1.3 importance sampling setters
+    void setHybridNEEFraction(float v)      { hybridNEEFraction      = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); resetHybridAccumulator(); }
+    void setHybridGlobalRoughness(float v)  { hybridGlobalRoughness  = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); resetHybridAccumulator(); }
+    void setHybridUseRoughnessTex(bool v)   { hybridUseRoughnessTex  = v; resetHybridAccumulator(); }
+    void setHybridNEEConeMin(float v)       { hybridNEEConeMin       = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v); resetHybridAccumulator(); }
+    void setHybridNEEConeMax(float v)       { hybridNEEConeMax       = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v); resetHybridAccumulator(); }
 
     // Phase 7: PT reference setters + invalidation
     void resetPTAccumulator() { ptDirty = true; ptSampleCount = 0; }
@@ -1371,6 +1381,17 @@ private:
     int      hybridBlurRadius;         // bilateral kernel radius on hybridAccum (default 3)
     float    hybridBlurDepthSigma;     // depth edge stop (default 0.05)
     float    hybridBlurNormalSigma;    // normal edge stop (default 0.3)
+    float    hybridBlurLumSigma;       // v1.2.3 luminance edge stop (default 0.5; 0=off)
+    bool     hybridAabbClamp;          // v1.2.4 firefly clamp (HIGH side only); default OFF
+    float    hybridAabbSlack;          // AABB clamp slack multiplier (default 2.0; was 1.5)
+    int      hybridAabbMinSpp;         // skip firefly clamp until spp >= this (default 4)
+    // v1.3 importance sampling (NEE + roughness)
+    float    hybridNEEFraction;        // P(NEE strategy) per ray; 0=cosine-only, 0.5 default
+    float    hybridGlobalRoughness;    // [0,1] fallback roughness when texture disabled
+    bool     hybridUseRoughnessTex;    // sample per-voxel roughnessTexture when true
+    float    hybridNEEConeMin;         // cos(half-angle) at roughness=0 (narrow cone)
+    float    hybridNEEConeMax;         // cos(half-angle) at roughness=1 (wide cone)
+    GLuint   roughnessTexture;         // GL_R8 3D texture; voxel-aligned with sdf/albedo
 
     // ========================================================================
     // Phase 7: PT reference (doc/7/pt_reference_plan.md)

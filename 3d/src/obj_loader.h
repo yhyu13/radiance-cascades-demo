@@ -40,7 +40,12 @@ struct OBJMaterial {
     glm::vec3 ambient  = glm::vec3(0.1f);
     glm::vec3 specular = glm::vec3(0.5f);
     glm::vec3 emissive = glm::vec3(0.0f);  // Step 6: Ke (boosted into albedo)
-    float shininess = 32.0f;
+    float shininess = 32.0f;               // Phong Ns (kept for legacy)
+    // v1.3: derived roughness for hybrid NEE/BRDF cone modulation.
+    // roughness = sqrt(2 / (Ns + 2)) (Phong→Blinn↔GGX equivalence, Walter 2007).
+    // Ns=32 → ~0.243 (mid-smooth). Ns=2 → 0.707 (fairly rough). Defaults to 1.0 (Lambert)
+    // when no Ns parsed so existing scenes stay matte.
+    float roughness = 1.0f;
 };
 
 // Step 9 Phase 3 (codex 03 F4): flat triangle layout for the GPU voxelizer
@@ -261,6 +266,16 @@ public:
                 iss >> cur.diffuse.x >> cur.diffuse.y >> cur.diffuse.z;
             } else if (p == "Ke" && haveCur) {
                 iss >> cur.emissive.x >> cur.emissive.y >> cur.emissive.z;
+            } else if (p == "Ns" && haveCur) {
+                // v1.3: Phong shininess → roughness. Walter et al. 2007 §5.2:
+                // alpha_g = sqrt(2/(Ns+2)) (Phong-to-GGX equivalence).
+                float ns = 0.0f;
+                iss >> ns;
+                cur.shininess = ns;
+                if (ns >= 0.0f) {
+                    cur.roughness = std::sqrt(2.0f / (ns + 2.0f));
+                    cur.roughness = std::min(1.0f, std::max(0.0f, cur.roughness));
+                }
             }
         }
         if (haveCur) materials[cur.name] = cur;

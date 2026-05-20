@@ -207,7 +207,9 @@ Demo3D::Demo3D()
     , hybridBlendWeight(1.0f)      // pure correction (no double-count per critic-05 H1)
     , hybridUseMaxComp(false)      // legacy max() composition
     , hybridRaysPerFrame(1)        // stochastic; EMA averages
-    , hybridEMAAlpha(0.1f)         // ~10 frames to converge
+    , hybridEMAAlpha(0.05f)        // v1.2.4: ~20-frame window (was 0.1 / 10 frames).
+                                    // User reported "PT still too noisy" — wider history
+                                    // window trades responsiveness for smoother PT signal.
     , hybridDirty(true)
     , hybridFrameSeed(0)
     , hybridLastCamPos(0.0f), hybridLastCamTarget(0.0f)
@@ -227,6 +229,25 @@ Demo3D::Demo3D()
     , hybridBlurRadius(3)           // 7x7 kernel
     , hybridBlurDepthSigma(0.05f)
     , hybridBlurNormalSigma(0.3f)
+    , hybridBlurLumSigma(0.5f)      // v1.2.3 luminance edge-stop; 0=off
+    // v1.2.4 AABB clamp redesign (was killing PT under cooperative merge):
+    //   - default OFF (opt-in firefly suppression)
+    //   - firefly-only (HIGH side only; low-side clamp removed in shader)
+    //   - slack 2.0 (was 1.5; less aggressive ceiling)
+    //   - min-spp 4 gate (3x3 neighborhood is noise below that)
+    , hybridAabbClamp(false)
+    , hybridAabbSlack(2.0f)
+    , hybridAabbMinSpp(4)
+    // v1.3 importance sampling (NEE cone + roughness-modulated cone angle).
+    // Defaults preserve v1.2.4 behavior at alphaNEE=0: cosine BRDF only. Enabled
+    // at 0.5 ships measurable variance reduction in directly-lit indirect regions
+    // without obvious downside on Cornell.
+    , hybridNEEFraction(0.5f)
+    , hybridGlobalRoughness(1.0f)
+    , hybridUseRoughnessTex(false)
+    , hybridNEEConeMin(0.95f)       // cos(~18°) at roughness=0 (mirror)
+    , hybridNEEConeMax(0.50f)       // cos(~60°) at roughness=1 (Lambert)
+    , roughnessTexture(0)
     // Phase 7: PT reference
     , ptAccumTexture(0)
     , ptDirectAccumTexture(0)
@@ -3492,6 +3513,21 @@ void Demo3D::hybridDispatchCorrection() {
     glUniform1f(glGetUniformLocation(prog, "uHybridEMAAlpha"), hybridEMAAlpha);
     glUniform1ui(glGetUniformLocation(prog, "uHybridFrameSeed"), hybridFrameSeed);
     glUniform1i(glGetUniformLocation(prog, "uHybridSppBefore"), hybridSampleCount);
+    glUniform1i(glGetUniformLocation(prog, "uHybridAabbClamp"), hybridAabbClamp ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uHybridAabbSlack"), hybridAabbSlack);
+    glUniform1i(glGetUniformLocation(prog, "uHybridAabbMinSpp"), hybridAabbMinSpp);
+
+    // v1.3: NEE + per-voxel roughness importance sampling.
+    // Roughness as a 3D texture (default solid 1.0 → cosine BRDF unchanged when toggle is off).
+    // Bound at unit 2 (3D texture; sibling of uSDF/uAlbedo at 0/1 — no multi-target conflict
+    // because all three are sampler3D).
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_3D, roughnessTexture);
+    glUniform1i(glGetUniformLocation(prog, "uRoughness"), 2);
+    glUniform1f(glGetUniformLocation(prog, "uHybridNEEFraction"), hybridNEEFraction);
+    glUniform1f(glGetUniformLocation(prog, "uHybridGlobalRoughness"), hybridGlobalRoughness);
+    glUniform1i(glGetUniformLocation(prog, "uHybridUseRoughnessTex"), hybridUseRoughnessTex ? 1 : 0);
+    glUniform1f(glGetUniformLocation(prog, "uHybridNEEConeMin"), hybridNEEConeMin);
+    glUniform1f(glGetUniformLocation(prog, "uHybridNEEConeMax"), hybridNEEConeMax);
 
     glBindImageTexture(0, hybridAccumTexture,   0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
     glBindImageTexture(1, hybridGBufferTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
@@ -3526,6 +3562,7 @@ void Demo3D::hybridDispatchCorrection() {
         glUniform1i(glGetUniformLocation(blurProg, "uHybridBlurRadius"), hybridBlurRadius);
         glUniform1f(glGetUniformLocation(blurProg, "uHybridBlurDepthSigma"), hybridBlurDepthSigma);
         glUniform1f(glGetUniformLocation(blurProg, "uHybridBlurNormalSigma"), hybridBlurNormalSigma);
+        glUniform1f(glGetUniformLocation(blurProg, "uHybridBlurLumSigma"), hybridBlurLumSigma);
         glUniform2f(glGetUniformLocation(blurProg, "uHybridAccumSize"),
                     float(hybridAccumWidth), float(hybridAccumHeight));
         glBindImageTexture(0, hybridFilteredTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
@@ -3709,6 +3746,19 @@ void Demo3D::createVolumeBuffers() {
         GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr
     );
 
+    // v1.3 per-voxel roughness for hybrid PT correction. Defaults to 1.0 (Lambert)
+    // until the SDF baker populates it from material data. R8 = 8-bit unorm.
+    {
+        const size_t nVox = size_t(volumeResolution) * volumeResolution * volumeResolution;
+        std::vector<uint8_t> roughInit(nVox, 255);  // 255/255 = 1.0
+        roughnessTexture = gl::createTexture3D(
+            volumeResolution, volumeResolution, volumeResolution,
+            GL_R8, GL_RED, GL_UNSIGNED_BYTE, roughInit.data()
+        );
+        if (!roughnessTexture)
+            std::cerr << "[ERROR] createVolumeBuffers: roughnessTexture alloc failed\n";
+    }
+
     directLightingTexture = gl::createTexture3D(
         volumeResolution, volumeResolution, volumeResolution,
         GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, nullptr
@@ -3755,6 +3805,8 @@ void Demo3D::createVolumeBuffers() {
     glObjectLabel(GL_TEXTURE, voxelGridTexture,        -1, "voxelGridTexture");
     glObjectLabel(GL_TEXTURE, sdfTexture,              -1, "sdfTexture");
     glObjectLabel(GL_TEXTURE, albedoTexture,           -1, "albedoTexture");
+    if (roughnessTexture)
+        glObjectLabel(GL_TEXTURE, roughnessTexture,    -1, "roughnessTexture");
     glObjectLabel(GL_TEXTURE, directLightingTexture,   -1, "directLightingTexture");
     glObjectLabel(GL_TEXTURE, prevFrameTexture,        -1, "prevFrameTexture");
     glObjectLabel(GL_TEXTURE, currentRadianceTexture,  -1, "currentRadianceTexture");
@@ -3798,6 +3850,7 @@ void Demo3D::destroyVolumeBuffers() {
     glDeleteTextures(1, &voxelGridTexture);
     glDeleteTextures(1, &sdfTexture);
     glDeleteTextures(1, &albedoTexture);
+    if (roughnessTexture) { glDeleteTextures(1, &roughnessTexture); roughnessTexture = 0; }
     glDeleteTextures(1, &directLightingTexture);
     glDeleteTextures(1, &prevFrameTexture);
     glDeleteTextures(1, &currentRadianceTexture);
@@ -5236,12 +5289,13 @@ void Demo3D::renderCascadePanel() {
                 setHybridBlendWeight(bw);
             ImGui::EndDisabled();
             float ema = hybridEMAAlpha;
-            if (ImGui::SliderFloat("Hybrid EMA alpha", &ema, 0.01f, 1.0f, "%.2f"))
+            if (ImGui::SliderFloat("Hybrid EMA alpha", &ema, 0.005f, 1.0f, "%.3f",
+                                   ImGuiSliderFlags_Logarithmic))
                 setHybridEMAAlpha(ema);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-                ImGui::SetTooltip("Temporal smoothing on the accumulator.\n"
-                                  "0.1 (default) = ~10 frames to converge from new sample.\n"
-                                  "1.0 = no temporal accumulation (raw stochastic noise).\n"
+                ImGui::SetTooltip("Temporal smoothing floor on the accumulator (1/alpha = window).\n"
+                                  "v1.2.4: default 0.05 (~20 frames; was 0.1/~10) — wider history\n"
+                                  "for less PT noise. 0.02 ≈ 50-frame window. 1.0 = no temporal.\n"
                                   "Lower = smoother but slower to react to camera move.");
             int rpf = hybridRaysPerFrame;
             if (ImGui::SliderInt("Hybrid rays/frame", &rpf, 1, 8))
@@ -5262,6 +5316,93 @@ void Demo3D::renderCascadePanel() {
             float ns = hybridBlurNormalSigma;
             if (ImGui::SliderFloat("Bilateral normal sigma##hybridns", &ns, 0.05f, 1.0f, "%.2f"))
                 setHybridBlurNormalSigma(ns);
+            float ls = hybridBlurLumSigma;
+            if (ImGui::SliderFloat("Bilateral lum sigma##hybridls", &ls, 0.0f, 2.0f, "%.2f"))
+                setHybridBlurLumSigma(ls);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("v1.2.3 luminance edge-stop in the bilateral filter.\n"
+                                  "0 = off (only depth+normal). 0.5 (default) rejects outlier-\n"
+                                  "brightness taps. Higher = more aggressive smoothing.");
+
+            bool aabb = hybridAabbClamp;
+            if (ImGui::Checkbox("Firefly clamp (accum, high-only)##hybridaabb", &aabb))
+                setHybridAabbClamp(aabb);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("v1.2.4 firefly suppression at accumulator update time.\n"
+                                  "Clamps ONLY the HIGH side of each frame's luminance to the\n"
+                                  "3x3 neighborhood max * slack. Does NOT touch the low side\n"
+                                  "(v1.2.3 lo-clamp killed legitimate PT signal under cooperative\n"
+                                  "merge — see doc/7 §10.1). OFF by default; opt in if fireflies\n"
+                                  "visible.");
+            if (hybridAabbClamp) {
+                float as = hybridAabbSlack;
+                if (ImGui::SliderFloat("AABB slack (hi)##hybridas", &as, 1.0f, 8.0f, "%.2f"))
+                    setHybridAabbSlack(as);
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                    ImGui::SetTooltip("Firefly ceiling = lumMax * slack.\n"
+                                      "1.0 = strict (suppresses any peak above neighbors).\n"
+                                      "2.0 default. Higher = more permissive (fewer false positives).");
+                int ams = hybridAabbMinSpp;
+                if (ImGui::SliderInt("AABB min spp##hybridams", &ams, 0, 32))
+                    setHybridAabbMinSpp(ams);
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                    ImGui::SetTooltip("Skip firefly clamp until accumulator has this many samples.\n"
+                                      "Below the threshold the 3x3 neighborhood is itself noise and\n"
+                                      "the clamp would mis-fire. Default 4.");
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("v1.3 — Directional-importance cone + roughness");
+            float nee = hybridNEEFraction;
+            if (ImGui::SliderFloat("DI cone fraction##hybridnee", &nee, 0.0f, 1.0f, "%.2f"))
+                setHybridNEEFraction(nee);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Probability that the bounce ray is drawn from a cosine-weighted cone\n"
+                                  "aimed at the light direction (DI cone), vs the cosine-BRDF lobe.\n"
+                                  "This is NOT classical NEE (which samples a point on light geometry).\n"
+                                  "0 = pure cosine BRDF (v1.2 behavior).\n"
+                                  "0.5 = one-sample MIS balance.\n"
+                                  "1 = always DI cone.\n"
+                                  "Variance sweep (cornell-orig-alcove, see doc/7 §10.4) shows TIE vs cosine.\n"
+                                  "True light-position NEE = v1.3.2 backlog.");
+            // v1.3.1 #7: roughness-texture toggle is a no-op until the per-voxel bake
+            // ships (planned v1.3.1 #2). Gray it out so users don't think they're
+            // disabling a feature that's actually running.
+            ImGui::BeginDisabled(true);
+            bool useRough = hybridUseRoughnessTex;
+            if (ImGui::Checkbox("Use roughness texture##hybridrtex", &useRough))
+                setHybridUseRoughnessTex(useRough);
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Disabled — per-voxel roughness bake pending (v1.3.1 #2).\n"
+                                  "Toggle currently no-op: shader falls back to Global roughness either way.\n"
+                                  "Use the slider below.");
+            {
+                float gr = hybridGlobalRoughness;
+                if (ImGui::SliderFloat("Global roughness##hybridgr", &gr, 0.0f, 1.0f, "%.2f"))
+                    setHybridGlobalRoughness(gr);
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                    ImGui::SetTooltip("Scene-wide roughness controlling the DI-cone half-angle.\n"
+                                      "1.0 default (fully diffuse → wide cone).");
+            }
+            // v1.3.1 #8: clamp slider ranges to avoid degenerate cone caps.
+            //   cMin (smooth-surface cone cos): cap at 0.999 (≈ 2.6° half-angle); 1.0 = zero-area cap.
+            //   cMax (rough-surface cone cos): floor at -0.99; -1.0 = full sphere, pdf integrates wrong.
+            float cMin = hybridNEEConeMin;
+            if (ImGui::SliderFloat("DI cone cos (smooth)##hybridncmin", &cMin, 0.5f, 0.999f, "%.3f"))
+                setHybridNEEConeMin(cMin);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Cone cos(thetaMax) at roughness=0 (smooth surface).\n"
+                                  "0.95 default ≈ 18° half-angle. Higher → tighter cone.\n"
+                                  "Capped at 0.999 to avoid zero-area cap (pdf blows up).");
+            float cMax = hybridNEEConeMax;
+            if (ImGui::SliderFloat("DI cone cos (rough)##hybridncmax", &cMax, -0.99f, 0.95f, "%.3f"))
+                setHybridNEEConeMax(cMax);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Cone cos(thetaMax) at roughness=1 (fully diffuse).\n"
+                                  "0.50 default ≈ 60° half-angle.\n"
+                                  "Floored at -0.99 to avoid degenerate full-sphere pdf.");
+
             if (ImGui::Button("Reset accumulator##hybrid")) resetHybridAccumulator();
             ImGui::TextDisabled("v1.2: PT correction is bilateral-blurred (depth+normal aware)\n"
                                 "in its own pass, then variance-merged with cascade in raymarch.");
