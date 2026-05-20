@@ -427,6 +427,21 @@ int main(int argc, char* argv[]) {
             demo->startHybridSweepPublic(dir);
             std::cout << "[MAIN] --hybrid-ab-sweep=" << dir
                       << " (Phase 8 A/B validation suite; see doc/7/hybrid_v12_validation_phase8_plan.md)\n";
+        } else if (arg.rfind("--hybrid-nee=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(13).c_str()));
+            demo->setHybridNEEFraction(v);
+            std::cout << "[MAIN] --hybrid-nee=" << v
+                      << " (v1.3 NEE fraction; 0=cosine BRDF only, 0.5 default, 1=always cone-toward-light)\n";
+        } else if (arg.rfind("--hybrid-roughness=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(19).c_str()));
+            demo->setHybridGlobalRoughness(v);
+            std::cout << "[MAIN] --hybrid-roughness=" << v
+                      << " (v1.3 scene-wide roughness when use-roughness-tex=0; default 1.0=Lambert)\n";
+        } else if (arg.rfind("--hybrid-use-roughness-tex=", 0) == 0) {
+            int v = std::atoi(arg.substr(27).c_str());
+            demo->setHybridUseRoughnessTex(v != 0);
+            std::cout << "[MAIN] --hybrid-use-roughness-tex=" << v
+                      << " (v1.3 per-voxel roughness sample; default 0)\n";
         } else if (arg.rfind("--phase3-debug=", 0) == 0) {
             int v = std::atoi(arg.substr(15).c_str());
             demo->setPhase3DebugMode(v);
