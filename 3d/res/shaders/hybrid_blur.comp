@@ -1,0 +1,115 @@
+/**
+ * @file hybrid_blur.comp
+ * @brief Depth+normal aware bilateral blur on the hybrid correction accumulator.
+ *
+ * Pipeline position:
+ *   hybrid_correction.comp → hybridAccumTexture (noisy half-res RGB+L^2)
+ *                          + hybridGBufferTexture (half-res normal+depth)
+ *   THIS PASS              → hybridFilteredTexture (smooth half-res RGB+L^2)
+ *   raymarch.frag samples hybridFilteredTexture for inverse-variance merge with cascade.
+ *
+ * Why a dedicated bilateral instead of the existing gi_blur.frag:
+ *   gi_blur runs on the COMBINED indirect (correction + cascade) at full screen res.
+ *   Blurring the combined signal over-softens cascade (which is already probe-bilinear
+ *   smooth). The right thing per 2026-05-19 user feedback: blur the PT correction
+ *   ALONE, then merge with cascade. Cascade keeps its detail; only the stochastic
+ *   PT noise gets smoothed.
+ *
+ * Algorithm: single-pass 2D bilateral, kernel radius uHybridBlurRadius (default 3 → 7x7).
+ *   weight_i = gauss_spatial * exp(-depth_diff^2 / (2*depthSigma^2))
+ *                            * exp(-(1-dot(n_center,n_i)) / normalSigma)
+ *   Skip taps where center has no surface (depth_center == 0 = sky).
+ *
+ * Variance channel (.a = E[L^2]) blurs with the SAME weights as radiance — the spatial
+ * support is correlated, so the post-blur variance estimate stays consistent with the
+ * post-blur radiance.
+ */
+
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Inputs
+uniform sampler2D uHybridAccum;       // .rgb = noisy radiance, .a = E[L^2]
+uniform sampler2D uHybridGBuffer;     // .rgb = normal*0.5+0.5, .a = linearDepth (0=sky)
+
+// Output
+layout(rgba32f, binding = 0) uniform image2D oHybridFiltered;
+
+// Bilateral params (parallel to gi_blur.frag, half-res tuned)
+uniform int   uHybridBlurRadius;      // 1..6; default 3 → 7x7 kernel
+uniform float uHybridBlurDepthSigma;  // edge stop on linear depth
+uniform float uHybridBlurNormalSigma; // edge stop on normal cosine distance
+uniform float uHybridBlurLumSigma;    // v1.2.3 edge stop on luminance difference (0=off)
+uniform vec2  uHybridAccumSize;       // half-res accumulator pixel dimensions
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz  = ivec2(uHybridAccumSize);
+    if (any(greaterThanEqual(pix, sz))) return;
+
+    vec4 center    = texelFetch(uHybridAccum, pix, 0);
+    vec4 centerGB  = texelFetch(uHybridGBuffer, pix, 0);
+    float centerDepth = centerGB.a;
+
+    // Sky / no-surface pixel: nothing to filter (no neighbours valid either). Just pass through.
+    if (centerDepth <= 0.0) {
+        imageStore(oHybridFiltered, pix, center);
+        return;
+    }
+
+    vec3 centerNormal = centerGB.rgb * 2.0 - 1.0;
+    float centerLum   = dot(center.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+    int R = clamp(uHybridBlurRadius, 1, 6);
+    float depthSig  = max(uHybridBlurDepthSigma, 1e-3);
+    float normalSig = max(uHybridBlurNormalSigma, 1e-3);
+    float lumSig    = max(uHybridBlurLumSigma,   1e-6);  // 0 → effectively no edge stop
+    bool useLum     = uHybridBlurLumSigma > 1e-5;
+
+    vec4 accum = vec4(0.0);
+    float wSum = 0.0;
+
+    for (int dy = -R; dy <= R; ++dy) {
+        for (int dx = -R; dx <= R; ++dx) {
+            ivec2 q = pix + ivec2(dx, dy);
+            if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, sz))) continue;
+
+            vec4 sampleRGBA = texelFetch(uHybridAccum, q, 0);
+            vec4 gb         = texelFetch(uHybridGBuffer, q, 0);
+            float depth     = gb.a;
+            if (depth <= 0.0) continue;  // skip sky neighbours
+
+            vec3 normal = gb.rgb * 2.0 - 1.0;
+
+            // Spatial Gaussian (sigma = R/2)
+            float r2 = float(dx*dx + dy*dy);
+            float spaceSigma = max(float(R) * 0.5, 0.5);
+            float wSpace = exp(-r2 / (2.0 * spaceSigma * spaceSigma));
+
+            // Depth edge-stop (linearized depth diff)
+            float dDepth = depth - centerDepth;
+            float wDepth = exp(-(dDepth * dDepth) / (2.0 * depthSig * depthSig));
+
+            // Normal edge-stop (1 - cos(angle)); same convention as gi_blur.frag
+            float cosA = clamp(dot(centerNormal, normal), -1.0, 1.0);
+            float wNormal = exp(-(1.0 - cosA) / normalSig);
+
+            // v1.2.3 luminance edge-stop — rejects outlier-brightness taps. The
+            // accumulator's R2-decorrelated samples still produce per-pixel variance;
+            // this edge-stop filters HF outliers before they reach the merge.
+            float wLum = 1.0;
+            if (useLum) {
+                float dLum = dot(sampleRGBA.rgb, vec3(0.2126, 0.7152, 0.0722)) - centerLum;
+                wLum = exp(-(dLum * dLum) / (2.0 * lumSig * lumSig));
+            }
+
+            float w = wSpace * wDepth * wNormal * wLum;
+            accum += sampleRGBA * w;
+            wSum  += w;
+        }
+    }
+
+    vec4 result = (wSum > 0.0) ? (accum / wSum) : center;
+    imageStore(oHybridFiltered, pix, result);
+}

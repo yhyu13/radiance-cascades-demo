@@ -1,0 +1,359 @@
+/**
+ * @file pt_reference.comp
+ * @brief Path-traced ground-truth reference (compute shader, SDF-traced, progressive).
+ *
+ * See doc/7/pt_reference_plan.md for full design.
+ *
+ * Quick reference:
+ *   - Sphere-traces the existing uSDF for ray intersection (same SDF the cascade uses)
+ *   - Diffuse-only Lambertian; albedo from uAlbedo
+ *   - Cosine-weighted hemisphere sampling for bounces
+ *   - Shadow ray (NEE) for direct light at every bounce (correct for point lights)
+ *   - Russian roulette termination at uPtRussianRoulette probability
+ *   - Progressive accumulation: blends new samples into ptAccumTexture
+ *   - Half-resolution accumulator; display path bilinear-upsamples
+ *
+ * Two modes (uPtCascadeMatch):
+ *   0 = UNBIASED (default): no ambient floor. True ground-truth reference.
+ *   1 = CASCADE-MATCH:      ambient at primary hit only. Cascade's converged target.
+ *
+ * SDF helpers DUPLICATED from radiance_3d.comp (no GLSL #include). Any change to
+ * SDF intersection in radiance_3d.comp MUST be mirrored here. "Silent divergence"
+ * (PT looks right but is subtly wrong) is the worst failure mode for a reference.
+ *
+ * IMPORTANT (impl-critic H2): the original raymarchSDF in radiance_3d.comp ASSUMES
+ * the ray origin is inside the SDF bbox (probes are always inside). PT rays start
+ * at the CAMERA, which is typically OUTSIDE the bbox. sampleSDF returns INF outside
+ * the bbox; a naive port would immediately exit as "sky-miss" for every camera ray.
+ * traceSDF below adds a ray-vs-bbox intersect step (intersectBox) that advances the
+ * ray to the bbox entry point before sampling. This is what the cascade renderer
+ * DOESN'T need but PT MUST have.
+ */
+
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+
+// Camera (matches Camera3D state; see demo3d.cpp ptDispatchReference)
+uniform vec3  uCamPos;
+uniform mat3  uCamBasis;          // columns: right, up, -forward
+uniform float uTanHalfFovY;
+uniform vec2  uViewportSize;      // PT image size (half of viewport)
+
+// Scene (mirrors cascade renderer; see radiance_3d.comp)
+uniform sampler3D uSDF;
+uniform sampler3D uAlbedo;
+uniform vec3  uGridOrigin;
+uniform vec3  uGridSize;
+uniform vec3  uLightPos;
+uniform vec3  uLightColor;
+uniform vec3  uLightDir;
+uniform int   uUseDirectionalLight;
+uniform vec3  uVolCenter;          // uGridOrigin + uGridSize * 0.5
+uniform int   uUseSoftShadowBake;
+uniform float uSoftShadowK;
+uniform float uAmbientBakeStrength;
+uniform int   uUseEnvFill;
+uniform vec3  uSkyColor;
+
+// PT controls
+uniform int   uPtRaysPerFrame;    // rays/pixel per dispatch (default 1 for interactive)
+uniform int   uPtMaxBounces;      // hard cap on path length (default 8)
+uniform float uPtRussianRoulette; // survival probability (default 0.9)
+uniform int   uPtCascadeMatch;    // 0 = unbiased, 1 = add ambient at primary hit
+uniform uint  uFrameIndex;        // RNG seed input
+
+// Accumulation
+layout(rgba32f, binding = 0) uniform image2D oAccum;
+uniform int   uSppBefore;         // total samples per pixel before this dispatch
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+const float PI = 3.14159265359;
+const float INF = 1e10;
+
+// W4: self-intersection offset standardization
+const float kSurfaceEps    = 0.002;   // sphere-trace surface hit threshold
+const float kShadowRayBias = 0.004;   // = 2 * kSurfaceEps; small safety margin for
+                                       // self-intersection (wider because the SDF-
+                                       // gradient normal estimate has finite-diff error)
+
+// =============================================================================
+// RNG (hash-LCG; per W9 may show patterns at <100 spp, converges by ~1k spp)
+// =============================================================================
+
+uint hash(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+uint pcg(inout uint state) {
+    state = state * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float rand1(inout uint state) {
+    return float(pcg(state)) / 4294967296.0;
+}
+
+vec2 rand2(inout uint state) {
+    return vec2(rand1(state), rand1(state));
+}
+
+// =============================================================================
+// Sampling (from shader_toy_pt/Common.glsl)
+// =============================================================================
+
+void genTB(vec3 N, out vec3 T, out vec3 B) {
+    float s = N.z < 0.0 ? -1.0 : 1.0;
+    float a = -1.0 / (s + N.z);
+    float b = N.x * N.y * a;
+    T = vec3(1.0 + s * N.x * N.x * a, s * b, -s * N.x);
+    B = vec3(b, s + N.y * N.y * a, -N.y);
+}
+
+vec3 cosineSample(vec3 N, vec2 r) {
+    vec3 T, B;
+    genTB(N, T, B);
+    r.x *= 2.0 * PI;
+    float s = sqrt(1.0 - r.y);
+    return T * (cos(r.x) * s) + B * (sin(r.x) * s) + N * sqrt(r.y);
+}
+
+// =============================================================================
+// SDF intersection (DUPLICATED from radiance_3d.comp — see file header note)
+// =============================================================================
+
+float sampleSDF(vec3 worldPos) {
+    vec3 uvw = (worldPos - uGridOrigin) / uGridSize;
+    if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0))))
+        return INF;
+    return texture(uSDF, uvw).r;
+}
+
+// Ray-vs-box intersection (slab test). Returns true if ray hits box; tEnter/tExit
+// are clamped to >= 0 (ray ahead of origin). If origin is inside box, tEnter=0.
+// Required because camera typically starts OUTSIDE the SDF volume; sampleSDF returns
+// INF outside the bbox, so naive raymarching from camera origin would immediately
+// exit as "sky-miss." We must advance to the volume entry point first.
+bool intersectBox(vec3 origin, vec3 dir, vec3 boxMin, vec3 boxMax,
+                  out float tEnter, out float tExit) {
+    vec3 invDir = 1.0 / dir;
+    vec3 t1 = (boxMin - origin) * invDir;
+    vec3 t2 = (boxMax - origin) * invDir;
+    vec3 tMin3 = min(t1, t2);
+    vec3 tMax3 = max(t1, t2);
+    tEnter = max(max(tMin3.x, tMin3.y), tMin3.z);
+    tExit  = min(min(tMax3.x, tMax3.y), tMax3.z);
+    tEnter = max(tEnter, 0.0);
+    return tExit > tEnter;
+}
+
+struct Hit {
+    bool  ok;       // false = miss in volume
+    bool  sky;      // true = exited volume + sky enabled
+    vec3  pos;      // world-space hit position
+    vec3  normal;   // outward normal at hit
+    vec3  albedo;   // albedo sampled at hit
+    float t;        // ray distance to hit
+};
+
+Hit traceSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
+    Hit h;
+    h.ok = false; h.sky = false;
+    h.pos = vec3(0.0); h.normal = vec3(0.0,1.0,0.0); h.albedo = vec3(0.0); h.t = 0.0;
+
+    // Advance to volume entry if ray starts outside the bbox. sampleSDF returns INF
+    // outside the volume; we'd immediately exit as "sky-miss" otherwise. Camera rays
+    // typically start outside; bounce rays start at surface (inside).
+    vec3 boxMin = uGridOrigin;
+    vec3 boxMax = uGridOrigin + uGridSize;
+    float boxEnter, boxExit;
+    if (!intersectBox(origin, direction, boxMin, boxMax, boxEnter, boxExit)) {
+        // Ray never enters the volume → escapes to sky.
+        h.sky = (uUseEnvFill != 0);
+        return h;
+    }
+    // tMin = max of caller's tMin and box-entry (with a small epsilon so we're
+    // just inside the bbox when sampleSDF is first called).
+    float t = max(tMin, boxEnter + 0.001);
+    // tMax clamped to box-exit (don't trace past where the SDF is defined).
+    tMax = min(tMax, boxExit);
+
+    const int MAX_STEPS = 128;
+    for (int i = 0; i < MAX_STEPS && t < tMax; ++i) {
+        vec3 pos = origin + direction * t;
+        float dist = sampleSDF(pos);
+        if (dist >= INF * 0.5) {
+            // Stepped out of volume — sky if enabled.
+            h.sky = (uUseEnvFill != 0);
+            return h;
+        }
+        if (dist < kSurfaceEps) {
+            // Surface hit. Normal via finite-differences. e ~= 1 voxel at 128^3.
+            const float e = 0.03;
+            h.normal = normalize(vec3(
+                sampleSDF(pos + vec3(e,0,0)) - sampleSDF(pos - vec3(e,0,0)),
+                sampleSDF(pos + vec3(0,e,0)) - sampleSDF(pos - vec3(0,e,0)),
+                sampleSDF(pos + vec3(0,0,e)) - sampleSDF(pos - vec3(0,0,e))));
+            vec3 uvw = (pos - uGridOrigin) / uGridSize;
+            h.albedo = texture(uAlbedo, uvw).rgb;
+            h.pos = pos;
+            h.t = t;
+            h.ok = true;
+            return h;
+        }
+        t += max(dist * 0.9, 0.001);
+    }
+    return h;
+}
+
+// =============================================================================
+// Shadow ray + soft shadow (DUPLICATED from radiance_3d.comp's inShadow / softShadowBake)
+// =============================================================================
+
+bool isDirectlyLit(vec3 origin, vec3 lightDir, float lightDist) {
+    float t = kShadowRayBias;
+    for (int i = 0; i < 64 && t < lightDist; ++i) {
+        float d = sampleSDF(origin + lightDir * t);
+        if (d >= INF * 0.5) return true;     // exited volume — assume light visible
+        if (d < kSurfaceEps) return false;    // hit geometry first
+        t += max(d * 0.9, 0.001);
+    }
+    return true;
+}
+
+// Soft shadow factor in [0, 1]: 0 = fully lit, 1 = fully in shadow.
+// Matches radiance_3d.comp softShadowBake convention.
+float softShadowTrace(vec3 origin, vec3 lightDir, float lightDist, float k) {
+    float t = kShadowRayBias;
+    float res = 1.0;
+    for (int i = 0; i < 64 && t < lightDist; ++i) {
+        float d = sampleSDF(origin + lightDir * t);
+        if (d >= INF * 0.5) return 0.0;
+        if (d < kSurfaceEps) return 1.0;
+        res = min(res, k * d / max(t, 0.001));
+        t += max(d * 0.9, 0.001);
+    }
+    return 1.0 - clamp(res, 0.0, 1.0);
+}
+
+// =============================================================================
+// Path tracer
+// =============================================================================
+
+vec3 tracePath(vec3 origin, vec3 direction, inout uint rng) {
+    vec3 accumulation = vec3(0.0);
+    vec3 throughput   = vec3(1.0);
+
+    vec3 effLightPos = (uUseDirectionalLight != 0)
+        ? (uVolCenter - normalize(uLightDir) * 100.0)
+        : uLightPos;
+
+    for (int bounce = 0; bounce < uPtMaxBounces; ++bounce) {
+        Hit h = traceSDF(origin, direction, 0.001, 1e4);
+
+        if (!h.ok) {
+            if (h.sky) accumulation += throughput * uSkyColor;
+            break;
+        }
+
+        // Direct lighting (NEE for zero-area point light; correct without MIS).
+        // NO 1/r² falloff — matches cascade renderer's infinite-reach shading (H2).
+        vec3 toLight = effLightPos - h.pos;
+        float lightDist = length(toLight);
+        vec3 lightDir = toLight / max(lightDist, 1e-4);
+        float cosTheta = max(0.0, dot(h.normal, lightDir));
+        if (cosTheta > 0.0) {
+            vec3 lightOrigin = h.pos + h.normal * kShadowRayBias;
+            float shadowFact = (uUseSoftShadowBake != 0)
+                ? softShadowTrace(lightOrigin, lightDir, lightDist, uSoftShadowK)
+                : (isDirectlyLit(lightOrigin, lightDir, lightDist) ? 0.0 : 1.0);
+            float diff = cosTheta * (1.0 - shadowFact);
+            accumulation += throughput * h.albedo * uLightColor * diff;
+        }
+
+        // W2: ambient only at primary hit AND only when cascade-match mode is on.
+        // Default (unbiased) PT has no ambient — it's a true reference.
+        if (uPtCascadeMatch != 0 && bounce == 0) {
+            accumulation += throughput * h.albedo * vec3(uAmbientBakeStrength);
+        }
+
+        // Russian roulette (matches ShaderToy reference; survival prob 0.9 by default).
+        // Unbiased: throughput compensated by 1/p for surviving paths.
+        if (bounce > 0) {  // don't RR-kill the primary; min 1 bounce always.
+            float rr = rand1(rng);
+            if (rr > uPtRussianRoulette) break;
+            throughput *= (1.0 / uPtRussianRoulette);
+        }
+
+        // Next-bounce direction: cosine-weighted hemisphere.
+        // Diffuse BRDF derivation:
+        //   Render eq:    L_o = ∫ L_i × (albedo/π) × cosθ dω
+        //   MC estimator: L_o ≈ L_i × (albedo/π) × cosθ / p(ω)
+        //   Cosine PDF:   p(ω) = cosθ/π
+        //   Substituting: L_o ≈ L_i × albedo  (cosθ and π both cancel)
+        vec2 r2 = rand2(rng);
+        direction = cosineSample(h.normal, r2);
+        origin    = h.pos + h.normal * kShadowRayBias;
+        throughput *= h.albedo;
+    }
+
+    return accumulation;
+}
+
+// =============================================================================
+// Main
+// =============================================================================
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz  = ivec2(uViewportSize);
+    if (any(greaterThanEqual(pix, sz))) return;
+
+    // RNG seed: pixel + frame index, hashed for decorrelation.
+    uint seed = uint(pix.x) * 1973u
+              ^ uint(pix.y) * 9277u
+              ^ uFrameIndex * 26699u;
+    uint rng = hash(seed);
+    // Burn one to scramble (PCG behaves better after first step).
+    pcg(rng);
+
+    vec3 frameSum = vec3(0.0);
+    int rays = max(uPtRaysPerFrame, 1);
+    for (int s = 0; s < rays; ++s) {
+        // Jittered pixel sample
+        vec2 jitter = rand2(rng) - 0.5;
+        vec2 ndc;
+        ndc.x = (float(pix.x) + 0.5 + jitter.x) / uViewportSize.x * 2.0 - 1.0;
+        ndc.y = (float(pix.y) + 0.5 + jitter.y) / uViewportSize.y * 2.0 - 1.0;
+        ndc.x *= uViewportSize.x / uViewportSize.y;  // aspect
+        // Note: NDC.y flip — GL pixel (0,0) is bottom-left; if scene needs top-left
+        // convention, negate here. Matches gl_FragCoord convention.
+
+        vec3 camSpace = vec3(ndc.x * uTanHalfFovY, ndc.y * uTanHalfFovY, -1.0);
+        vec3 dir = normalize(uCamBasis * camSpace);
+
+        frameSum += tracePath(uCamPos, dir, rng);
+    }
+    vec3 frameMean = frameSum / float(rays);
+
+    // Progressive accumulation: precision-stable mix form (W6).
+    //   merged = mix(prev, frameMean, rays / (uSppBefore + rays))
+    // For the first sample (uSppBefore == 0), weight = 1.0 → result = frameMean.
+    vec4 prev = imageLoad(oAccum, pix);
+    float weight = float(rays) / float(uSppBefore + rays);
+    vec3 merged = mix(prev.rgb, frameMean, weight);
+    imageStore(oAccum, pix, vec4(merged, 1.0));
+}

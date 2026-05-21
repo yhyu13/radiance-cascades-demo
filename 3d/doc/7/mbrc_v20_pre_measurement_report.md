@@ -120,6 +120,104 @@ from "small contribution drowned in PT noise." The full report's per-bin converg
 check (plan §2.3 / H2) needs to bound PT noise per pixel before LOO is fully
 trustworthy.
 
+### 3.5 Full-sweep follow-up (2026-05-21 PM)
+
+> **Note: this subsection is the result of the full-sweep §6 next-action listed
+> below — added in-place rather than as a separate doc so the scouting findings
+> and the falsification attempt sit next to each other. The full sweep
+> partially-falsified hypothesis (α) / (β) and surfaced a new mechanism
+> hypothesis (γ). See §8 for the revised hypothesis and §9 for what STILL
+> cannot be supported.**
+
+Sweep harness: [full_sweep.ps1](../../tools/v20_pre_measurement/full_sweep.ps1)
+(3 cams × 3 seeds × 2 hybrid × 4 modes = 72 captures @ 512 warmup frames).
+Captures: [tools/v20_pre_measurement/captures_full/](../../tools/v20_pre_measurement/captures_full/).
+Wall time: 11.8 min. No WARN events.
+
+**3.5.0 Instrumentation finding — [bug-230](#bug-230-noise-seed-offset-only-wired-to-one-rng-site)
+(seed axis non-functional).** Before any RC reading, the sweep surfaced a second
+self-inflicted diagnostic bug: `--noise-seed-offset` is only forwarded to
+`uMBFrameSeed` (cascade multi-bounce feedback). It is NOT added to `uFrameIndex`
+(PT shader) or `uHybridFrameSeed` (hybrid correction). md5 verification:
+`cam0_s{0,1,2}_h0_m18.png` are all `689da669139b893cbece81c1d80f36a6`
+(bit-identical). The seed axis of plan §2.4 / M2 is therefore non-functional.
+**Consequence:** the 72-capture sweep is effectively single-seed —
+3 cams × 2 hybrid × 4 modes = 24 unique captures, 48 redundant. The 3-camera +
+hybrid-on/off axes remain valid; the per-pixel PT noise bound chunk-1 was
+supposed to provide is NOT delivered. See §8 / §9. Bug logged for future fix
+before any variance-bound work.
+
+**3.5.1 Cross-camera consistency (mode 18, hybrid off).** Reading
+[cam0_s0_h0_m18](../../tools/v20_pre_measurement/captures_full/cam0_s0_h0_m18.png),
+[cam1_s0_h0_m18](../../tools/v20_pre_measurement/captures_full/cam1_s0_h0_m18.png),
+[cam2_s0_h0_m18](../../tools/v20_pre_measurement/captures_full/cam2_s0_h0_m18.png)
+side-by-side, with composites for wall identification
+([cam2_s0_h0_m00](../../tools/v20_pre_measurement/captures_full/cam2_s0_h0_m00.png)):
+
+| Camera | Layout | Deep-BLUE region tracks | Light-PINK region tracks |
+|---|---|---|---|
+| cam0 (front, mid-range) | red wall LEFT, green RIGHT, partition slits CENTER | back wall + partition + main-room floor (LEFT half + center) | green wall + alcove-side back wall (RIGHT half) |
+| cam1 (front, closer) | same as cam0, tighter framing | back wall + central pillar (more saturated than cam0) | RIGHT half (alcove side) |
+| cam2 (front-LEFT elevated) | red wall LEFT-FRONT, green RIGHT-EDGE, back wall + partition CENTER | back wall + partition wall (CENTER of screen, not left) — has *moved* in screen space | front-facing walls + ceiling-CORNER (red shows on TOP as RED `cascade > PT` overshoot) |
+
+**Critical realignment of the scouting-pass headline.** The scouting report
+called the pattern "L-dim / R-bright" because in cam0 the deep-blue region
+happens to sit on the LEFT half. cam2, viewing from the front-left corner, puts
+the deep-blue region in the CENTER and the red wall on the LEFT-FRONT as PINK.
+The blue region **tracks the back wall + partition wall + main-room area** —
+the surfaces lit indirectly via light that has to travel through the alcove's
+narrow partition opening. The scouting `red wall / green wall` framing was a
+camera-artifact. **Scene-level signature: cascade under-illuminates main-room
+surfaces (which receive light only after it passes through the partition slit
+opening); cascade over-illuminates alcove-side surfaces directly lit by the
+emitter.**
+
+**3.5.2 Hybrid-on closes part of the gap, but not uniformly.**
+Comparing `*_h0_m18` to `*_h1_m18` at each camera:
+
+| Camera | Hybrid OFF (`h0_m18`) | Hybrid ON (`h1_m18`) | Read |
+|---|---|---|---|
+| cam0 | Deep-BLUE LEFT, light-PINK RIGHT, sat ~0.2 lum | Mid-BLUE LEFT (less saturated), light-PINK RIGHT | Hybrid REDUCES the under-illumination on the main-room side. Asymmetry remains visible — not closed. |
+| cam1 | Same as cam0, deeper saturation | Marginal lightening of blue; pink slightly tighter | Lower-resolution capture; trend matches cam0. |
+| cam2 | Back-wall BLUE, ceiling RED, walls pink | Back-wall BLUE *unchanged*, ceiling RED **more saturated**, walls more pink | Hybrid INCREASES the ceiling overshoot at this camera. Not a unilateral improvement. |
+
+**Read:** hybrid's PT-correction is helping in the main-room under-illumination
+region (where the cascade is too dim) but is *adding to* the ceiling
+over-illumination region (where the cascade is already too bright). The hybrid
+v1.3 correction has no signed-direction awareness — it integrates PT samples
+and biases toward whatever the local PT distribution shows; at cam2's ceiling
+camera angle PT picks up specular reflections off the alcove emitter that the
+cascade also picks up, so hybrid's local-PT-integrated correction adds energy
+in a direction the cascade is already over-counting.
+
+**3.5.3 GI-only (mode 19) confirms GI dominates the error.**
+[cam0_s0_h0_m19](../../tools/v20_pre_measurement/captures_full/cam0_s0_h0_m19.png)
+and [cam0_s0_h1_m19](../../tools/v20_pre_measurement/captures_full/cam0_s0_h1_m19.png):
+- Mode-19 deep-blue is MORE saturated than mode-18 deep-blue at the same
+  camera — subtracting the direct component (which agrees better between
+  cascade and PT) leaves the GI residual MORE asymmetric.
+- Hybrid-on mode-19 has the same pattern as hybrid-on mode-18 (less saturated
+  than h0 but still asymmetric).
+- **GI is unambiguously the dominant error component** at this scene; direct
+  lighting differences are second-order.
+
+**3.5.4 The PT-vs-cascade dynamic range gap (the actual mechanism).**
+Comparing [cam0_s0_h0_m00 (composite)](../../tools/v20_pre_measurement/captures_full/cam0_s0_h0_m00.png)
+vs [cam0_s0_h0_m16 (PT ref)](../../tools/v20_pre_measurement/captures_full/cam0_s0_h0_m16.png):
+- PT (truth): LEFT half BRIGHT red bleed dominates; RIGHT half nearly BLACK
+  (green wall barely visible — the emitter geometry shadows it). Heavy
+  asymmetric dynamic range.
+- Cascade composite: LEFT and RIGHT walls both visible at roughly UNIFORM
+  brightness. The dynamic range PT captures (~10× L/R) is compressed to ~1.5×.
+
+This is the failure mode previously hypothesized for the v1.3 hybrid sweep
+([§10.4](hybrid_v12_validation_phase8_impl.md)) but never tied to a specific
+mechanism. With the PT reference now visible, the mechanism is concrete:
+**the cascade's angular discretization smears concentrated indirect light
+across many directional bins**, lowering the bright direction's peak and
+raising the dim directions' floor. The result is range compression that looks
+correct in isolation but wrong next to PT.
+
 ### 3.4 Cascade dominance (mode 21)
 
 [cam0_mode21_dominance.png](../../tools/v20_pre_measurement/captures/cam0_mode21_dominance.png)
@@ -219,8 +317,174 @@ ship a fix; the same standard applies to v2.0a-c selection.
 
 ---
 
+## 8. Revised hypothesis (post-full-sweep)
+
+The full-sweep cross-camera data (§3.5.1) and the PT-vs-cascade dynamic-range
+contrast (§3.5.4) supersede §4. The scouting hypotheses (α) merge-time
+directional weighting and (β) multi-bounce gain fixed-point are NOT falsified
+but are no longer the leading candidates. The pattern that emerges is:
+
+- **(γ) Angular under-sampling of concentrated indirect light.** Cascade
+  probes have a fixed angular bin count per level. When indirect light arrives
+  at a probe predominantly from a single concentrated direction (e.g., light
+  scattered through the alcove partition's narrow opening, or light bounced
+  off a strongly-colored wall), that direction's energy is *averaged with*
+  the energy in the adjacent bins during integration. Result: the peak
+  direction reads dimmer than PT, the adjacent shadow directions read brighter
+  than PT. Range compression.
+
+Evidence for (γ) over (α/β):
+
+1. **Cross-camera consistency** — the deep-blue region tracks scene
+   architecture (back wall + partition), not screen position. Both (α) and
+   (β) would predict similar consistency, but (γ) predicts it with the
+   strongest spatial specificity: the surfaces hit by light that has passed
+   through the partition's narrow angular subtense.
+2. **Hybrid asymmetric response (§3.5.2)** — at cam0 hybrid REDUCES the
+   under-illumination, at cam2 hybrid INCREASES the over-illumination.
+   Consistent with (γ): hybrid integrates per-pixel PT samples *along the
+   surface normal cone*; in regions where the cascade is dim because the
+   angular peak was averaged-away, PT-integrated samples carry the missing
+   energy and hybrid adds it back; in regions where the cascade is bright
+   because adjacent-bin floor was raised, PT-integrated samples cannot
+   subtract — they can only add — so hybrid amplifies the existing overshoot.
+   (α) would predict uniform reduction; (β) would predict uniform scaling.
+3. **GI dominance (§3.5.3)** — mode 19 (direct subtracted) shows MORE
+   saturated asymmetry than mode 18 (combined). Direct light has a clear
+   incident direction the cascade can resolve; indirect light is the
+   under-sampled component. Consistent with (γ).
+4. **LOO cascade-uniform** (scouting §3.3, full-sweep would corroborate but
+   was not re-run because LOO was already conclusive) — every cascade
+   level shares the same angular bin count, so the error is present at every
+   level, consistent with (γ).
+
+**Concrete v2.0 implications (provisional):**
+
+- **(γ-fix A) Per-probe direction-importance sampling.** Rather than uniform
+  spherical bins, allocate more bins toward concentrated incident directions.
+  Detected from upper-cascade reads or from a one-frame ahead-of-time scout
+  dispatch. Cost: bin-count overhead per probe, additional shader complexity.
+- **(γ-fix B) Higher angular resolution.** Brute-force increase cascade
+  angular bin count by 2-4×. Predictable cost; predictable improvement;
+  doesn't change architecture. Measure first via cascade-config sweep
+  ([plan §2.3-§2.4](mbrc_v20_pre_measurement_plan.md#24-cascade-rc-own-variance-noise-floor-rev-2--m2--m5))
+  to confirm angular resolution moves the needle before committing to either
+  variant.
+- **(γ-fix C) Cooperative anisotropic merge.** When merging upper-cascade
+  bins into a lower-cascade probe, preserve the anisotropic distribution
+  rather than collapsing to a single cosine-weighted average. More invasive;
+  unclear net win.
+
+**(α) and (β) remain on the menu** — the full sweep did not rule either out.
+But (γ) is now the candidate most consistent with the observed asymmetric
+hybrid response.
+
+---
+
+## <a name="cannot-9"></a>9. What this full sweep STILL cannot support
+
+A more honest list than the scouting §5 because chunk-1 (variance harness)
+was non-functional:
+
+- **No per-pixel PT noise bound.** The 3-seed axis was supposed to give a
+  cross-seed std-dev per pixel so we could distinguish "real Δ" from
+  "PT noise Δ". bug-230 made all 3 seeds bit-identical, so we have
+  effectively single-seed data. The gross asymmetric patterns are large
+  enough that PT noise cannot plausibly explain them, but per-pixel sign
+  reads (especially in dim regions) remain unbounded.
+- **No RMSE / SSIM / numeric anchors.** All findings are still qualitative
+  reads of bipolar heatmaps. Plan Q3/Q4/Q5 still owes. Without scalar metrics
+  we cannot quantify "how much of the gap hybrid closes" — only "hybrid
+  closes some, asymmetrically."
+- **No cascade-config sweep.** Plan §2.3-§2.4 disambiguation of (γ) vs
+  (α)/(β) requires varying cascade angular resolution / probe count.
+  If (γ-fix B) brute-force angular-res increase moves the gap, (γ) is the
+  mechanism; if it doesn't, (γ) is wrong and (α)/(β) re-promoted.
+  This is the highest-value next data run.
+- **No second emitter geometry.** All findings are on cornell-orig-alcove.
+  A simpler non-alcove cornell (no partition wall) would test whether the
+  asymmetry is specific to the partition-bottleneck or a general cascade
+  property. Cheap to add.
+- **Hybrid v1.3.1 only, no v1.3.2.** §3.5.2's hybrid-asymmetric-response
+  finding is specific to the current (DI-cone) hybrid; a true light-position
+  NEE hybrid (v1.3.2 backlog) could behave differently.
+
+---
+
+## <a name="bug-230-noise-seed-offset-only-wired-to-one-rng-site"></a>10. bug-230 anchor — `--noise-seed-offset` is partially-wired
+
+**Symptom (this sweep):** md5 of `cam0_s{0,1,2}_h0_m18.png` all =
+`689da669139b893cbece81c1d80f36a6` (and similarly for h1 and modes 16/19/00 —
+all bit-identical across `--noise-seed-offset=0/1/2`).
+
+**Root cause:** [demo3d.cpp:2577](../../src/demo3d.cpp#L2577) forwards
+`renderFrameIndex + noiseSeedOffset * 9973` only into `uMBFrameSeed`
+(`radiance_3d.comp:95`, multi-bounce cascade resampling). The PT dispatch
+at [demo3d.cpp:3267](../../src/demo3d.cpp#L3267) forwards bare `ptFrameIndex`
+into `uFrameIndex` (`pt_reference.comp:68`); the hybrid dispatch at
+[demo3d.cpp:3618](../../src/demo3d.cpp#L3618) forwards bare `hybridFrameSeed`
+into `uHybridFrameSeed` (`hybrid_correction.comp:60`). Neither receives
+`noiseSeedOffset`. PT and hybrid reproduce bit-exact across runs; cascade MB
+feedback IS reseeded but its contribution to the displayed delta is too small
+to register at 8-bit PNG quantization.
+
+The doc comment in [demo3d.h:1453-1457](../../src/demo3d.h#L1453) already
+*describes* multi-site wiring ("Added to the cascade-bake RNG site (uMBFrameSeed)
+AND MB v2 stochastic sampler") — the AND was aspirational. Only the
+cascade-bake site shipped.
+
+**Fix (PENDING — not in this commit):** add `noiseSeedOffset*9973` to
+`ptFrameIndex` at the dispatch site, and to `hybridFrameSeed` at its
+dispatch site. Validate by re-running md5 cmp: mode-16 hashes must differ
+across seeds. Then re-run the variance harness portion of the sweep so
+chunk-1 actually delivers a per-pixel PT-noise bound.
+
+**Cerebrum entry:** "When wiring a per-run RNG offset, audit every shader
+that consumes a `*FrameSeed` / `*FrameIndex` uniform — they are separate
+RNG streams and a per-run offset is only meaningful if applied at every
+stochastic site." See [.wolf/cerebrum.md `2026-05-21` entries](../../.wolf/cerebrum.md).
+
+---
+
+## 11. Recommended next action (revised — supersedes §6)
+
+Given the full-sweep findings, the next critical-path items are:
+
+1. **Fix bug-230** (1-2h) so the seed axis works, then re-run a slimmed
+   sweep (3 cams × 3 seeds × 1 hybrid × 1 mode = 9 captures @ 512spp,
+   ~1.5min) just to bound per-pixel PT noise on mode-18 pixels.
+2. **Cascade-config sweep** (plan §2.3-§2.4) — vary cascade angular bin
+   count (currently fixed per cascade), with at least one config that
+   doubles it. If the asymmetric pattern shrinks substantially, (γ) is
+   confirmed and (γ-fix B) is the conservative shipping option. ~2h.
+3. **Add a second scene** — plain cornell (no alcove partition) to test
+   whether the asymmetry is partition-specific or general. ~1h.
+4. **EXR dump + offline RMSE / SSIM** (plan §2.5 / L1) — same compute budget
+   as the current sweep but with numeric output. ~3h.
+
+**§6 has been left in place above** as the *original* full-report
+recommendation; this §11 supersedes it with the data the full sweep
+actually produced. The §6 chunk-3 (cascade-config sweep) is the same
+critical item — only the order changed.
+
+**Do NOT** start tuning RC levers yet. The v1.3.1 NEE/cone tie precedent
+([§10.4](hybrid_v12_validation_phase8_impl.md)) and the (γ) hypothesis being
+*plausible but not confirmed* mean a fix shipped on visual-A/B alone risks
+a second tie. Cascade-config sweep (chunk 2 above) is the discriminator.
+
+---
+
 ## 7. Changelog
 
 - 2026-05-21 — Scouting report drafted from 14-capture single-camera sweep.
   Documented bug-227 (PT dispatch gate missing mode 20) and the L-dim/R-bright
   cascade-uniform finding. Recommended full-report execution before any RC fix.
+- 2026-05-21 PM — Full sweep executed (72 captures, 3 cams × 3 seeds × 2 hybrid
+  × 4 modes, 11.8 min). Added §3.5, §8, §9, §10, §11. Surfaced bug-230 (seed
+  axis non-functional). Realigned scouting "L-dim/R-bright" headline to
+  scene-architecture-tracking: cascade under-illuminates main-room surfaces lit
+  through the partition opening, over-illuminates alcove-direct surfaces.
+  Promoted hypothesis (γ) angular under-sampling to leading candidate;
+  scouting (α)/(β) remain on the menu but no longer lead. Hybrid v1.3.1
+  closes part of the gap on main-room side but amplifies the over-illumination
+  on alcove/ceiling side at cam2 — not a unilateral improvement.

@@ -112,6 +112,32 @@ uniform float uDeltaHeatmapDivisor;
  *  PT_GI = uPtAccum.rgb - uPtDirectAccum.rgb (full minus direct = pure indirect). */
 uniform sampler2D uPtDirectAccum;
 
+/** 2026-05-20 MBRC v2.0-pre (doc/7/mbrc_v20_pre_measurement_plan.md):
+ *  uCascadeExclude — leave-one-out cascade attribution. Reported value is
+ *  the LOGICAL exclusion index (which cascade is being attributed). The actual
+ *  skip-in-merge bake-chain rewiring lives in C++ (Demo3D::updateAllCascades);
+ *  here the uniform is forwarded purely for diagnostics + Mode 21 highlight,
+ *  the consume path itself doesn't branch on it (cascade merge is bake-time).
+ *  Range: -1 = no exclusion (baseline); 0..3 = exclude that cascade.
+ *
+ *  uErrorDecompMode — Mode 20 sub-mode selector for the Error Decomposition
+ *  Heatmap. Values:
+ *    0 = total cascade-PT delta luminance (same as mode 18 normalized magnitude)
+ *    1 = direct-only delta (cascade direct - PT direct, requires PT direct accum)
+ *    2 = indirect-only delta (cascade GI - PT GI)
+ *    3 = relative error = |cascade-PT| / max(PT, eps)
+ *
+ *  uCascadeBaseInterval — C0's cellSize forwarded for camera-distance →
+ *  cascade-dominance binning in Mode 21. Mirrors radiance_3d.comp's
+ *  uBaseInterval; bake-side authoritative source is cascades[0].cellSize.
+ *
+ *  uCascadeCountConsume — number of active cascades (cascadeCount) for Mode
+ *  21's dominance-bracket lookup. */
+uniform int   uCascadeExclude;
+uniform int   uErrorDecompMode;
+uniform float uCascadeBaseInterval;
+uniform int   uCascadeCountConsume;
+
 /** 2026-05-19 Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md).
  *  Half-res RGBA32F accumulator written by hybrid_correction.comp. Stores per-pixel
  *  exact bounce-1 indirect (albedo × direct_at_random_bounce_hit) EMA-averaged over frames.
@@ -800,6 +826,92 @@ void main() {
                     heatColor = mix(vec3(1.0), vec3(1.0, 0.2, 0.0), normalized);
                 }
                 fragColor = vec4(heatColor, 1.0);
+                return;
+            }
+
+            // 2026-05-20 Mode 20: Error Decomposition Heatmap (MBRC v2.0-pre §3).
+            // Same bipolar colormap as mode 18, but uErrorDecompMode picks which
+            // delta component is visualized:
+            //   0 = total (cascade_full vs PT_full luminance delta) — equivalent to mode 18
+            //   1 = direct-only delta
+            //   2 = indirect-only delta (uses PT_GI = PT_full - PT_direct)
+            //   3 = relative error |cascade - PT| / max(PT, eps), unipolar red/yellow/green
+            //
+            // The purpose is bin-aware diagnostic for the v2.0-pre report (see
+            // doc/7/mbrc_v20_pre_measurement_plan.md §2.2). Combined with cascade-
+            // dominance bins (mode 21), this lets the report attribute error to
+            // specific cascades * specific components.
+            if (uRenderMode == 20) {
+                vec3 cascadeFull   = directColor + indirectColor;
+                vec3 cascadeDirect = directColor;
+                vec3 cascadeGI20   = indirectColor;
+                vec3 ptFull   = (uPtAccumValid != 0) ? texture(uPtAccum, vUV).rgb : vec3(0.0);
+                vec3 ptDirect = (uPtAccumValid != 0) ? texture(uPtDirectAccum, vUV).rgb : vec3(0.0);
+                vec3 ptGI20   = max(ptFull - ptDirect, vec3(0.0));
+                vec3 deltaCmp;
+                bool unipolar = false;
+                if      (uErrorDecompMode == 1) deltaCmp = cascadeDirect - ptDirect;
+                else if (uErrorDecompMode == 2) deltaCmp = cascadeGI20   - ptGI20;
+                else if (uErrorDecompMode == 3) {
+                    // Relative error: per-channel |Δ| / max(PT_full, eps), then luminance.
+                    vec3 rel = abs(cascadeFull - ptFull) / max(ptFull, vec3(1e-3));
+                    float relLum = dot(rel, vec3(0.2126, 0.7152, 0.0722));
+                    float t20 = clamp(relLum / max(uDeltaHeatmapDivisor, 1e-4), 0.0, 1.0);
+                    vec3 hc = (t20 < 0.5)
+                        ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), t20 * 2.0)
+                        : mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (t20 - 0.5) * 2.0);
+                    fragColor = vec4(hc, 1.0);
+                    return;
+                }
+                else /* 0 = total */            deltaCmp = cascadeFull - ptFull;
+                float dLum = dot(deltaCmp, vec3(0.2126, 0.7152, 0.0722));
+                float norm = clamp(dLum / max(uDeltaHeatmapDivisor, 1e-4), -1.0, 1.0);
+                vec3 hc20;
+                if (norm < 0.0) hc20 = mix(vec3(1.0), vec3(0.0, 0.4, 1.0), -norm);
+                else            hc20 = mix(vec3(1.0), vec3(1.0, 0.2, 0.0),  norm);
+                fragColor = vec4(hc20, 1.0);
+                return;
+            }
+
+            // 2026-05-20 Mode 21: Cascade Dominance Visualization (MBRC v2.0-pre §3).
+            // Color-bins each pixel by which cascade's spatial bracket contains the
+            // camera→hit distance `t`. Bracket schedule mirrors radiance_3d.comp's
+            // tMin/tMax formula:
+            //   C0: [0,           baseInterval        ]
+            //   Ci: [4^(i-1)·base, 4^i ·base          ]   for i >= 1
+            // The largest cascade that doesn't contain `t` falls into "saturate" (white).
+            // Colors: C0=red, C1=yellow, C2=green, C3=blue, beyond=white. The excluded
+            // cascade (uCascadeExclude) overlays a dimmed/desaturated tint to make the
+            // skip-in-merge experiment self-documenting on a screenshot.
+            //
+            // CAVEAT (self-critic §2 of impl doc): camera-distance binning is a PROXY for
+            // the "which cascade's probe-ray bracket dominates this pixel's GI" question.
+            // The exact dominance would require per-probe per-bin smoothstep weight readout
+            // (not exposed by this architecture without a second pass). This proxy is the
+            // pragmatic Mode-21 readout the v2.0-pre report uses.
+            if (uRenderMode == 21) {
+                int dom = 0;
+                float bi = max(uCascadeBaseInterval, 1e-6);
+                int N = max(uCascadeCountConsume, 1);
+                for (int i = 0; i < 8; ++i) {
+                    if (i >= N) break;
+                    float tMaxI = (i == 0) ? bi : pow(4.0, float(i)) * bi;
+                    if (t < tMaxI) { dom = i; break; }
+                    dom = i; // saturate at highest cascade if t exceeds all brackets
+                }
+                vec3 palette[5];
+                palette[0] = vec3(1.0, 0.25, 0.25);  // C0 red
+                palette[1] = vec3(1.0, 1.0,  0.25);  // C1 yellow
+                palette[2] = vec3(0.25, 1.0, 0.35);  // C2 green
+                palette[3] = vec3(0.30, 0.55, 1.0);  // C3 blue
+                palette[4] = vec3(1.0);              // saturate / beyond
+                int idx = (dom < 4) ? dom : 4;
+                vec3 col21 = palette[idx];
+                // Dim the excluded cascade so the experiment is visually obvious.
+                if (uCascadeExclude >= 0 && uCascadeExclude == dom) {
+                    col21 = mix(vec3(0.0), col21, 0.35);  // 35% intensity
+                }
+                fragColor = vec4(col21, 1.0);
                 return;
             }
 

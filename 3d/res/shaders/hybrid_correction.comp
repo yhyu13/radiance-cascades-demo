@@ -1,0 +1,474 @@
+/**
+ * @file hybrid_correction.comp
+ * @brief Half-resolution per-pixel correction for cascade GI under-integration.
+ *
+ * See doc/7/hybrid_rc_pixel_correction_plan.md for full design.
+ *
+ * Approach (per critic-05 H1/H2 corrected algorithm):
+ *   1. For each half-res pixel: cast primary camera ray, find surface (P, N, albedo)
+ *   2. Pick cosine-weighted random direction around N
+ *   3. Cast secondary ray, find bounce hit (P', N', albedo')
+ *   4. Compute direct lighting at P' (NOT cascade lookup — that would re-introduce
+ *      cascade's bias, defeating the purpose)
+ *   5. correction = surface_albedo × direct_lit_at_bounce_hit
+ *   6. EMA-blend into hybridAccumTexture
+ *
+ * The display path (raymarch.frag mode 0) reads this accumulator and uses it INSTEAD
+ * OF cascade's indirect contribution (default w=1.0 = pure replacement; per critic-05
+ * H1, lower w double-counts bounce-1). This is "PT bounce-1-equivalent" per pixel.
+ *
+ * Helpers (cosineSample, PCG RNG, traceSDF) DUPLICATED from pt_reference.comp and
+ * radiance_3d.comp. Any change to those files MUST be mirrored here (per critic-05
+ * M2 contract; same lesson as critic-16 W1 / critic-02 W8).
+ */
+
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// =============================================================================
+// Uniforms
+// =============================================================================
+
+// Camera (matches Camera3D state; same as pt_reference.comp)
+uniform vec3  uCamPos;
+uniform mat3  uCamBasis;          // columns: right, up, -forward
+uniform float uTanHalfFovY;
+uniform vec2  uViewportSize;      // Half-res accumulator dimensions
+
+// Scene (mirrors cascade renderer)
+uniform sampler3D uSDF;
+uniform sampler3D uAlbedo;
+uniform sampler3D uRoughness;        // v1.3: per-voxel roughness in .r; gated by uHybridUseRoughnessTex
+uniform vec3  uGridOrigin;
+uniform vec3  uGridSize;
+uniform vec3  uLightPos;
+uniform vec3  uLightColor;
+uniform vec3  uLightDir;
+uniform int   uUseDirectionalLight;
+uniform vec3  uVolCenter;
+uniform int   uUseSoftShadowBake;
+uniform float uSoftShadowK;
+uniform float uAmbientBakeStrength;
+uniform int   uUseEnvFill;
+uniform vec3  uSkyColor;
+
+// Hybrid controls
+uniform int   uHybridRaysPerFrame;   // rays/pixel per dispatch (default 1)
+uniform float uHybridMaxDist;        // max raymarch distance; defaults to length(uGridSize)
+uniform float uHybridEMAAlpha;       // temporal smoothing; 0..1; default 0.1
+uniform uint  uHybridFrameSeed;      // per-frame RNG seed
+// v1.2.3 TAA-style color AABB clamp on accumulator updates (Phase 8 follow-up).
+// v1.2.4 fix: firefly-only mode (clamp HIGH outliers only). Clamping the low side
+// suppresses legitimate dark signal AND legitimate bright signal that the noisy
+// neighborhood hasn't seen yet — that "kills the PT result" under cooperative
+// merge (per 2026-05-20 user feedback). High-side-only keeps stochastic fireflies
+// in check without biasing the estimator toward neighborhood mean.
+uniform int   uHybridAabbClamp;       // 0 off; 1 on. Clamp HIGH frameMean luminance to neighborhood.
+uniform float uHybridAabbSlack;       // clamp slack: hi = lumMax * slack. Default 2.0.
+uniform int   uHybridAabbMinSpp;      // skip clamp until accumulator has this many samples (default 4)
+// v1.3 importance sampling (NEE cone + roughness-driven cone angle).
+uniform float uHybridNEEFraction;     // probability of choosing NEE strategy; default 0.5 (50/50)
+uniform float uHybridGlobalRoughness; // [0,1]; 1=Lambert (default), 0=mirror; used as fallback
+uniform int   uHybridUseRoughnessTex; // 0=use global only; 1=sample uRoughness per voxel
+uniform float uHybridNEEConeMin;      // cone half-angle cos at roughness=0 (narrow). Default 0.95 (~18°)
+uniform float uHybridNEEConeMax;      // cone half-angle cos at roughness=1 (wide).   Default 0.50 (~60°)
+
+// Accumulation
+// .rgb = EMA-blended mean radiance
+// .a   = EMA-blended luminance second moment (E[L^2]); variance = max(0, E[L^2] - L^2)
+//        Tracked per pixel so the inverse-variance merge downstream knows how confident
+//        each pixel's correction signal is. Bilateral blur averages both channels.
+layout(rgba32f, binding = 0) uniform image2D oHybridAccum;
+// Half-res GBuffer (normal*0.5+0.5 in rgb, linearDepth in .a where 0 = sky/no surface).
+// Consumed by hybrid_blur.comp for depth+normal edge-stops. Same format as raymarch.frag's
+// fragGBuffer for consistency with downstream tooling.
+layout(rgba32f, binding = 1) uniform image2D oHybridGBuffer;
+uniform int   uHybridSppBefore;      // total samples per pixel before this dispatch
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+const float PI = 3.14159265359;
+const float INF = 1e10;
+const float kSurfaceEps    = 0.002;
+const float kShadowRayBias = 0.004;
+
+// =============================================================================
+// RNG (PCG; per critic-05 M1 spec)
+// =============================================================================
+
+uint hcHash(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+uint hcPcg(inout uint state) {
+    state = state * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+float hcRand1(inout uint state) { return float(hcPcg(state)) / 4294967296.0; }
+vec2  hcRand2(inout uint state) { return vec2(hcRand1(state), hcRand1(state)); }
+
+// =============================================================================
+// Sampling (cosine-weighted hemisphere; same as pt_reference.comp)
+// =============================================================================
+
+void hcGenTB(vec3 N, out vec3 T, out vec3 B) {
+    float s = N.z < 0.0 ? -1.0 : 1.0;
+    float a = -1.0 / (s + N.z);
+    float b = N.x * N.y * a;
+    T = vec3(1.0 + s * N.x * N.x * a, s * b, -s * N.x);
+    B = vec3(b, s + N.y * N.y * a, -N.y);
+}
+vec3 hcCosineSample(vec3 N, vec2 r) {
+    vec3 T, B; hcGenTB(N, T, B);
+    r.x *= 2.0 * PI;
+    float s = sqrt(1.0 - r.y);
+    return T * (cos(r.x) * s) + B * (sin(r.x) * s) + N * sqrt(r.y);
+}
+
+// =============================================================================
+// v1.3 importance sampling: NEE cone + one-sample MIS via marginal-pdf reweight
+// =============================================================================
+//
+// Two strategies for picking the bounce direction ωi at the primary hit P:
+//
+//   A. BRDF (Lambert cosine): pdf_A(ωi) = max(0, dot(N, ωi)) / π
+//      — current path; good when integrand L(Q,ωi) is roughly uniform.
+//
+//   B. NEE cone toward light: pdf_B(ωi) = 1 / (2π·(1 − cosThetaMax))  inside cone,
+//                              0 outside; bounce direction concentrated around
+//                              the direction toward the light from P, so the
+//                              traced ray is more likely to hit a surface that
+//                              is itself directly lit (high integrand value).
+//
+// Strategy is chosen probabilistically per ray: P(A) = 1−α, P(B) = α where
+// α = uHybridNEEFraction. With Veach one-sample MIS (Veach 1997 §9.2.4) and the
+// balance heuristic, the optimal estimator collapses to MARGINAL-PDF reweighting:
+//
+//   F = f(ωi) / p_marginal(ωi),    p_marginal = (1−α)·p_A + α·p_B
+//
+// No explicit MIS weights needed — the marginal pdf already encodes the balance
+// heuristic for this single-sample case. This is unbiased for any α ∈ (0,1).
+//
+// Cone half-angle is roughness-modulated:
+//   cosThetaMax = mix(uHybridNEEConeMin, uHybridNEEConeMax, roughness)
+// Smooth surface (low roughness) → narrow cone (sharp NEE); rough → wider cone.
+
+float hcLuminanceFromBrdf(vec3 albedo) {
+    return dot(albedo, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 hcConeSample(vec3 axis, float cosThetaMax, vec2 r) {
+    // Uniform sample over a spherical cone around `axis` with half-angle whose
+    // cosine equals cosThetaMax. pdf = 1 / (2π·(1 − cosThetaMax)).
+    float cosTheta = mix(cosThetaMax, 1.0, r.x);
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+    float phi = 2.0 * PI * r.y;
+    vec3 T, B; hcGenTB(axis, T, B);
+    return T * (cos(phi) * sinTheta) + B * (sin(phi) * sinTheta) + axis * cosTheta;
+}
+
+float hcConePdf(vec3 dir, vec3 axis, float cosThetaMax) {
+    // Returns 0 if dir is outside the cone (so balance heuristic excludes it).
+    if (dot(dir, axis) < cosThetaMax) return 0.0;
+    float solidAngle = 2.0 * PI * max(1.0 - cosThetaMax, 1e-6);
+    return 1.0 / solidAngle;
+}
+
+float hcCosinePdf(vec3 dir, vec3 N) {
+    float c = dot(N, dir);
+    return c > 0.0 ? c / PI : 0.0;
+}
+
+// =============================================================================
+// SDF intersection (DUPLICATED from pt_reference.comp; see file header note)
+// =============================================================================
+
+float hcSampleSDF(vec3 worldPos) {
+    vec3 uvw = (worldPos - uGridOrigin) / uGridSize;
+    if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0))))
+        return INF;
+    return texture(uSDF, uvw).r;
+}
+
+// Ray-bbox slab test (per Phase 7 H2 — camera origin is OUTSIDE the volume).
+bool hcIntersectBox(vec3 origin, vec3 dir, vec3 boxMin, vec3 boxMax,
+                    out float tEnter, out float tExit) {
+    vec3 invDir = 1.0 / dir;
+    vec3 t1 = (boxMin - origin) * invDir;
+    vec3 t2 = (boxMax - origin) * invDir;
+    vec3 tMin3 = min(t1, t2);
+    vec3 tMax3 = max(t1, t2);
+    tEnter = max(max(tMin3.x, tMin3.y), tMin3.z);
+    tExit  = min(min(tMax3.x, tMax3.y), tMax3.z);
+    tEnter = max(tEnter, 0.0);
+    return tExit > tEnter;
+}
+
+struct HCHit {
+    bool  ok;
+    bool  sky;
+    vec3  pos;
+    vec3  normal;
+    vec3  albedo;
+};
+
+HCHit hcTraceSDF(vec3 origin, vec3 direction, float tMin, float tMax) {
+    HCHit h;
+    h.ok = false; h.sky = false;
+    h.pos = vec3(0.0); h.normal = vec3(0.0, 1.0, 0.0); h.albedo = vec3(0.0);
+
+    vec3 boxMin = uGridOrigin;
+    vec3 boxMax = uGridOrigin + uGridSize;
+    float boxEnter, boxExit;
+    if (!hcIntersectBox(origin, direction, boxMin, boxMax, boxEnter, boxExit)) {
+        h.sky = (uUseEnvFill != 0);
+        return h;
+    }
+    float t = max(tMin, boxEnter + 0.001);
+    tMax = min(tMax, boxExit);
+
+    const int MAX_STEPS = 128;
+    for (int i = 0; i < MAX_STEPS && t < tMax; ++i) {
+        vec3 pos = origin + direction * t;
+        float dist = hcSampleSDF(pos);
+        if (dist >= INF * 0.5) {
+            h.sky = (uUseEnvFill != 0);
+            return h;
+        }
+        if (dist < kSurfaceEps) {
+            const float e = 0.03;
+            h.normal = normalize(vec3(
+                hcSampleSDF(pos + vec3(e,0,0)) - hcSampleSDF(pos - vec3(e,0,0)),
+                hcSampleSDF(pos + vec3(0,e,0)) - hcSampleSDF(pos - vec3(0,e,0)),
+                hcSampleSDF(pos + vec3(0,0,e)) - hcSampleSDF(pos - vec3(0,0,e))));
+            vec3 uvw = (pos - uGridOrigin) / uGridSize;
+            h.albedo = texture(uAlbedo, uvw).rgb;
+            h.pos = pos;
+            h.ok = true;
+            return h;
+        }
+        t += max(dist * 0.9, 0.001);
+    }
+    return h;
+}
+
+// Shadow ray — soft or binary depending on uUseSoftShadowBake (matches cascade convention).
+float hcShadow(vec3 origin, vec3 lightDir, float lightDist) {
+    if (uUseSoftShadowBake != 0) {
+        float t = kShadowRayBias;
+        float res = 1.0;
+        for (int i = 0; i < 64 && t < lightDist; ++i) {
+            float d = hcSampleSDF(origin + lightDir * t);
+            if (d >= INF * 0.5) return 0.0;
+            if (d < kSurfaceEps) return 1.0;
+            res = min(res, uSoftShadowK * d / max(t, 0.001));
+            t += max(d * 0.9, 0.001);
+        }
+        return 1.0 - clamp(res, 0.0, 1.0);
+    } else {
+        float t = kShadowRayBias;
+        for (int i = 0; i < 64 && t < lightDist; ++i) {
+            float d = hcSampleSDF(origin + lightDir * t);
+            if (d >= INF * 0.5) return 0.0;
+            if (d < kSurfaceEps) return 1.0;
+            t += max(d * 0.9, 0.001);
+        }
+        return 0.0;
+    }
+}
+
+// =============================================================================
+// Main: compute per-pixel correction = albedo × direct_at_bounce_hit
+// =============================================================================
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz  = ivec2(uViewportSize);
+    if (any(greaterThanEqual(pix, sz))) return;
+
+    uint rng = hcHash(uint(pix.x) * 1973u
+                    ^ uint(pix.y) * 9277u
+                    ^ uHybridFrameSeed * 26699u);
+    hcPcg(rng);
+
+    int rays = max(uHybridRaysPerFrame, 1);
+    vec3 frameSum = vec3(0.0);
+    // GBuffer state captured from the FIRST hit of the FIRST ray (representative;
+    // subsequent rays don't change camera-visible surface). Stays zero if no hit.
+    vec3 gbufNormal = vec3(0.0);
+    float gbufDepth = 0.0;
+
+    // Effective light position (matches cascade / PT directional-light handling)
+    vec3 effLightPos = (uUseDirectionalLight != 0)
+        ? (uVolCenter - normalize(uLightDir) * 100.0)
+        : uLightPos;
+
+    for (int s = 0; s < rays; ++s) {
+        // 1. Primary ray from camera through this pixel
+        vec2 jitter = hcRand2(rng) - 0.5;
+        vec2 ndc;
+        ndc.x = (float(pix.x) + 0.5 + jitter.x) / uViewportSize.x * 2.0 - 1.0;
+        ndc.y = (float(pix.y) + 0.5 + jitter.y) / uViewportSize.y * 2.0 - 1.0;
+        ndc.x *= uViewportSize.x / uViewportSize.y;
+        vec3 dir = normalize(uCamBasis * vec3(ndc.x * uTanHalfFovY,
+                                              ndc.y * uTanHalfFovY,
+                                              -1.0));
+
+        HCHit primary = hcTraceSDF(uCamPos, dir, 0.001, uHybridMaxDist);
+        if (!primary.ok) continue;  // sky or miss → no correction at this pixel
+
+        // Capture GBuffer once (any ray's primary hit; geometry is deterministic per pixel).
+        if (s == 0) {
+            gbufNormal = primary.normal;
+            gbufDepth  = length(primary.pos - uCamPos) / max(uHybridMaxDist, 0.001);
+        }
+
+        // 2. Per-hit material roughness (v1.3). If the per-voxel texture is enabled, sample
+        //    it; otherwise use the global uniform. Roughness modulates the NEE cone width:
+        //    smoother surfaces want NEE samples tighter around the light direction (effective
+        //    glossy importance sampling); rougher surfaces broaden the cone toward uniform.
+        float roughness = uHybridGlobalRoughness;
+        if (uHybridUseRoughnessTex != 0) {
+            vec3 uvw = (primary.pos - uGridOrigin) / uGridSize;
+            roughness = clamp(texture(uRoughness, uvw).r, 0.0, 1.0);
+        }
+        float cosThetaMax = mix(uHybridNEEConeMin, uHybridNEEConeMax, roughness);
+
+        // 3. Roberts R2 per-frame offset for blue-noise-style decorrelation (v1.2.3).
+        //    Plastic-number constants 1/Φ_2^k; Roberts (2018).
+        vec2 r2Offset = vec2(fract(0.7548776662466927 * float(uHybridFrameSeed)),
+                             fract(0.5698402909980532 * float(uHybridFrameSeed)));
+        vec2 jitterUV = fract(hcRand2(rng) + r2Offset);
+
+        // 4. v1.3 importance sampling: pick strategy (A = cosine BRDF, B = NEE cone),
+        //    sample the bounce direction, and compute the marginal-pdf-MIS estimator
+        //    afterwards. See "v1.3 importance sampling" header comment.
+        vec3 lightDirFromP = (uUseDirectionalLight != 0)
+            ? -normalize(uLightDir)                              // dir TO the light source
+            : normalize(effLightPos - primary.pos);
+        // If the light is below the horizon for this surface, NEE is useless: clamp α
+        // toward 0 so BRDF dominates. (NEE cone samples below the normal would just be
+        // rejected, biasing nothing but adding zero-throughput samples.)
+        float nDotL = dot(primary.normal, lightDirFromP);
+        float alphaNEE = (nDotL <= 0.0) ? 0.0 : clamp(uHybridNEEFraction, 0.0, 1.0);
+
+        float pickRand = hcRand1(rng);
+        bool useNEE = (pickRand < alphaNEE);
+        vec3 bounceDir;
+        if (useNEE) {
+            bounceDir = hcConeSample(lightDirFromP, cosThetaMax, jitterUV);
+        } else {
+            bounceDir = hcCosineSample(primary.normal, jitterUV);
+        }
+
+        // Reject samples that go below the surface (cosine sample can't, cone sample can
+        // when the light is grazing). These have zero throughput; skipping keeps the
+        // accumulator's frameMean unchanged for this ray.
+        if (dot(primary.normal, bounceDir) <= 0.0) continue;
+
+        // 5. Secondary ray to find bounce hit
+        vec3 bounceOrigin = primary.pos + primary.normal * kShadowRayBias;
+        HCHit bounce = hcTraceSDF(bounceOrigin, bounceDir, 0.001, uHybridMaxDist);
+
+        vec3 bounceRadiance = vec3(0.0);
+        if (bounce.ok) {
+            // 6. Direct lighting at the bounce hit (NOT cascade lookup; pure first-bounce)
+            vec3 toLight = effLightPos - bounce.pos;
+            float lightDist = length(toLight);
+            vec3 lightDir = toLight / max(lightDist, 1e-4);
+            float cosTheta = max(0.0, dot(bounce.normal, lightDir));
+            if (cosTheta > 0.0) {
+                vec3 lightOrigin = bounce.pos + bounce.normal * kShadowRayBias;
+                float shadow = hcShadow(lightOrigin, lightDir, lightDist);
+                float diff = cosTheta * (1.0 - shadow);
+                bounceRadiance += bounce.albedo * uLightColor * diff;
+            }
+            // Ambient floor at bounce hit (matches cascade-bake convention)
+            bounceRadiance += bounce.albedo * vec3(uAmbientBakeStrength);
+        } else if (bounce.sky) {
+            bounceRadiance = uSkyColor;
+        }
+
+        // 7. One-sample MIS estimator (Veach §9.2.4, balance heuristic):
+        //      F = f(ωi) / p_marginal(ωi),  p_marginal = (1−α)·p_A + α·p_B
+        //    For Lambert: f(ωi) = (albedo/π) · L_bounce · max(0, N·ωi)
+        //    Pre-v1.3 with cosine-only sampling and α=0 this reduces to
+        //      F = (albedo/π · L · cos(θ)) / (cos(θ)/π) = albedo · L
+        //    which is the previous estimator (identity preserved at α=0). ✓
+        float nDotWi = max(0.0, dot(primary.normal, bounceDir));
+        float pA = hcCosinePdf(bounceDir, primary.normal);
+        float pB = hcConePdf(bounceDir, lightDirFromP, cosThetaMax);
+        float pMarginal = (1.0 - alphaNEE) * pA + alphaNEE * pB;
+        if (pMarginal > 1e-8) {
+            vec3 integrand = primary.albedo * (1.0 / PI) * bounceRadiance * nDotWi;
+            frameSum += integrand / pMarginal;
+        }
+    }
+
+    vec3 frameMean = frameSum / float(rays);
+
+    // 6a. v1.2.3 / v1.2.4: TAA-style firefly clamp before EMA blend.
+    //     Read 3x3 neighborhood of CURRENT accumulator luminance; clamp ONLY the high
+    //     side of this frame's sample to lumMax * slack. Suppresses stochastic
+    //     fireflies (one wild bounce hitting a bright source) without biasing the
+    //     estimator toward neighborhood mean.
+    //
+    //     v1.2.4 fix (per 2026-05-20 user feedback "AABB killing PT"):
+    //       - Low-side clamp REMOVED: a noisy neighborhood doesn't bound legitimate
+    //         signal from below. Clamping dark samples up suppressed real shadow
+    //         detail; clamping bright samples down toward the neighborhood mean
+    //         erased PT signal the cascade couldn't see, making cooperative merge
+    //         read as "cascade-only with extra cost".
+    //       - Gated by uHybridAabbMinSpp: 3x3 neighborhood needs enough samples to
+    //         be a meaningful bound (default 4). Below that, every "outlier" is
+    //         just normal stochastic spread of an empty accumulator.
+    //       - Default OFF in the C++ side; users opt in when fireflies are visible.
+    if (uHybridAabbClamp != 0 && uHybridSppBefore >= max(uHybridAabbMinSpp, 1)) {
+        float lumMax = 0.0;
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                ivec2 q = clamp(pix + ivec2(dx, dy), ivec2(0), sz - ivec2(1));
+                vec3 n = imageLoad(oHybridAccum, q).rgb;
+                float l = dot(n, vec3(0.2126, 0.7152, 0.0722));
+                lumMax = max(lumMax, l);
+            }
+        }
+        float frameLum = dot(frameMean, vec3(0.2126, 0.7152, 0.0722));
+        float slack    = max(uHybridAabbSlack, 1.0);
+        float lumHi    = lumMax * slack;
+        if (frameLum > lumHi && frameLum > 1e-6) {
+            // Scale RGB down to the firefly ceiling, preserving chromaticity.
+            frameMean *= lumHi / frameLum;
+        }
+    }
+
+    // 6b. Blend into accumulator. Progressive-mean weighted by sample count, but FLOORED
+    //    at uHybridEMAAlpha so the accumulator stays responsive after many samples
+    //    (otherwise weight → 0 and stale state would dominate across subtle scene tweaks).
+    //    Self-critic fix: previously this used pure progressive averaging, which made
+    //    the GUI "EMA alpha" slider dead code. Now both behaviors coexist: progressive
+    //    early (high weight, fast convergence) then EMA floor (responsiveness).
+    //
+    //    .a tracks EMA of squared luminance (E[L^2]) for downstream variance estimation:
+    //    var ≈ max(0, E[L^2] - L^2). After convergence with low noise: variance → 0,
+    //    inverse-variance weight → high. Noisy pixels keep variance high → cascade dominates.
+    vec4 prev = imageLoad(oHybridAccum, pix);
+    float progressiveW = float(rays) / float(uHybridSppBefore + rays);
+    float weight = max(progressiveW, uHybridEMAAlpha);
+    vec3 merged = mix(prev.rgb, frameMean, weight);
+    float frameLumSq = dot(frameMean, vec3(0.2126, 0.7152, 0.0722));
+    frameLumSq *= frameLumSq;
+    float mergedLumSq = mix(prev.a, frameLumSq, weight);
+    imageStore(oHybridAccum, pix, vec4(merged, mergedLumSq));
+
+    // GBuffer: write the captured normal+depth. Cleared by the C++ side on accumulator reset.
+    imageStore(oHybridGBuffer, pix, vec4(gbufNormal * 0.5 + 0.5, gbufDepth));
+}

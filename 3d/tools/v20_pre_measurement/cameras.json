@@ -8,16 +8,16 @@
       "target":   [0.0, 1.0, 0.0]
     },
     {
-      "name": "cam1_inside_alcove_looking_out",
-      "_purpose": "Standing inside the right-side alcove, looking out across the main room. Stresses NEAR-FIELD radial GI quality — the alcove walls dominate the cascade-0 hemisphere.",
-      "position": [0.6, 1.0, 0.0],
-      "target":   [0.0, 1.0, 3.0]
+      "name": "cam1_closeup_front",
+      "_purpose": "Front-on, ~30% closer than cam0. Same axis so red wall stays on screen LEFT, green wall stays on screen RIGHT — but tighter framing emphasizes the back-wall alcove slits and the central indirect-lit floor. Stresses NEAR-FIELD GI: shorter primary-ray length, cascade C0 contribution dominates more pixels.",
+      "position": [0.0, 1.0, 2.2],
+      "target":   [0.0, 1.0, 0.0]
     },
     {
-      "name": "cam2_far_corridor_toward_alcove",
-      "_purpose": "Far end of the box looking back toward the alcove opening. Stresses LONG-DISTANCE spatial GI quality — bounces from the alcove must travel through the room to reach the camera.",
-      "position": [0.0, 1.0, -1.2],
-      "target":   [0.6, 0.5, 0.5]
+      "name": "cam2_front_left_elevated",
+      "_purpose": "Front-LEFT corner, raised slightly above eye level, looking at box interior. Captures green wall + back wall + floor diagonally — DIFFERENT screen-space layout of red/green walls than cam0/cam1. Lets the asymmetry test discriminate: scene-anchored asymmetry follows the red wall regardless of where on screen it lands; screen-space artifact would flip with the camera.",
+      "position": [-1.6, 1.5, 2.6],
+      "target":   [0.5, 0.7, 0.0]
     }
   ]
 }
