@@ -15,6 +15,9 @@
 #include "demo3d.h"  // This includes raylib.h
 #include <iostream>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
+#include <cstring>
 
 #ifdef _WIN32
     #include <direct.h>  // For _chdir on Windows
@@ -84,6 +87,54 @@ bool g_cacheHitTest = false;
 // codex 04 F2 verify: toggle GPU SDF off after load to exercise the
 // CPU-mirror-preserved transition.
 bool g_toggleGpuSdfOffAfterLoad = false;
+
+// v2.0-pre F4: minimal cameras.json loader. Format:
+//   { "cameras": [ { "position": [x,y,z], "target": [x,y,z] }, ... ] }
+// Reads up to Demo3D::kMeasurementCameraSlots entries. Returns count loaded.
+// We hand-parse rather than pull in nlohmann/json since this is the only JSON
+// consumer in the project. The format is fixed; whitespace / comments / extra
+// keys are tolerated. Each "position" or "target" array is identified by the
+// preceding key name and bracket pair; ordering of position/target within a
+// camera object is enforced (position first, then target, both required).
+static int loadMeasurementCamerasJson(Demo3D* demo, const std::string& path) {
+    std::ifstream f(path);
+    if (!f) {
+        std::cerr << "[MAIN] --measurement-cameras-file: could not open '" << path << "'\n";
+        return 0;
+    }
+    std::stringstream ss; ss << f.rdbuf();
+    std::string text = ss.str();
+    int loaded = 0;
+    size_t pos = 0;
+    while (loaded < Demo3D::kMeasurementCameraSlots) {
+        size_t pKey = text.find("\"position\"", pos);
+        if (pKey == std::string::npos) break;
+        size_t pOpen = text.find('[', pKey);
+        size_t pClose = (pOpen == std::string::npos) ? std::string::npos : text.find(']', pOpen);
+        if (pClose == std::string::npos) break;
+        glm::vec3 p(0.0f);
+        if (std::sscanf(text.c_str() + pOpen + 1, " %f , %f , %f", &p.x, &p.y, &p.z) != 3) {
+            std::cerr << "[MAIN] cameras.json: malformed position at byte " << pOpen << "\n";
+            break;
+        }
+        size_t tKey = text.find("\"target\"", pClose);
+        if (tKey == std::string::npos) break;
+        size_t tOpen = text.find('[', tKey);
+        size_t tClose = (tOpen == std::string::npos) ? std::string::npos : text.find(']', tOpen);
+        if (tClose == std::string::npos) break;
+        glm::vec3 t(0.0f);
+        if (std::sscanf(text.c_str() + tOpen + 1, " %f , %f , %f", &t.x, &t.y, &t.z) != 3) {
+            std::cerr << "[MAIN] cameras.json: malformed target at byte " << tOpen << "\n";
+            break;
+        }
+        demo->setMeasurementCameraSlot(loaded, p, t);
+        ++loaded;
+        pos = tClose + 1;
+    }
+    std::cout << "[MAIN] --measurement-cameras-file=" << path
+              << " loaded " << loaded << " cameras\n";
+    return loaded;
+}
 
 int main(int argc, char* argv[]) {
     /**
@@ -229,6 +280,11 @@ int main(int argc, char* argv[]) {
             int m = std::atoi(arg.substr(14).c_str());
             demo->setRenderMode(m);
             std::cout << "[MAIN] --render-mode=" << m << "\n";
+        } else if (arg.rfind("--auto-capture-delay=", 0) == 0) {
+            float s = static_cast<float>(std::atof(arg.substr(21).c_str()));
+            demo->setAutoCaptureDelaySeconds(s);
+            std::cout << "[MAIN] --auto-capture-delay=" << s
+                      << " s (0=disabled — burst won't hijack render mode)\n";
         } else if (arg.rfind("--inject-bake-failures=", 0) == 0) {
             int n = std::atoi(arg.substr(23).c_str());
             demo->setInjectBakeFailures(n);
@@ -543,6 +599,37 @@ int main(int argc, char* argv[]) {
             cliFovy = static_cast<float>(std::atof(arg.substr(14).c_str()));
             cliFovySet = true;
             std::cout << "[MAIN] --camera-fovy=" << cliFovy << "\n";
+        } else if (arg.rfind("--measurement-cameras-file=", 0) == 0) {
+            // v2.0-pre F4: populate measurement camera slots from JSON file.
+            // Apply BEFORE --measurement-camera so the snap target is valid.
+            loadMeasurementCamerasJson(demo, arg.substr(27));
+        } else if (arg.rfind("--measurement-camera=", 0) == 0) {
+            // v2.0-pre F4: pin live camera to slot N (-1 = interactive).
+            // Requires --measurement-cameras-file earlier on the command line
+            // unless slot was populated programmatically.
+            int v = std::atoi(arg.substr(21).c_str());
+            demo->setMeasurementCamera(v);
+            std::cout << "[MAIN] --measurement-camera=" << v << "\n";
+        } else if (arg.rfind("--cascade-exclude=", 0) == 0) {
+            // v2.0-pre M1: leave-one-out cascade attribution via bake-chain
+            // skip+rewire (see Demo3D::updateAllCascades / updateSingleCascade).
+            int v = std::atoi(arg.substr(18).c_str());
+            demo->setCascadeExclude(v);
+            std::cout << "[MAIN] --cascade-exclude=" << v << "\n";
+        } else if (arg.rfind("--noise-seed-offset=", 0) == 0) {
+            // v2.0-pre M2: per-run PCG offset (added to uMBFrameSeed *9973).
+            int v = std::atoi(arg.substr(20).c_str());
+            demo->setNoiseSeedOffset(v);
+            std::cout << "[MAIN] --noise-seed-offset=" << v << "\n";
+        } else if (arg.rfind("--error-decomp-mode=", 0) == 0) {
+            // v2.0-pre Mode 20 sub-mode {0=total,1=direct,2=indirect,3=relErr}.
+            int v = std::atoi(arg.substr(20).c_str());
+            demo->setErrorDecompMode(v);
+            std::cout << "[MAIN] --error-decomp-mode=" << v << "\n";
+        } else if (arg == "--cascade-config-dump") {
+            // v2.0-pre M3: emit cascade-config.json alongside next screenshot.
+            demo->requestCascadeConfigDump();
+            std::cout << "[MAIN] --cascade-config-dump (writes alongside next --screenshot)\n";
         }
     }
 

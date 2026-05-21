@@ -509,6 +509,11 @@ public:
         raymarchRenderMode = m;
     }
 
+    // v2.0-pre diag: disable the auto-capture burst (default 5s) that hijacks
+    // raymarchRenderMode and contaminates headless diagnostic captures. Pass 0
+    // to disable, >0 to set a custom delay. Burst flips render mode to 0/3/6.
+    void setAutoCaptureDelaySeconds(float s) { autoCaptureDelaySeconds = s; }
+
     // Step 10 — Camera state CLI/UI setters. Apply AFTER any auto-fit/preset paths.
     void setCameraPosition(const glm::vec3& p);
     void setCameraTarget(const glm::vec3& t);
@@ -772,6 +777,78 @@ public:
 
     // codex 07 F1 — let main3d.cpp inject bake failures via CLI for runtime test of the bool-return retry path
     void setInjectBakeFailures(int n) { injectBakeFailures = n; }
+
+    // 2026-05-20 MBRC v2.0-pre instrumentation CLI/GUI setters
+    // (doc/7/mbrc_v20_pre_measurement_plan.md §3). Each setter resets the
+    // cascade-ready latch so the dispatch chain rewires immediately (cascade
+    // exclusion is a bake-time decision, not consume-time).
+    void setCascadeExclude(int v) {
+        if (v < -1) v = -1;
+        if (v >= cascadeCount) v = cascadeCount - 1;
+        if (v == cascadeExclude) return;
+        cascadeExclude = v;
+        cascadeReady = false;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] cascadeExclude=" << v
+                  << " (-1=baseline; 0..N-1=skip-in-merge that cascade; bake chain rewired)\n";
+    }
+    int  getCascadeExclude() const { return cascadeExclude; }
+    void setErrorDecompMode(int v) {
+        if (v < 0) v = 0; if (v > 3) v = 3;
+        errorDecompMode = v;
+        std::cout << "[Demo3D] errorDecompMode=" << v
+                  << " (0=total,1=direct,2=indirect,3=relErr; affects render mode 20 only)\n";
+    }
+    int  getErrorDecompMode() const { return errorDecompMode; }
+    void setNoiseSeedOffset(int v) {
+        if (v < 0) v = 0;
+        noiseSeedOffset = v;
+        // Reset accumulators so the new seed offset takes effect from a clean state
+        // (plan §2.4 M2 fix: 4 runs each start from clean cascade + MB-feedback state).
+        cascadeReady = false;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        hybridDirty = true;
+        std::cout << "[Demo3D] noiseSeedOffset=" << v
+                  << " (per-run PCG offset; cascades + MB-feedback reset)\n";
+    }
+    int  getNoiseSeedOffset() const { return noiseSeedOffset; }
+    void setMeasurementCamera(int v) {
+        if (v < -1) v = -1;
+        if (v >= kMeasurementCameraSlots) v = kMeasurementCameraSlots - 1;
+        measurementCamera = v;
+        if (v >= 0 && measurementCameraValid[v]) {
+            camera.position = measurementCameraPositions[v];
+            camera.target   = measurementCameraTargets[v];
+            syncCameraYawPitchFromTarget();
+            cascadeReady = false;
+            historyNeedsSeed = true;
+            hybridDirty = true;
+        }
+        std::cout << "[Demo3D] measurementCamera=" << v
+                  << " (-1=interactive; 0.." << (kMeasurementCameraSlots - 1)
+                  << "=pin to cameras.json[N] + jitter off)\n";
+    }
+    int  getMeasurementCamera() const { return measurementCamera; }
+    // v2.0-pre: main3d.cpp loads tools/v20_pre_measurement/cameras.json once
+    // and pushes each entry into a slot. setMeasurementCamera(N) then snaps
+    // the live camera to slot N. Slots NOT populated by cameras.json fall back
+    // to the auto-fit preset (no snap occurs).
+    static constexpr int kMeasurementCameraSlots = 3;
+    void setMeasurementCameraSlot(int idx, const glm::vec3& pos, const glm::vec3& target) {
+        if (idx < 0 || idx >= kMeasurementCameraSlots) return;
+        measurementCameraPositions[idx] = pos;
+        measurementCameraTargets[idx]   = target;
+        measurementCameraValid[idx]     = true;
+        std::cout << "[Demo3D] measurementCameraSlot[" << idx << "] pos=("
+                  << pos.x << "," << pos.y << "," << pos.z << ") target=("
+                  << target.x << "," << target.y << "," << target.z << ")\n";
+    }
+    // Emit cascade-config.json alongside the next screenshot (plan §3 M3).
+    // The dump captures every MBRC toggle pinned at capture time so v2.0a
+    // can assert equivalence at its own capture.
+    void requestCascadeConfigDump() { pendingCascadeConfigDump = true; }
 
     // codex 11 F1/F2 — lets main3d.cpp programmatically trigger the scene-aware
     // reset path (proves the helper that R-key and ImGui button now share).
@@ -1356,6 +1433,42 @@ private:
      *  Signed bipolar colormap: |delta| >= divisor saturates. Default 0.2 picked for
      *  Cornell-scale scenes (typical radiance ~0.3). */
     float deltaHeatmapDivisor;
+
+    /** 2026-05-20 MBRC v2.0-pre instrumentation
+     *  (doc/7/mbrc_v20_pre_measurement_plan.md §3 + critic-06 reply H1/H4/M2/M3).
+     *
+     *  cascadeExclude: leave-one-out cascade attribution. -1 = no exclusion
+     *  (baseline). 0..(cascadeCount-1) excludes that cascade via bake-chain
+     *  rewiring (see updateAllCascades): cascade `cascadeExclude` is skipped
+     *  in the dispatch loop; cascade `cascadeExclude-1` binds cascade
+     *  `cascadeExclude+1` as its upper instead, and its tMax is extended via
+     *  uCnMinRange so the bracket between the excluded cascade's neighbours
+     *  closes. Architectural divergence from plan's "consume-time renormalize"
+     *  language is recorded in doc/7/mbrc_v20_pre_measurement_impl.md.
+     *
+     *  errorDecompMode: Mode 20 sub-mode {0=total,1=direct,2=indirect,3=relErr}.
+     *  Defaults 0 (total) so toggling Mode 20 with no further config matches
+     *  Mode 18 — making the new mode safe to enable without re-tuning.
+     *
+     *  noiseSeedOffset: per-run PCG offset (plan §2.4, M2 fix). Added to the
+     *  cascade-bake RNG site (uMBFrameSeed) and MB v2 stochastic sampler so
+     *  4 independent runs of 64 frames produce independent noise realizations.
+     *  Default 0 = unchanged behavior. Forwarded into uMBFrameSeed as
+     *  `renderFrameIndex + noiseSeedOffset * 9973` (prime-spaced).
+     *
+     *  measurementCamera: pinned camera index for v2.0-pre captures (F4 fix).
+     *  -1 = interactive (user controls camera, jitter applied as usual).
+     *  0..2 = jump to measurement camera N at next frame, disable jitter/bob,
+     *  hold position. cameras.json on disk authoritative; see
+     *  tools/v20_pre_measurement/cameras.json. */
+    int cascadeExclude   = -1;
+    int errorDecompMode  = 0;
+    int noiseSeedOffset  = 0;
+    int measurementCamera = -1;
+    glm::vec3 measurementCameraPositions[kMeasurementCameraSlots] = {};
+    glm::vec3 measurementCameraTargets[kMeasurementCameraSlots]   = {};
+    bool      measurementCameraValid[kMeasurementCameraSlots]     = {};
+    bool pendingCascadeConfigDump = false;
 
     // ========================================================================
     // Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md)

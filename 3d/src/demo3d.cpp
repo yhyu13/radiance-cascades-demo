@@ -559,6 +559,20 @@ void Demo3D::processInput() {
         }
     }
 
+    // v2.0-pre F4: when a measurement camera is pinned, suppress ALL camera-
+    // mutating input (mouse-look, WASD, wheel zoom, FOV). Position/target are
+    // held at the snapshot stored by setMeasurementCamera so per-frame RMSE
+    // is reproducible. Debug hotkeys above still fire.
+    const bool cameraPinned = (measurementCamera >= 0);
+    if (cameraPinned) {
+        // Force-restore in case any prior code path nudged the camera.
+        if (measurementCameraValid[measurementCamera]) {
+            camera.position = measurementCameraPositions[measurementCamera];
+            camera.target   = measurementCameraTargets[measurementCamera];
+        }
+        return;
+    }
+
     // ---------- Step 5 (5b body, codex 10 F4 + F6): mouse-look START + body ----
     // START gated on !WantCaptureMouse; body runs whenever dragging.
     if (!io.WantCaptureMouse && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
@@ -943,7 +957,9 @@ void Demo3D::render() {
         if (!useProbeJitter) { currentProbeJitter = glm::vec3(0.0f); probeJitterIndex = 0; }
         cascadeReady = false;
     }
-    if (useProbeJitter) {
+    // v2.0-pre M2: measurementCamera>=0 pins jitter to zero so per-camera RMSE is
+    // reproducible across runs (only uMBFrameSeed varies per run, not jitter offset).
+    if (useProbeJitter && measurementCamera < 0) {
         // Sample at current index first, then check whether to advance.
         currentProbeJitter = glm::vec3(
             (halton(probeJitterIndex, 2) - 0.5f) * probeJitterScale,
@@ -958,6 +974,8 @@ void Demo3D::render() {
             if (useTemporalAccum)
                 cascadeReady = false;
         }
+    } else if (measurementCamera >= 0) {
+        currentProbeJitter = glm::vec3(0.0f);
     }
 
     // Pass 3: Radiance Cascades (only when SDF or merge flag changes, or forced by RenderDoc capture)
@@ -1217,13 +1235,20 @@ void Demo3D::render() {
         }
     }
 
-    // Phase 7 (PT reference, doc/7): dispatch PT compute shader if mode 16/18/19 active.
+    // Phase 7 (PT reference, doc/7): dispatch PT compute shader if mode 16/18/19/20 active.
     //   Mode 16 displays PT directly
     //   Mode 18 (2026-05-19) compares cascade-vs-PT per-pixel
     //   Mode 19 (2026-05-19) compares cascade_GI-vs-PT_GI per-pixel (requires
     //     two PT dispatches: full + direct-only, subtract to isolate GI)
+    //   Mode 20 (2026-05-20) Error-Decomposition Heatmap — reads BOTH uPtAccum
+    //     and uPtDirectAccum for sub-modes 0/1/2/3. Missing this gate was
+    //     bug-227 (2026-05-21): mode-20 captures showed all-red (delta=cascade-0
+    //     is always positive). Sub-modes 1/2/3 fail the same way because they
+    //     read uPtDirectAccum / max(uPtAccum-uPtDirect,0) without uPtAccumValid
+    //     checks. Fix: add 20 to the dispatch gate so PT is populated.
     // Runs BEFORE raymarchPass so the texture is up-to-date for display.
-    if (raymarchRenderMode == 16 || raymarchRenderMode == 18 || raymarchRenderMode == 19) {
+    if (raymarchRenderMode == 16 || raymarchRenderMode == 18 ||
+        raymarchRenderMode == 19 || raymarchRenderMode == 20) {
         ptDispatchReference();
     }
 
@@ -2393,8 +2418,27 @@ void Demo3D::updateRadianceCascades() {
     // Coarse→fine: each level reads the already-written level above it for misses.
     // Phase 10: staggered updates — cascade i rebuilds every min(2^i, staggerMaxInterval) frames.
     // Coarser cascades change slowly; staleness over a few frames is visually negligible.
+    //
+    // 2026-05-20 MBRC v2.0-pre H1 (skip-in-merge):
+    // If cascadeExclude == i, skip i's dispatch entirely. Cascade i-1 will then
+    // bind cascade i+1 as its upper (logic in updateSingleCascade) and extend
+    // its tMax to close the bracket. Cascade i's own atlas stays stale from the
+    // last baseline bake, but no downstream cascade reads it so the staleness
+    // does not contaminate the result. The frag shader keeps reading C0 as
+    // before (consume path unchanged).
+    //
+    // Edge cases:
+    //   cascadeExclude == 0: C0 is the consume atlas; we still skip its bake,
+    //     then in updateSingleCascade(-1 phantom path we'd need to write C1's
+    //     downsampled data into C0). Current implementation handles this by
+    //     re-dispatching C0 with cascadeIndex=0 but upper-binding shifted to
+    //     C2 and tMin=0 / tMax=C1.tMax. See updateSingleCascade special path.
+    //   cascadeExclude == cascadeCount-1: highest cascade; cascade i-1 has no
+    //     i+1 to fall back to; treated as "no upper" (hasUpper=0, tMax extended
+    //     to the original i+1 tMax).
     for (int i = cascadeCount - 1; i >= 0; --i) {
         if (!cascades[i].active) continue;
+        if (cascadeExclude >= 0 && i == cascadeExclude) continue;  // skip excluded cascade bake
         int interval = std::min(1 << i, staggerMaxInterval);
         if ((renderFrameIndex % interval) != 0) continue;
         updateSingleCascade(i);
@@ -2425,14 +2469,44 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     float cnMinRange = (cascadeIndex == 0) ? c0MinRange
                      : (cascadeIndex == 1) ? c1MinRange
                      : 0.0f;
+    // 2026-05-20 MBRC v2.0-pre H1 skip-in-merge: when the immediate upper was
+    // excluded, extend this cascade's tMax to cover the excluded cascade's
+    // original bracket (the gap closes). Original tMax_i = pow(4, i) × baseInt;
+    // new tMax = pow(4, i+1) × baseInt (= original tMax_{i+1}).
+    if (cascadeExclude >= 0 && cascadeExclude == cascadeIndex + 1) {
+        const float baseInt = cascades[0].cellSize;
+        const float extendedTMax = std::pow(4.0f, float(cascadeExclude)) * baseInt;
+        cnMinRange = std::max(cnMinRange, extendedTMax);
+    }
     glUniform1f(glGetUniformLocation(prog, "uCnMinRange"), cnMinRange);
 
     // Phase 5d: upper-cascade scale factor for upperProbePos = probePos / scale.
     // 0 = no upper cascade; 1 = co-located (same index); 2 = non-co-located (halved index).
+    //
+    // 2026-05-20 MBRC v2.0-pre H1 skip-in-merge: if cascadeExclude == cascadeIndex+1,
+    // shift upperIdx5d to cascadeExclude+1 (= cascadeIndex+2). The excluded
+    // cascade is bypassed in the bake chain. If that lands past the last cascade,
+    // hasUpper5d resolves false and this cascade gets no upper (closed top).
     int upperIdx5d = cascadeIndex + 1;
+    if (cascadeExclude >= 0 && cascadeExclude == upperIdx5d) {
+        upperIdx5d = cascadeExclude + 1;  // skip past the excluded cascade
+    }
     bool hasUpper5d = (!disableCascadeMerging && upperIdx5d < cascadeCount &&
                        cascades[upperIdx5d].active && cascades[upperIdx5d].probeAtlasTexture != 0);
-    int  upperToCurrentScale = hasUpper5d ? (useColocatedCascades ? 1 : 2) : 0;
+    // Skip-in-merge scale adjustment: when the immediate upper was excluded
+    // and we shifted to cascadeIndex+2, the probe-grid scale ratio doubles
+    // (adjacent cascades scale 2×; skipping one cascade is therefore 4×).
+    // Colocated mode (scale=1) is unaffected by the shift because every cascade
+    // shares the same grid.
+    const bool didSkipShift = (cascadeExclude >= 0 && cascadeExclude == cascadeIndex + 1);
+    int  upperToCurrentScale;
+    if (!hasUpper5d) {
+        upperToCurrentScale = 0;
+    } else if (useColocatedCascades) {
+        upperToCurrentScale = 1;
+    } else {
+        upperToCurrentScale = didSkipShift ? 4 : 2;
+    }
     glUniform1i(glGetUniformLocation(prog, "uUpperToCurrentScale"), upperToCurrentScale);
     float upperProbeCellSz = hasUpper5d ? cascades[upperIdx5d].cellSize : 0.0f;
     glUniform1f(glGetUniformLocation(prog, "uUpperProbeCellSize"), upperProbeCellSz);
@@ -2442,10 +2516,13 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glUniform3fv(glGetUniformLocation(prog, "uGridSize"),   1, glm::value_ptr(volumeSize));
     glUniform3fv(glGetUniformLocation(prog, "uGridOrigin"), 1, glm::value_ptr(volumeOrigin));
     glUniform1i(glGetUniformLocation(prog, "uDirRes"), cascadeDirRes[cascadeIndex]);  // Phase 5a/5e
-    int upperCascDirRes = hasUpper5d ? cascadeDirRes[cascadeIndex + 1] : cascadeDirRes[cascadeIndex];
+    // 2026-05-20 H1 skip-in-merge: use the shifted upperIdx5d (not the literal
+    // cascadeIndex+1) so the upper dirRes / probe-grid extents match the cascade
+    // actually being read as upper.
+    int upperCascDirRes = hasUpper5d ? cascadeDirRes[upperIdx5d] : cascadeDirRes[cascadeIndex];
     glUniform1i(glGetUniformLocation(prog, "uUpperDirRes"), upperCascDirRes);  // Phase 5e
     // Phase 5d trilinear: upper cascade probe grid dimensions for 8-neighbor clamping
-    int upperRes = hasUpper5d ? cascades[cascadeIndex + 1].resolution : 1;
+    int upperRes = hasUpper5d ? cascades[upperIdx5d].resolution : 1;
     glm::ivec3 upperVolRes(upperRes);
     glUniform3iv(glGetUniformLocation(prog, "uUpperVolumeSize"), 1, glm::value_ptr(upperVolRes));
     glUniform1i(glGetUniformLocation(prog, "uUseSpatialTrilinear"), useSpatialTrilinear ? 1 : 0);
@@ -2491,8 +2568,13 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
         // Phase MB v2 (stochastic single-bin): per-frame seed entropy for cosine
         // sampling. renderFrameIndex changes each frame → stochastic sample direction
         // varies → temporal EMA accumulates many directions over time.
+        //
+        // 2026-05-20 MBRC v2.0-pre M2: noiseSeedOffset (× 9973 prime spacing)
+        // gives 4 measurement runs independent sample sequences. Default 0
+        // preserves existing behavior bit-exact.
         glUniform1ui(glGetUniformLocation(prog, "uMBFrameSeed"),
-                     static_cast<unsigned int>(renderFrameIndex));
+                     static_cast<unsigned int>(renderFrameIndex
+                                               + noiseSeedOffset * 9973));
         // Critic-04 L2: log state changes for this cascade (only the first cascade since
         // all share the same C0 history; avoid log spam from C1/C2/C3 updates).
         if (cascadeIndex == 0) {
@@ -2561,7 +2643,11 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     // Phase 5c: upper cascade directional atlas for per-direction merge.
     // When a ray misses this level's interval, fetch the upper atlas at the exact
     // direction bin instead of the isotropic probe average.
-    int upperIdx = cascadeIndex + 1;
+    //
+    // 2026-05-20 MBRC v2.0-pre H1: use the shifted upperIdx5d (computed above)
+    // so the binding follows the skip-in-merge dispatch chain. When the immediate
+    // upper was excluded, this binds two-levels-up's atlas instead.
+    int upperIdx = upperIdx5d;
     if (!disableCascadeMerging &&
         upperIdx < cascadeCount && cascades[upperIdx].active && cascades[upperIdx].probeAtlasTexture != 0) {
         // Phase 10: when fused EMA is active, probeAtlasHistory holds the accumulated (fresh) atlas
@@ -2799,6 +2885,15 @@ void Demo3D::raymarchPass() {
     glUniform1f(glGetUniformLocation(prog, "uLeakHeatmapDivisor"), leakHeatmapDivisor);
     // 2026-05-19: cascade-vs-PT delta heatmap (mode 18) sensitivity divisor.
     glUniform1f(glGetUniformLocation(prog, "uDeltaHeatmapDivisor"), deltaHeatmapDivisor);
+    // 2026-05-20 MBRC v2.0-pre (doc/7/mbrc_v20_pre_measurement_plan.md):
+    // forward the exclusion + decomp-mode + cascade bracket info to the frag
+    // shader. The bake-side skip-in-merge is implemented in updateAllCascades;
+    // here we just push the state so Mode 20/21 + diagnostic logging can use it.
+    glUniform1i(glGetUniformLocation(prog, "uCascadeExclude"),     cascadeExclude);
+    glUniform1i(glGetUniformLocation(prog, "uErrorDecompMode"),    errorDecompMode);
+    glUniform1f(glGetUniformLocation(prog, "uCascadeBaseInterval"),
+                (cascadeCount > 0) ? cascades[0].cellSize : baseInterval);
+    glUniform1i(glGetUniformLocation(prog, "uCascadeCountConsume"), cascadeCount);
     // SDF texture (sampler binding 0)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -2816,6 +2911,15 @@ void Demo3D::raymarchPass() {
     // Cascade indirect lighting — bind the user-selected cascade level so each can be
     // inspected independently; uUseCascade only controls blending in mode 0
     int selC = std::max(0, std::min(selectedCascadeForRender, cascadeCount - 1));
+    // 2026-05-20 MBRC v2.0-pre H1 skip-in-merge for cascadeExclude=0:
+    // C0 is the consume atlas under normal operation. Skipping C0's bake
+    // (above, in updateAllCascades) would leave the consume atlas stale.
+    // Promote consume to C1 so the frag shader reads "the cascade tree without
+    // C0 in it." Other excludes (>=1) leave consume at the user's selection
+    // since C0 is still baked and downstream skip-in-merge handles the rewire.
+    if (cascadeExclude == 0 && cascadeCount > 1) {
+        selC = std::max(selC, 1);
+    }
     if (cascades[selC].active && cascades[selC].probeGridTexture != 0) {
         glActiveTexture(GL_TEXTURE1);
         // Phase 9: read from temporal history when accumulation is active and history exists
@@ -4695,9 +4799,11 @@ void Demo3D::renderSettingsPanel() {
         "17 GI-Only (pure indirect; toggle MB to see contribution)",
         "18 Cascade-vs-PT Delta (total brightness)",
         "19 Cascade_GI-vs-PT_GI Delta (indirect only)",
+        "20 ErrorDecomp (v2.0-pre; pick sub-mode below)",
+        "21 CascadeDominance (which cascade owns each pixel)",
     };
     constexpr int kModeCount = int(sizeof(kRenderModeLabels) / sizeof(kRenderModeLabels[0]));
-    static_assert(kModeCount == 20, "renderModeLabels must enumerate all 20 raymarch modes");
+    static_assert(kModeCount == 22, "renderModeLabels must enumerate all 22 raymarch modes");
     // Defensive clamp: setRenderMode warns on out-of-range values but assigns them
     // anyway (preserves shader fallthrough behaviour). The picker is the only thing
     // standing between an out-of-range raymarchRenderMode and an OOB array read.
@@ -4856,6 +4962,103 @@ void Demo3D::renderSettingsPanel() {
                               "  Red regions = cascade brighter than PT\n"
                               "  Blue regions = cascade dimmer than PT (typical for GI)\n"
                               "  White = match");
+    }
+
+    // ====================================================================
+    // v2.0-pre measurement controls (Modes 20 + 21 + leave-one-out + seed).
+    // Visible whenever Mode 20 or 21 is active, or any v2.0-pre uniform
+    // has been touched (so the user sees what's pinned even on Mode 0).
+    // ====================================================================
+    const bool v20Active = (raymarchRenderMode == 20 || raymarchRenderMode == 21 ||
+                            cascadeExclude >= 0 || noiseSeedOffset != 0 ||
+                            measurementCamera >= 0);
+    if (v20Active) {
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.6f, 0.9f, 1.0f, 1.0f), "v2.0-pre measurement");
+
+        if (raymarchRenderMode == 20) {
+            static const char* kDecompLabels[] = {
+                "0 Total delta (= mode 18)",
+                "1 Direct-only delta",
+                "2 Indirect-only delta (= mode 19)",
+                "3 Relative error (unipolar green/yellow/red)"
+            };
+            int dm = errorDecompMode;
+            if (ImGui::Combo("ErrorDecomp sub-mode##v20", &dm, kDecompLabels, 4))
+                setErrorDecompMode(dm);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Mode 20 splits the cascade-vs-PT error 4 ways:\n"
+                                  "  0 = total (matches mode 18)\n"
+                                  "  1 = direct-only — exposes direct-lighting bias\n"
+                                  "  2 = indirect-only — exposes GI gap (multi-bounce / leaks)\n"
+                                  "  3 = relative (|delta|/PT) — wash-out independent of brightness\n\n"
+                                  "Sub-mode 1+2 should sum to sub-mode 0 (spatial-vs-angular decomp).");
+        }
+
+        // Leave-one-out cascade attribution (bake-chain skip+rewire).
+        {
+            const int maxExcl = std::max(0, cascadeCount - 1);
+            int ce = cascadeExclude;
+            // ImGui sliders need integer min<max range; offset by 1 so -1 maps to 0.
+            int ceUI = ce + 1;
+            const std::string label = std::string("CascadeExclude (-1..") + std::to_string(maxExcl) + ")##v20";
+            if (ImGui::SliderInt(label.c_str(), &ceUI, 0, maxExcl + 1,
+                                 ceUI == 0 ? "-1 (baseline, all cascades on)" : "exclude cascade %d"))
+                setCascadeExclude(ceUI - 1);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Leave-one-out cascade attribution.\n"
+                                  "-1 = baseline (no exclusion).\n"
+                                  " 0..N-1 = skip that cascade's bake; the cascade BELOW it\n"
+                                  "         rewires upward (binds N+1 as its upper) and extends\n"
+                                  "         tMax to cover N's bracket.\n\n"
+                                  "WHAT IT MEASURES: the delta from baseline upper-bounds that\n"
+                                  "cascade's contribution to the final GI. Pair with Mode 20.\n"
+                                  "Special: excluding cascade 0 routes the consume path to C1.\n"
+                                  "Note: changing this resets EMA + hybrid (fresh capture).");
+        }
+
+        // Per-run PCG offset (noise floor harness input).
+        {
+            int seed = noiseSeedOffset;
+            if (ImGui::InputInt("NoiseSeedOffset##v20", &seed, 1, 4)) {
+                if (seed < 0) seed = 0;
+                setNoiseSeedOffset(seed);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Per-run RNG offset added to uMBFrameSeed (× 9973 prime spacing).\n"
+                                  "Same seed = same noise pattern. Different seed = independent draw\n"
+                                  "of the same expectation. Used by the v2.0-pre noise-floor estimate\n"
+                                  "(N=4 runs at seeds 0..3 → stderr across runs).\n"
+                                  "Changing resets EMA + hybrid.");
+        }
+
+        // Measurement camera pin.
+        {
+            const char* camLabels[] = {
+                "interactive (-1)",
+                "cam0 default",
+                "cam1 inside alcove",
+                "cam2 far corridor"
+            };
+            int mc = measurementCamera + 1;
+            if (ImGui::Combo("MeasurementCamera##v20", &mc, camLabels, 4))
+                setMeasurementCamera(mc - 1);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Pin camera to a slot loaded from cameras.json.\n"
+                                  "When pinned: mouse-look + WASD + wheel are suppressed;\n"
+                                  "probe jitter forced to zero (reproducible RMSE).\n\n"
+                                  "Slots are populated via --measurement-cameras-file=PATH\n"
+                                  "on the command line; without it, only the 'interactive'\n"
+                                  "entry does anything (other slots are uninitialised).");
+        }
+
+        if (ImGui::Button("Dump cascade-config.json (next screenshot)##v20"))
+            requestCascadeConfigDump();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Writes cascade_config_<ts>.json next to the next screenshot.\n"
+                              "Captures every MBRC toggle pinned at capture time so v2.0a\n"
+                              "captures can assert equivalence (no silent regression from\n"
+                              "changed defaults or forgotten CLI flags).");
     }
 
     // Phase 7 (PT reference, doc/7) inline controls: shown when mode 16 is selected.
@@ -6552,6 +6755,48 @@ void Demo3D::takeScreenshot(bool launchAiAnalysis) {
             std::cout << "[12a] Probe stats written: " << statsPath << std::endl;
         } else {
             std::cerr << "[12a] Failed to write stats: " << statsPath << std::endl;
+        }
+    }
+
+    // v2.0-pre M3: cascade-config.json dump alongside the screenshot. Captures
+    // every MBRC toggle pinned at capture time so v2.0a captures can assert
+    // equivalence (no silent regression from changed defaults / forgotten CLI).
+    if (pendingCascadeConfigDump) {
+        pendingCascadeConfigDump = false;
+        std::ostringstream c;
+        c << "{\n";
+        c << "  \"stem\": \""              << stem << "\",\n";
+        c << "  \"captureFrame\": "        << renderFrameIndex   << ",\n";
+        c << "  \"cascadeExclude\": "      << cascadeExclude     << ",\n";
+        c << "  \"errorDecompMode\": "     << errorDecompMode    << ",\n";
+        c << "  \"noiseSeedOffset\": "     << noiseSeedOffset    << ",\n";
+        c << "  \"measurementCamera\": "   << measurementCamera  << ",\n";
+        c << "  \"useMultiBounce\": "      << (useMultiBounce?"true":"false")   << ",\n";
+        c << "  \"multiBounceGain\": "     << multiBounceGain    << ",\n";
+        c << "  \"useScaledDirRes\": "     << (useScaledDirRes?"true":"false")  << ",\n";
+        c << "  \"useWeightedSample\": "   << (useWeightedSample?"true":"false")<< ",\n";
+        c << "  \"useHistoryClamp\": "     << (useHistoryClamp?"true":"false")  << ",\n";
+        c << "  \"useProbeJitter\": "      << (useProbeJitter?"true":"false")   << ",\n";
+        c << "  \"useTemporalAccum\": "    << (useTemporalAccum?"true":"false") << ",\n";
+        c << "  \"temporalAlpha\": "       << temporalAlpha      << ",\n";
+        c << "  \"c0probeRes\": "          << cascadeC0Res       << ",\n";
+        c << "  \"baseInterval\": "        << (cascadeCount > 0 ? cascades[0].cellSize : 0.0f) << ",\n";
+        c << "  \"cascadeCount\": "        << cascadeCount       << ",\n";
+        c << "  \"dirRes\": [";
+        for (int ci = 0; ci < cascadeCount; ++ci) { if (ci) c << ","; c << cascadeDirRes[ci]; }
+        c << "],\n";
+        c << "  \"giBlurRadius\": "        << giBlurRadius       << ",\n";
+        c << "  \"giBlurDepthSigma\": "    << giBlurDepthSigma   << ",\n";
+        c << "  \"giBlurNormalSigma\": "   << giBlurNormalSigma  << ",\n";
+        c << "  \"useHybrid\": "           << (useHybrid?"true":"false") << "\n";
+        c << "}\n";
+        std::string cfgPath = screenshotDir + "/cascade_config_" + std::to_string(now) + ".json";
+        std::ofstream cf(cfgPath);
+        if (cf) {
+            cf << c.str();
+            std::cout << "[v2.0-pre M3] Cascade config written: " << cfgPath << std::endl;
+        } else {
+            std::cerr << "[v2.0-pre M3] Failed to write cascade config: " << cfgPath << std::endl;
         }
     }
 

@@ -1,0 +1,23 @@
+{
+  "_note": "v2.0-pre measurement cameras for cornell-orig-alcove (locked decision 2026-05-20). Coordinates are STARTERS based on the existing --cam-preset=alcove anchor and the scene's auto-fit defaults; capture once via --measurement-camera=N + --screenshot=cam_check and refine in-place if framing is off. Order is significant — main3d.cpp loads array indices 0..2 into Demo3D::measurementCamera slots 0..2 in the same order. The first '\"position\"' / '\"target\"' pair per object is enforced (position before target).",
+  "cameras": [
+    {
+      "name": "cam0_default",
+      "_purpose": "Hybrid v1.3.1 / current default framing — outside the box looking toward the open face. Mirrors the auto-fit preset for cornell-orig-alcove so the v2.0-pre RMSE numbers are directly comparable to historical screenshots.",
+      "position": [0.0, 1.0, 3.4],
+      "target":   [0.0, 1.0, 0.0]
+    },
+    {
+      "name": "cam1_inside_alcove_looking_out",
+      "_purpose": "Standing inside the right-side alcove, looking out across the main room. Stresses NEAR-FIELD radial GI quality — the alcove walls dominate the cascade-0 hemisphere.",
+      "position": [0.6, 1.0, 0.0],
+      "target":   [0.0, 1.0, 3.0]
+    },
+    {
+      "name": "cam2_far_corridor_toward_alcove",
+      "_purpose": "Far end of the box looking back toward the alcove opening. Stresses LONG-DISTANCE spatial GI quality — bounces from the alcove must travel through the room to reach the camera.",
+      "position": [0.0, 1.0, -1.2],
+      "target":   [0.6, 0.5, 0.5]
+    }
+  ]
+}
