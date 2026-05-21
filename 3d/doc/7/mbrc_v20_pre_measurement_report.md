@@ -474,6 +474,138 @@ a second tie. Cascade-config sweep (chunk 2 above) is the discriminator.
 
 ---
 
+## 12. Cascade-config sweep — hypothesis (γ) discriminator (2026-05-21 evening)
+
+**Goal.** §11 named cascade-config sweep as the discriminator between
+hypothesis (γ) angular under-sampling and (α) merge-weighting / (β) MB-gain.
+This section reports the sweep result.
+
+### 12.1. Engine + harness
+
+Added two CLI flags (mirroring [main3d.cpp:619 `--noise-seed-offset`](../../src/main3d.cpp)):
+
+- `--cascade-dir-res=N` — override `dirRes` (octahedral D, D² rays/probe).
+  Validated even, 2..32. Triggers `cascadeReady=false` so next frame rebuilds
+  cascades at the new resolution.
+- `--cascade-scaled-dir-res=0|1` — toggle `useScaledDirRes`. When 1 (default),
+  cascades get D / 2D / 4D / 4D (capped 16). When 0, all cascades use uniform D.
+  Uniform mode is what isolates the angular-resolution effect.
+
+Setters: [`Demo3D::setDirRes`](../../src/demo3d.h) and
+[`Demo3D::setUseScaledDirRes`](../../src/demo3d.h).
+
+Harness: [`tools/v20_pre_measurement/cascade_config_sweep.ps1`](../../tools/v20_pre_measurement/cascade_config_sweep.ps1).
+Analyzer: [`tools/v20_pre_measurement/analyze_cascade_config.py`](../../tools/v20_pre_measurement/analyze_cascade_config.py)
+(PIL + numpy; classifies pixels into blue/red Δ bands via saturation threshold
+and channel dominance, with a luma floor to drop letterbox background).
+
+### 12.2. Sweep matrix
+
+3 angular configs × 2 cameras × 2 modes = 12 captures, executed in **2.3 min**:
+
+| axis | values |
+|------|--------|
+| `dirRes` (D) | 4, 8, 16 (rays/probe = 16, 64, 256) |
+| `--cascade-scaled-dir-res` | 0 (uniform across all 4 cascades) |
+| camera | cam0, cam2 (inverts screen-space layout per §3.5.1) |
+| seed | 0 (single; bug-230 deferred — irrelevant within-D since seed axis is bit-identical) |
+| mode | 18 (combined Δ), 19 (GI-only Δ) |
+| hybrid | off |
+| frames | 512 (matches full sweep) |
+
+### 12.3. Quantitative result
+
+"total%" = fraction of foreground pixels classified into either blue
+(cascade<PT) or red (cascade>PT) saturated bands. (D16-D8)/D8 = relative
+change in total-area when angular sample count quadruples (D²: 64 → 256
+rays/probe).
+
+| cam/mode    | D=4 tot% | D=8 tot% | D=16 tot% | (D16-D8)/D8 |
+|-------------|---------:|---------:|----------:|------------:|
+| cam0 mode18 |   27.16% |   25.26% |    25.17% |       −0.4% |
+| cam0 mode19 |   29.15% |   26.54% |    26.27% |       **−1.0%** |
+| cam2 mode18 |   25.09% |   24.37% |    24.24% |       −0.5% |
+| cam2 mode19 |   21.71% |   20.57% |    20.29% |       **−1.4%** |
+
+Mean band-saturation also nearly invariant: blueSat ∈ [0.719, 0.729] across
+all 12 captures.
+
+### 12.4. Verdict: **(γ) REJECTED**
+
+Decision rule (committed in §11 before running the sweep):
+
+- STRONG_GAMMA = ≥50% reduction on mode 19 at BOTH cams when D doubles.
+- WEAK_GAMMA   = 10-50% reduction.
+- GAMMA_REJECT = ≤10% reduction (invariant under D).
+
+Observed mode-19 reduction at D8→D16 (4× rays/probe): cam0 = **−1.0%**,
+cam2 = **−1.4%**. Both well inside the ±10% invariance band → **GAMMA_REJECT**.
+
+Visual cross-check (cam0 m19 D=4 vs D=16) shows blue/red regions in
+**identical screen positions, identical shape, near-identical saturation**.
+The 4× ray-count increase produced no observable softening of the asymmetric
+pattern. cam2 m19 D=4 vs D=16 is equally indistinguishable — confirming the
+rejection is not a single-camera artifact.
+
+### 12.5. What this implies
+
+The "smear concentrated indirect light across many directions" mechanism
+proposed in §8 doesn't survive contact with the data. The cascade-vs-PT
+delta pattern is **not** angular-resolution-bound; it is architectural to
+the cascade construction (merge, ray-march, or feedback gain). The leading
+hypotheses revert to:
+
+- **(α) merge-time directional weighting** — original scouting hypothesis.
+  Per-direction merge weights may double-count or under-count indirect
+  contributions from specific directions when probes are merged across
+  cascade boundaries. Suggested by the partition-opening anchor: rays
+  passing through the narrow alcove gap occupy a *specific direction band*,
+  and that band may be the one mis-weighted.
+- **(β) multi-bounce gain at wrong fixed point** — MB gain=1.0 is energy-
+  conserving in theory but cascade integration losses (hemi_factor ≈ 0.05
+  vs theoretical 0.5) suggest the effective fixed point is lower than the
+  geometric series predicts. A bigger MB gain (1.5–2.0) would raise the
+  cascade GI floor — which is exactly where mode 19 says cascade is too dim.
+
+### 12.6. CANNOT support / honest scope
+
+- Sweep is single-seed (bug-230 unfixed) — within-D comparisons still valid
+  because the same PCG state is used at all three D values; this is a
+  *configuration* axis, not a *noise* axis.
+- The blue/red band classifier uses a heuristic saturation threshold (0.55)
+  on the bipolar heatmap, not the raw cascade-PT scalar Δ from an EXR. If
+  the colormap distorts area perception, the magnitudes shift but the
+  invariance result holds (verified by inspecting the visual cross-checks
+  alongside the metric).
+- D=16 uniform is ALREADY beyond what the engine ships by default. Going
+  higher (D=24, D=32) is bounded by atlas dimensions and was not tested;
+  given the flat trend D=4→D=8→D=16, extrapolation would have to be
+  super-linearly different to flip the verdict.
+- Result holds only for cornell-orig-alcove scene. The (α) and (β)
+  hypothesis tests should re-introduce scene diversity (plain cornell, then
+  sponza) before any code-shipping decision.
+
+### 12.7. Recommended next action
+
+Run an (α)/(β) discriminator sweep next session:
+
+- **(β)** is the cheap test. `multiBounceGain` already has a CLI/GUI; sweep
+  values {0.5, 1.0, 1.5, 2.0, 3.0} at cam0+cam2, modes 18+19, single seed,
+  hybrid off. 10 captures, ~3 min. Decision rule: if (β) is dominant,
+  gain=2.0 should reduce mode-19 blue area on BOTH cams by ≥30% (raising
+  the cascade GI floor). If invariant under gain, (β) drops too and (α) is
+  the last remaining hypothesis.
+- **(α)** requires more engine work. The merge-weighting code lives in
+  [`radiance_3d.comp`](../../res/shaders/radiance_3d.comp) — needs an A/B
+  flag for uniform-isotropic merge vs the current directional-aware merge,
+  and ideally a third "merge-from-cosine-weighted-only" variant. Estimate
+  2-3h engine work before the sweep.
+
+Both should run BEFORE attempting bug-230 fix — if (β) confirms, bug-230
+becomes a regression-detector for the gain change, not a prerequisite.
+
+---
+
 ## 7. Changelog
 
 - 2026-05-21 — Scouting report drafted from 14-capture single-camera sweep.
@@ -488,3 +620,11 @@ a second tie. Cascade-config sweep (chunk 2 above) is the discriminator.
   scouting (α)/(β) remain on the menu but no longer lead. Hybrid v1.3.1
   closes part of the gap on main-room side but amplifies the over-illumination
   on alcove/ceiling side at cam2 — not a unilateral improvement.
+- 2026-05-21 evening — Cascade-config sweep executed (12 captures, 3 D values ×
+  2 cams × 2 modes, 2.3 min). Added §12 (CLI flags, harness, analyzer, matrix,
+  result, verdict, scope). **Hypothesis (γ) REJECTED**: D8→D16 (4× rays/probe)
+  reduces mode-19 Δ-band area by only 1.0% / 1.4% across cam0 / cam2, well
+  inside the ±10% GAMMA_REJECT band. Visual cross-checks confirm asymmetric
+  pattern is angular-resolution-invariant. Leading hypothesis flips back to
+  (α) merge-weighting / (β) MB-gain. Recommended next action: cheap (β)
+  multi-bounce-gain sweep, then (α) merge-mode A/B if (β) also rejects.

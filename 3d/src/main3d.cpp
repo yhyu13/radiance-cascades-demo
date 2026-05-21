@@ -630,6 +630,23 @@ int main(int argc, char* argv[]) {
             // v2.0-pre M3: emit cascade-config.json alongside next screenshot.
             demo->requestCascadeConfigDump();
             std::cout << "[MAIN] --cascade-config-dump (writes alongside next --screenshot)\n";
+        } else if (arg.rfind("--cascade-dir-res=", 0) == 0) {
+            // v2.0-pre cascade-config sweep: override dirRes (D, octahedral side).
+            // D*D rays/probe; cascade rebuild triggered by Demo3D::update watcher.
+            int v = std::atoi(arg.substr(18).c_str());
+            if (v < 2 || v > 32 || (v & 1)) {
+                std::cerr << "[MAIN] --cascade-dir-res=" << v
+                          << " ignored (must be even, 2..32)\n";
+            } else {
+                demo->setDirRes(v);
+                std::cout << "[MAIN] --cascade-dir-res=" << v
+                          << " (D*D=" << (v * v) << " rays/probe)\n";
+            }
+        } else if (arg.rfind("--cascade-scaled-dir-res=", 0) == 0) {
+            // v2.0-pre cascade-config sweep: 1=D/2D/4D/4D scaling, 0=uniform D.
+            int v = std::atoi(arg.substr(25).c_str());
+            demo->setUseScaledDirRes(v != 0);
+            std::cout << "[MAIN] --cascade-scaled-dir-res=" << v << "\n";
         }
     }
 

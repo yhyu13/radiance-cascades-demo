@@ -814,6 +814,24 @@ public:
                   << " (per-run PCG offset; cascades + MB-feedback reset)\n";
     }
     int  getNoiseSeedOffset() const { return noiseSeedOffset; }
+    /** v2.0-pre cascade-config sweep: programmatic dirRes override. Validation
+     *  (even, [2..32]) lives at the CLI parse callsite in main3d.cpp. The
+     *  lastDirRes watcher in update() triggers cascade rebuild on next frame. */
+    void setDirRes(int v) {
+        dirRes = v;
+        cascadeReady = false;
+        std::cout << "[Demo3D] dirRes=" << v << " (D*D=" << (v*v) << " rays/probe; cascades reset)\n";
+    }
+    int  getDirRes() const { return dirRes; }
+    /** v2.0-pre cascade-config sweep: toggle per-cascade D scaling (D/2D/4D/4D
+     *  when true, uniform D when false). Triggers cascade rebuild. */
+    void setUseScaledDirRes(bool v) {
+        useScaledDirRes = v;
+        cascadeReady = false;
+        std::cout << "[Demo3D] useScaledDirRes=" << (v?1:0)
+                  << " (" << (v?"D/2D/4D/4D":"uniform D") << "; cascades reset)\n";
+    }
+    bool getUseScaledDirRes() const { return useScaledDirRes; }
     void setMeasurementCamera(int v) {
         if (v < -1) v = -1;
         if (v >= kMeasurementCameraSlots) v = kMeasurementCameraSlots - 1;
