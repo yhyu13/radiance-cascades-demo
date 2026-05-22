@@ -978,6 +978,18 @@ void Demo3D::render() {
         currentProbeJitter = glm::vec3(0.0f);
     }
 
+    // bug-231 (2026-05-22): measurement-camera mode pins probe jitter to zero
+    // for reproducibility, which removes the jitter-advance per-frame trigger
+    // that normally invalidates cascadeReady. With temporal MB, that means MB
+    // feedback never accumulates: frame 0 bakes with historyNeedsSeed=true so
+    // MB is gated OFF, frames 1..N skip the bake entirely. Net: MB silently
+    // OFF in headless sweeps. Fix: when measurement + MB are both active,
+    // force per-frame re-bake so MB history can accumulate. Cost ~5-15s per
+    // 512-frame capture at scaled-D=8 cornell. Acceptable for measurement runs.
+    if (measurementCamera >= 0 && useMultiBounce) {
+        cascadeReady = false;
+    }
+
     // Pass 3: Radiance Cascades (only when SDF or merge flag changes, or forced by RenderDoc capture)
     static bool probeDumped = false;
     static int  readbackSkip = 0;

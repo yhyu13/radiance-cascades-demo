@@ -1,0 +1,3797 @@
+{
+  "version": 1,
+  "bugs": [
+    {
+      "id": "bug-001",
+      "timestamp": "2026-05-06T09:48:22.292Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/4/claude_plan/sponza_sdf_step0_impl.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 7→18 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T09:48:22.292Z"
+    },
+    {
+      "id": "bug-002",
+      "timestamp": "2026-05-06T10:00:19.139Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/4/claude_plan/sponza_sdf_step0_impl.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 7→18 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T10:00:19.139Z"
+    },
+    {
+      "id": "bug-003",
+      "timestamp": "2026-05-06T10:08:45.731Z",
+      "error_message": "Missing guard clause",
+      "file": "src/obj_loader.h",
+      "root_cause": "No early return/throw for edge case: d1 <= 0.0f && d2 <= 0.0f",
+      "fix": "Added guard clause: if (d1 <= 0.0f && d2 <= 0.0f)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T10:08:45.732Z"
+    },
+    {
+      "id": "bug-004",
+      "timestamp": "2026-05-06T10:19:30.198Z",
+      "error_message": "Wrong return value",
+      "file": "src/obj_loader.h",
+      "root_cause": "Was returning: a + ab * (vb * denom) + ac * (vc * denom);",
+      "fix": "Now returns: a;  // degenerate/zero-area triangle",
+      "tags": [
+        "auto-detected",
+        "return-value",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T10:19:30.198Z"
+    },
+    {
+      "id": "bug-005",
+      "timestamp": "2026-05-06T10:20:39.218Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/4/claude_plan/sponza_sdf_step1_impl.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 9→18 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T10:20:39.218Z"
+    },
+    {
+      "id": "bug-006",
+      "timestamp": "2026-05-06T10:21:00.629Z",
+      "error_message": "Wrong return value",
+      "file": "doc/4/claude_plan/sponza_sdf_step1_impl.md",
+      "root_cause": "Was returning: the geometrically correct closest point — no speci",
+      "fix": "Now returns: a;` is added before the divide to prevent NaN/Inf.",
+      "tags": [
+        "auto-detected",
+        "return-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-06T10:21:20.782Z"
+    },
+    {
+      "id": "bug-007",
+      "timestamp": "2026-05-06T10:41:10.309Z",
+      "error_message": "Wrong operator: >> should be ==",
+      "file": "doc/4/claude_plan/sponza_sdf_step1_impl.md",
+      "root_cause": "Used \">>\" instead of \"==\"",
+      "fix": "Changed operator >> → ==",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T10:41:10.309Z"
+    },
+    {
+      "id": "bug-008",
+      "timestamp": "2026-05-07T02:37:57.789Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.cpp",
+      "root_cause": "No early return/throw for edge case: f[i] < EDT_INF",
+      "fix": "Added guard clause: if (f[i] < EDT_INF)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-07T02:38:34.986Z"
+    },
+    {
+      "id": "bug-009",
+      "timestamp": "2026-05-07T03:15:10.075Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 18→38 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T03:15:10.075Z"
+    },
+    {
+      "id": "bug-010",
+      "timestamp": "2026-05-07T06:17:25.967Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 20→24 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T06:17:25.967Z"
+    },
+    {
+      "id": "bug-011",
+      "timestamp": "2026-05-07T06:17:34.727Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 7→15 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T06:17:34.727Z"
+    },
+    {
+      "id": "bug-012",
+      "timestamp": "2026-05-07T06:39:19.016Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "17 lines replaced/restructured",
+      "fix": "Rewrote 31→44 lines (17 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T06:39:19.016Z"
+    },
+    {
+      "id": "bug-013",
+      "timestamp": "2026-05-07T06:39:33.283Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)",
+      "fix": "Changed to: if (useOBJMesh)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T06:39:33.283Z"
+    },
+    {
+      "id": "bug-014",
+      "timestamp": "2026-05-07T07:22:47.454Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 7→12 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T07:22:47.454Z"
+    },
+    {
+      "id": "bug-015",
+      "timestamp": "2026-05-07T08:47:17.547Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/obj_loader.h",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 22→29 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T08:47:17.547Z"
+    },
+    {
+      "id": "bug-016",
+      "timestamp": "2026-05-07T11:36:18.908Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 15→29 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T11:36:18.908Z"
+    },
+    {
+      "id": "bug-017",
+      "timestamp": "2026-05-07T11:36:50.825Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 54→64 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T11:36:50.825Z"
+    },
+    {
+      "id": "bug-018",
+      "timestamp": "2026-05-07T12:08:12.518Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/4/claude_plan/sponza_sdf_step4_impl.md",
+      "root_cause": "11 lines replaced/restructured",
+      "fix": "Rewrote 24→40 lines (11 removed) | Also: .\\build\\RadianceCascades3D.exe --load-obj=cornell ; .\\build\\RadianceCascades3D.exe --load-obj=sponza   | Also: - [x] Warning count unchanged from Step 3 baseline; - [x] `[Demo3D] Camera preset validation: ... alph | Also: (radiance cascade bake at line ~1630, final raymar; agree. A member is the simplest single source of t",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-07T12:09:54.696Z"
+    },
+    {
+      "id": "bug-019",
+      "timestamp": "2026-05-07T16:26:31.433Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "73 lines replaced/restructured",
+      "fix": "Rewrote 87→9 lines (73 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-07T16:26:31.433Z"
+    },
+    {
+      "id": "bug-020",
+      "timestamp": "2026-05-08T01:33:58.367Z",
+      "error_message": "Incorrect value in code",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Had \"[Demo3D] SDF Debug View: Press '",
+      "fix": "Changed to \"[Demo3D] SDF Debug View: Press F1 to toggle\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-08T01:35:03.668Z"
+    },
+    {
+      "id": "bug-021",
+      "timestamp": "2026-05-08T01:34:09.634Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (IsKeyPressed(KEY_D)",
+      "fix": "Changed to: if (IsKeyPressed(KEY_F1)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-08T01:34:09.634Z"
+    },
+    {
+      "id": "bug-022",
+      "timestamp": "2026-05-08T01:34:33.736Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 6→13 lines (5 removed) | Also: // Check ImGui capture; if (ImGui::GetIO().WantCaptureMouse || ImGui::GetI",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-08T01:36:23.312Z"
+    },
+    {
+      "id": "bug-023",
+      "timestamp": "2026-05-08T05:24:00.004Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 9→5 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-08T05:24:00.004Z"
+    },
+    {
+      "id": "bug-024",
+      "timestamp": "2026-05-08T06:29:45.273Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/4/claude_plan/sponza_sdf_step5_impl.md",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 11→24 lines (7 removed) | Also: ### Build (codex 10 F7 command-explicit); - Command: `cmake --build . --config Release --cle | Also: ### Headless smoke (no input -> identical to Step ; results to Step 4's inline preset code. Mode 0 cap | Also: ### Interactive verification (user-driven, codex 1; The interactive gates (WASD movement, RMB-drag loo",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-08T06:31:20.898Z"
+    },
+    {
+      "id": "bug-025",
+      "timestamp": "2026-05-08T06:58:37.369Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/obj_loader.h",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 7→8 lines (2 removed) | Also: // Get material color for this face; std::string matName = \"\";",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-08T06:59:26.952Z"
+    },
+    {
+      "id": "bug-026",
+      "timestamp": "2026-05-08T07:00:38.251Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 11→19 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-08T07:00:38.251Z"
+    },
+    {
+      "id": "bug-027",
+      "timestamp": "2026-05-08T07:00:59.009Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 11→13 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-08T07:00:59.009Z"
+    },
+    {
+      "id": "bug-028",
+      "timestamp": "2026-05-08T07:11:02.556Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/obj_loader.h",
+      "root_cause": "14 lines replaced/restructured",
+      "fix": "Rewrote 22→31 lines (14 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-08T07:11:02.556Z"
+    },
+    {
+      "id": "bug-029",
+      "timestamp": "2026-05-08T07:41:46.036Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/obj_loader.h",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 9→26 lines (4 removed) | Also: std::cout << \"[OBJLoader] Unknown material '\" << m; << \"' -> default color \" << kd.x << \",\" << kd.y <<",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-08T07:42:17.378Z"
+    },
+    {
+      "id": "bug-030",
+      "timestamp": "2026-05-08T07:51:42.775Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/4/claude_plan/sponza_sdf_step6_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 11→28 lines (2 removed) | Also: | `tools/step6_sponza_old_mode0.png`             |; | `tools/step6_cornell_old_mode0.png`            | | Also: ### Bake stats; | OBJ              | Faces  | Materials | Seeds   ",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-08T07:52:29.170Z"
+    },
+    {
+      "id": "bug-031",
+      "timestamp": "2026-05-08T09:04:24.603Z",
+      "error_message": "Wrong operator: == should be <=",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Used \"==\" instead of \"<=\"",
+      "fix": "Changed operator == → <=",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-08T09:04:24.603Z"
+    },
+    {
+      "id": "bug-032",
+      "timestamp": "2026-05-08T09:04:35.265Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 10→15 lines (2 removed) | Also: // codex 12 F1: currentOBJPath is now 4-way (corne; // sponza, sponza_master) but applyOBJViewPreset()",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-08T09:04:50.540Z"
+    },
+    {
+      "id": "bug-033",
+      "timestamp": "2026-05-08T13:22:52.542Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 10→28 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-08T13:22:52.542Z"
+    },
+    {
+      "id": "bug-034",
+      "timestamp": "2026-05-08T15:55:29.134Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/4/claude_plan/sponza_sdf_step7_impl.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 9→31 lines (6 removed) | Also: ### Bounds-driven preset; `loadOBJMesh()` post-normalize). Formula: | Also: ### Bounds storage; `normalize()` and copies into these members. They  | Also: | OBJ              | Bounds (post-normalize)      ; |---|---|---|---|---| | Also: ### Headless captures; Saved to `tools/step7_<name>_mode0.png` for all fo | Also: ### Reset-helper runtime; Both new variants verified: | Also: - `tools/app_run_step7_cornell.log`; - `tools/app_run_step7_cornell_orig.log`",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 7,
+      "last_seen": "2026-05-08T15:58:00.229Z"
+    },
+    {
+      "id": "bug-035",
+      "timestamp": "2026-05-09T00:26:50.850Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 5→9 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T00:26:50.850Z"
+    },
+    {
+      "id": "bug-036",
+      "timestamp": "2026-05-09T02:37:01.467Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/gpu_sdf_step8_plan.md",
+      "root_cause": "22 lines replaced/restructured",
+      "fix": "Rewrote 48→104 lines (22 removed) | Also: In the existing scene/control panel, near the OBJ ; ImGui::Checkbox(\"GPU SDF (dynamic-friendly)\", &use | Also: #### 2c. Per-frame dynamic update; // 1. Restore static OBJ voxels (fast GPU copy, ~1 | Also: ### Phase 3 — Verification; 2. **Static A/B (regression-grade).** Load Cornell | Also: (init + step + finalize via `uPass`).; - [src/demo3d.h](src/demo3d.h) — new members:",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 5,
+      "last_seen": "2026-05-09T02:40:17.746Z"
+    },
+    {
+      "id": "bug-037",
+      "timestamp": "2026-05-09T02:37:59.909Z",
+      "error_message": "Missing guard clause",
+      "file": "doc/5/claude_plan/gpu_sdf_step8_plan.md",
+      "root_cause": "No early return/throw for edge case: dim.x <= 0 || dim.y <= 0 || dim.z <= 0",
+      "fix": "Added guard clause: if (dim.x <= 0 || dim.y <= 0 || dim.z <= 0)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T02:37:59.909Z"
+    },
+    {
+      "id": "bug-038",
+      "timestamp": "2026-05-09T03:32:24.072Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 24→27 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T03:32:24.072Z"
+    },
+    {
+      "id": "bug-039",
+      "timestamp": "2026-05-09T03:41:13.448Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 12→15 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T03:41:13.448Z"
+    },
+    {
+      "id": "bug-040",
+      "timestamp": "2026-05-09T03:46:21.087Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.cpp",
+      "root_cause": "No early return/throw for edge case: dim.x <= 0 || dim.y <= 0 || dim.z <= 0",
+      "fix": "Added guard clause: if (dim.x <= 0 || dim.y <= 0 || dim.z <= 0)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T03:46:21.087Z"
+    },
+    {
+      "id": "bug-041",
+      "timestamp": "2026-05-09T04:16:07.621Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 6→28 lines (2 removed) | Also: const float r2 = radius * radius;; if (glm::dot(d, d) <= r2) {",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-09T04:16:45.602Z"
+    },
+    {
+      "id": "bug-042",
+      "timestamp": "2026-05-09T04:26:45.646Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/gpu_sdf_step8_impl.md",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 10→62 lines (7 removed) | Also: **Performance** (Cornell-Original, 128³, 39,648 OB; - CPU EDT path: ~67 ms EDT + ~32 ms albedo flood = | Also: **~24× speedup. Visual parity** — both captures sh; red wall + green wall + white surfaces + glowing l | Also: ### Build; cmake --build . --config Release | Also: ### Phase 2 — Dynamic sphere captures; Four deterministic captures via `--sphere-time=X`: | Also: | Numeric SDF/image diff script (`tools/sdf_diff.p; | Frame-budget breakdown logging (per-stage timing",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 6,
+      "last_seen": "2026-05-09T04:28:42.197Z"
+    },
+    {
+      "id": "bug-043",
+      "timestamp": "2026-05-09T08:03:36.674Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "doc/5/claude_plan/load_path_step9_plan.md",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block | Also: Rewrite `OBJLoader::load` AND `parseVertexIndex`:; - **`std::from_chars` for all numeric parsing** — replaces b | Also: 2. **Phase 1 — parser timing + extended A/B (codex 03 F8).**; each of the 4 OBJs, log parse time, compare against pre-Phas",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-09T08:08:29.446Z"
+    },
+    {
+      "id": "bug-044",
+      "timestamp": "2026-05-09T08:04:54.622Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/load_path_step9_plan.md",
+      "root_cause": "24 lines replaced/restructured",
+      "fix": "Rewrote 42→97 lines (24 removed) | Also: ### Phase 3 — GPU triangle voxelizer ([res/shaders; #### 3a. Rewrite `voxelize.comp` | Also: (whole-file read + `std::from_chars` + skip vn/vt ; - [res/shaders/voxelize.comp](res/shaders/voxelize",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-09T08:07:46.388Z"
+    },
+    {
+      "id": "bug-045",
+      "timestamp": "2026-05-09T08:27:38.542Z",
+      "error_message": "Missing guard clause",
+      "file": "src/obj_loader.h",
+      "root_cause": "No early return/throw for edge case: iss.peek(",
+      "fix": "Added guard clause: if (iss.peek()",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T08:27:38.542Z"
+    },
+    {
+      "id": "bug-046",
+      "timestamp": "2026-05-09T09:15:15.233Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 15→27 lines (2 removed) | Also: meshVoxelData        = std::move(newVoxelData);; // each frame without re-running CPU triangle voxe",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-09T09:16:41.560Z"
+    },
+    {
+      "id": "bug-047",
+      "timestamp": "2026-05-09T10:00:29.044Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (useGPUVoxelize)",
+      "fix": "Changed to: if (!useGPUVoxelize)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T10:00:29.044Z"
+    },
+    {
+      "id": "bug-048",
+      "timestamp": "2026-05-09T10:01:37.105Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 12→23 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T10:01:37.105Z"
+    },
+    {
+      "id": "bug-049",
+      "timestamp": "2026-05-09T10:06:46.914Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.h",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 12→18 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T10:06:46.914Z"
+    },
+    {
+      "id": "bug-050",
+      "timestamp": "2026-05-09T10:07:26.896Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/load_path_step9_impl.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 10→54 lines (6 removed) | Also: **Sponza-master scene-switch (the original user co; | State | Time |",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-09T10:07:50.069Z"
+    },
+    {
+      "id": "bug-051",
+      "timestamp": "2026-05-09T10:27:59.029Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.cpp",
+      "root_cause": "No early return/throw for edge case: dim.x <= 0 || dim.y <= 0 || dim.z <= 0",
+      "fix": "Added guard clause: if (dim.x <= 0 || dim.y <= 0 || dim.z <= 0)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T10:27:59.029Z"
+    },
+    {
+      "id": "bug-052",
+      "timestamp": "2026-05-09T14:30:56.931Z",
+      "error_message": "Missing guard clause",
+      "file": "src/obj_loader.h",
+      "root_cause": "No early return/throw for edge case: !looksGray",
+      "fix": "Added guard clause: if (!looksGray)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-09T14:30:56.931Z"
+    },
+    {
+      "id": "bug-053",
+      "timestamp": "2026-05-10T07:47:28.862Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/step9_followups_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 8→50 lines (2 removed) | Also: **(b)** existing Kd is a near-gray in [0.3, 0.7]. ; guard is load-bearing: it ensures Cornell-Original",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-10T07:48:18.112Z"
+    },
+    {
+      "id": "bug-054",
+      "timestamp": "2026-05-10T08:31:42.707Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/camera_gi_diagnostic_step10_plan.md",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 9→21 lines (8 removed) | Also: ### Feature B — GI diagnostic render modes; The Explore agent confirmed `raymarch.frag` alread | Also: All applied **after** `applyOBJViewPreset()` so us; over the auto-fit defaults. Apply order in `main() | Also: private helper `rebuildCameraTargetFromYawPitch()`; members (just methods). | Also: ([demo3d.cpp:4604-4618](src/demo3d.cpp#L4604)) — c; setter to warn on inside-volume positions | Also: 5. **Diagnostic mode 9/10/11 captures** of Sponza-; - `tools/step10_sponza_mode0_combined.png` — basel",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 6,
+      "last_seen": "2026-05-10T08:40:48.849Z"
+    },
+    {
+      "id": "bug-055",
+      "timestamp": "2026-05-10T08:50:01.865Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "28 lines replaced/restructured",
+      "fix": "Rewrote 30→5 lines (28 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-10T08:50:01.865Z"
+    },
+    {
+      "id": "bug-056",
+      "timestamp": "2026-05-10T08:52:51.158Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 12→24 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-10T08:52:51.158Z"
+    },
+    {
+      "id": "bug-057",
+      "timestamp": "2026-05-10T09:44:27.620Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/gi_bake_strip_heatmap_step11_plan.md",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 14→22 lines (3 removed) | Also: by mode 12.; Insert as **early-returns** (matching the mode 4/6 | Also: [demo3d.cpp:3508-area](../../../src/demo3d.cpp#L35; tooltips matching the existing mode-9/10 style. | Also: - `forceCascadeRebuild + cascadeReady = false + hi; established invalidation pattern (used by Step 8 d",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-10T09:46:42.921Z"
+    },
+    {
+      "id": "bug-058",
+      "timestamp": "2026-05-10T09:51:17.152Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: m < 0 || m > 14",
+      "fix": "Added guard clause: if (m < 0 || m > 14)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-10T09:51:17.152Z"
+    },
+    {
+      "id": "bug-059",
+      "timestamp": "2026-05-10T10:18:07.745Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.h",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 14→18 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-10T10:18:07.745Z"
+    },
+    {
+      "id": "bug-060",
+      "timestamp": "2026-05-10T10:32:14.170Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/gi_bake_strip_heatmap_step11_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 13→57 lines (2 removed) | Also: ### `setStripAmbientFloorBake` invalidation (codex; Setter runs the canonical 5-line invalidation patt | Also: ### Mode 12 (raw-GI heatmap, `/ 0.05`); **SATURATED — almost entirely red.** The codex 07 ",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-10T10:32:54.280Z"
+    },
+    {
+      "id": "bug-061",
+      "timestamp": "2026-05-11T02:08:41.933Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 4→10 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T02:08:41.933Z"
+    },
+    {
+      "id": "bug-062",
+      "timestamp": "2026-05-11T02:08:57.705Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/reduction_3d.comp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 11→20 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T02:08:57.705Z"
+    },
+    {
+      "id": "bug-063",
+      "timestamp": "2026-05-11T02:52:38.359Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/codex_critic/reply/reply_09_step11_heatmap_verify_report.md",
+      "root_cause": "10 lines replaced/restructured",
+      "fix": "Rewrote 13→29 lines (10 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T02:52:38.359Z"
+    },
+    {
+      "id": "bug-064",
+      "timestamp": "2026-05-11T04:06:17.014Z",
+      "error_message": "Null/undefined access in ",
+      "file": "doc/5/claude_plan/zero_init_cascade_textures_step11_followup_plan.md",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T04:06:17.014Z"
+    },
+    {
+      "id": "bug-065",
+      "timestamp": "2026-05-11T04:07:56.417Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/zero_init_cascade_textures_step11_followup_plan.md",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 9→14 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T04:07:56.417Z"
+    },
+    {
+      "id": "bug-066",
+      "timestamp": "2026-05-11T05:24:48.476Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/gi_pass_1080p_perf_analysis_plan.md",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 5→16 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T05:24:48.476Z"
+    },
+    {
+      "id": "bug-067",
+      "timestamp": "2026-05-11T05:27:53.546Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 26→30 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T05:27:53.546Z"
+    },
+    {
+      "id": "bug-068",
+      "timestamp": "2026-05-11T05:28:10.542Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (!initializeApplication()",
+      "fix": "Changed to: if (arg.rfind(\"--window-size=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T05:28:10.542Z"
+    },
+    {
+      "id": "bug-069",
+      "timestamp": "2026-05-11T06:39:13.725Z",
+      "error_message": "Missing guard clause",
+      "file": "doc/5/claude_plan/gi_pass_scaling_experiment_plan.md",
+      "root_cause": "No early return/throw for edge case: cascadeC0Res == v",
+      "fix": "Added guard clause: if (cascadeC0Res == v)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T06:39:13.725Z"
+    },
+    {
+      "id": "bug-070",
+      "timestamp": "2026-05-11T06:39:28.869Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/gi_pass_scaling_experiment_plan.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 8→13 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T06:39:28.869Z"
+    },
+    {
+      "id": "bug-071",
+      "timestamp": "2026-05-11T07:15:38.399Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.cpp",
+      "root_cause": "No early return/throw for edge case: cascadeC0Res == v",
+      "fix": "Added guard clause: if (cascadeC0Res == v)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T07:15:38.399Z"
+    },
+    {
+      "id": "bug-072",
+      "timestamp": "2026-05-11T10:46:19.043Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/5/claude_plan/perf_tooling_step12_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 4→52 lines (2 removed) | Also: no new GPU resources, no per-pass timing instrumen; covers it via existing `glPushDebugGroup` labels). | Also: **Single-shot RenderDoc captures have ±2-5× varian; experiment confirmed this empirically: Exp 3 (raym | Also: ## What's Next; Two paths from here:",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-11T10:48:13.649Z"
+    },
+    {
+      "id": "bug-073",
+      "timestamp": "2026-05-11T11:56:45.846Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 3→5 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-11T11:56:45.846Z"
+    },
+    {
+      "id": "bug-074",
+      "timestamp": "2026-05-11T11:59:17.194Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.h",
+      "root_cause": "11 lines replaced/restructured",
+      "fix": "Rewrote 18→58 lines (11 removed) | Also: /** Step 11: when true, the cascade bake (radiance; *  vec3(0.05) ambient floor in the per-surface lig",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-11T12:00:15.377Z"
+    },
+    {
+      "id": "bug-075",
+      "timestamp": "2026-05-11T12:00:36.993Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 5→21 lines (5 removed) | Also: // Step 11 (codex 07 F6): GI bake strip toggle, ga; // enabled (toggle is meaningless without cascades",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-11T12:03:22.664Z"
+    },
+    {
+      "id": "bug-076",
+      "timestamp": "2026-05-12T02:11:59.819Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/sponza_gi_root_cause_hypothesis_test_plan.md",
+      "root_cause": "12 lines replaced/restructured",
+      "fix": "Rewrote 39→58 lines (12 removed) | Also: C1=... C2=... C3=...`. Compare meanLum trends acro; meanLum should grow super-linearly with probe-res  | Also: 32, Sponza defaults to 48)\". Cost: ~5× cascade bak; (matches Step 12 scaling experiment data). | Also: - Screenshots: `tools/sponza_density_AB_c{16,32,48; - Logs: `tools/app_run_sponza_density_c{16,32,48,6 | Also: 1. All 4 (or 8) captures land cleanly with `--exit; 2. Probe-stats meanLum log lines present in each l",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 5,
+      "last_seen": "2026-05-12T02:13:41.695Z"
+    },
+    {
+      "id": "bug-077",
+      "timestamp": "2026-05-12T03:19:20.136Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/sponza_gi_root_cause_hypothesis_test_plan.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 8→19 lines (5 removed) | Also: / `surfPct` / `skyPct`. Spot-check anyPct trend vs; Sponza anyPct grows from 3.5% (C0=32 baseline per ",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-12T03:19:42.505Z"
+    },
+    {
+      "id": "bug-078",
+      "timestamp": "2026-05-12T03:40:11.919Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 8→20 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T03:40:11.919Z"
+    },
+    {
+      "id": "bug-079",
+      "timestamp": "2026-05-12T04:01:01.158Z",
+      "error_message": "Missing guard clause",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "No early return/throw for edge case: dist < 1e-4",
+      "fix": "Added guard clause: if (dist < 1e-4)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T04:01:01.158Z"
+    },
+    {
+      "id": "bug-080",
+      "timestamp": "2026-05-12T04:01:23.962Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 11→16 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T04:01:23.962Z"
+    },
+    {
+      "id": "bug-081",
+      "timestamp": "2026-05-12T06:19:37.853Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 25→34 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T06:19:37.853Z"
+    },
+    {
+      "id": "bug-082",
+      "timestamp": "2026-05-12T06:47:25.518Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/sponza_gi_root_cause_hypothesis_test_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 4→68 lines (2 removed) | Also: Sample at C0=64:; ``` | Also: ## Hypothesis verdict summary; | **H1** density | **PARTIAL** — C0 saturates by 3 | Also: gating in `_SPD`:; float t   = 0.05;",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-12T06:49:31.764Z"
+    },
+    {
+      "id": "bug-083",
+      "timestamp": "2026-05-12T07:11:45.651Z",
+      "error_message": "Missing guard clause",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "No early return/throw for edge case: wcos <= 0.0",
+      "fix": "Added guard clause: if (wcos <= 0.0)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-12T07:12:24.956Z"
+    },
+    {
+      "id": "bug-084",
+      "timestamp": "2026-05-12T07:50:48.124Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.h",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 6→15 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T07:50:48.124Z"
+    },
+    {
+      "id": "bug-085",
+      "timestamp": "2026-05-12T10:58:23.581Z",
+      "error_message": "Missing guard clause",
+      "file": "doc/6/claude_plan/probe_visibility_acceleration_plan.md",
+      "root_cause": "No early return/throw for edge case: wcos <= 0.0",
+      "fix": "Added guard clause: if (wcos <= 0.0)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T10:58:23.581Z"
+    },
+    {
+      "id": "bug-086",
+      "timestamp": "2026-05-12T10:59:36.372Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/probe_visibility_acceleration_plan.md",
+      "root_cause": "11 lines replaced/restructured",
+      "fix": "Rewrote 13→54 lines (11 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T10:59:36.372Z"
+    },
+    {
+      "id": "bug-087",
+      "timestamp": "2026-05-13T10:27:42.213Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/temporal_blend.comp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 6→15 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-13T10:27:42.213Z"
+    },
+    {
+      "id": "bug-088",
+      "timestamp": "2026-05-13T10:28:24.023Z",
+      "error_message": "Missing guard clause",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "No early return/throw for edge case: wcos <= 0.0",
+      "fix": "Added guard clause: if (wcos <= 0.0)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-13T10:28:24.023Z"
+    },
+    {
+      "id": "bug-089",
+      "timestamp": "2026-05-13T10:28:47.001Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 32→40 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-13T10:28:47.001Z"
+    },
+    {
+      "id": "bug-090",
+      "timestamp": "2026-05-13T10:29:38.936Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 13→14 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-13T10:29:38.936Z"
+    },
+    {
+      "id": "bug-091",
+      "timestamp": "2026-05-13T11:35:18.537Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_unified_plan_phase1_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→8 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-13T11:35:18.537Z"
+    },
+    {
+      "id": "bug-092",
+      "timestamp": "2026-05-14T02:52:22.977Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "32 lines replaced/restructured",
+      "fix": "Rewrote 34→36 lines (32 removed) | Also: // Reusable helper: grey \"(?) \" that shows a toolt; auto HelpMarker = [](const char* desc) { | Also: ImGui::Separator();; ImGui::Checkbox(\"Shadow ray in direct path (Phase  | Also: ImGui::Separator();; ImGui::Text(\"Temporal Accumulation (Phase 9):\"); | Also: ImGui::Separator();; ImGui::Text(\"Interval Blend (4c):\");",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 5,
+      "last_seen": "2026-05-14T02:53:38.339Z"
+    },
+    {
+      "id": "bug-093",
+      "timestamp": "2026-05-14T02:54:05.960Z",
+      "error_message": "Incorrect value in code",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Had \"Directional merge (Phase 5c)\"",
+      "fix": "Changed to \"Directional merge\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 10,
+      "last_seen": "2026-05-14T02:54:56.477Z"
+    },
+    {
+      "id": "bug-094",
+      "timestamp": "2026-05-14T06:43:42.546Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (ImGui::Combo(\"##RenderMode\", &rmIdx, kRenderModeLa)",
+      "fix": "Changed to: if (ImGui::Combo(\"##RenderMode\", &rmIdx, kRenderModeLa)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T06:43:42.546Z"
+    },
+    {
+      "id": "bug-095",
+      "timestamp": "2026-05-14T06:43:52.013Z",
+      "error_message": "Wrong reference: HelpMarker should be imHelpMarker",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Used \"HelpMarker\" instead of \"imHelpMarker\"",
+      "fix": "Changed HelpMarker → imHelpMarker",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T06:43:52.013Z"
+    },
+    {
+      "id": "bug-096",
+      "timestamp": "2026-05-14T06:44:52.904Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 9→16 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T06:44:52.904Z"
+    },
+    {
+      "id": "bug-097",
+      "timestamp": "2026-05-14T06:49:05.213Z",
+      "error_message": "Incorrect value in code",
+      "file": "doc/6/claude_plan/gui_cleanup_impl.md",
+      "root_cause": "Had `std::clamp(..., 0, 13)`",
+      "fix": "Changed to `kModeCount - 1`",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T06:49:05.213Z"
+    },
+    {
+      "id": "bug-098",
+      "timestamp": "2026-05-14T06:49:51.467Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/gui_cleanup_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 13→22 lines (2 removed) | Also: - `ImGui::(Text|Checkbox)\\(\"[^\"]*\\(Phase` — zero m; - `BeginTabBar`/`EndTabBar` — paired (one open in  | Also: | File | Lines changed (approx) |; | [src/demo3d.cpp](../../../src/demo3d.cpp) | net ",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-14T06:50:49.796Z"
+    },
+    {
+      "id": "bug-099",
+      "timestamp": "2026-05-14T06:50:19.986Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "doc/6/claude_plan/gui_cleanup_impl.md",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T06:50:19.986Z"
+    },
+    {
+      "id": "bug-100",
+      "timestamp": "2026-05-14T08:26:00.529Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_unified_plan_phase1_decision_gate.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 7→9 lines (6 removed) | Also: **Method:** Captured one frame each of Mode 0 and ; `tools/.env` was temporarily renamed to `.env.bak. | Also: - **Raymarch pass costs +50%.** That is the Mode 4; - **`gi_blur` +17% is suspicious.** The bilateral  | Also: - ⚠ Phase 1 quality (secondary, per-region): margi; - ❌ Phase 1 cost (raymarch pass): fails the implic",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-14T08:28:16.667Z"
+    },
+    {
+      "id": "bug-101",
+      "timestamp": "2026-05-14T08:28:46.929Z",
+      "error_message": "Incorrect value in code",
+      "file": "doc/6/claude_plan/visibility_unified_plan_phase1_decision_gate.md",
+      "root_cause": "Had 's \"",
+      "fix": "Changed to `m4-vs-m3 ≤ m0-vs-m3 × 1.3`",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T08:28:46.929Z"
+    },
+    {
+      "id": "bug-102",
+      "timestamp": "2026-05-14T09:32:56.251Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase1.5_and_phase2_plan.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 8→14 lines (5 removed) | Also: ### 2.1 Goal; Lift the lit_floor per-region RMSE below 0.024 (th | Also: ### 2.5 Cost analysis (revised per critic 07 M1); Per bin, Path A adds: 1 vec3 multiply (`t * bdir`) | Also: ### 4.2 Cost tolerance — what does \"X% frame cost\"; To make the cost-tolerance row above actionable (c | Also: ### 4.1 Decision branches (revised); After §4.0 prerequisite: | Also: ### 4.4 Happy-path timeline (critic 07 E5); If everything goes well from today's data:",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 6,
+      "last_seen": "2026-05-14T09:35:53.321Z"
+    },
+    {
+      "id": "bug-103",
+      "timestamp": "2026-05-14T09:33:29.289Z",
+      "error_message": "Incorrect value in code",
+      "file": "doc/6/claude_plan/visibility_phase1.5_and_phase2_plan.md",
+      "root_cause": "Had 's vertices. A single global `",
+      "fix": "Changed to 's Jacobian gives bins centered near the equatoria",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T09:33:29.290Z"
+    },
+    {
+      "id": "bug-104",
+      "timestamp": "2026-05-14T09:34:56.708Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "doc/6/claude_plan/visibility_phase1.5_and_phase2_plan.md",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T09:34:56.708Z"
+    },
+    {
+      "id": "bug-105",
+      "timestamp": "2026-05-14T10:33:55.029Z",
+      "error_message": "Incorrect value in code",
+      "file": "doc/6/claude_plan/visibility_phase1.5_and_phase2_plan.md",
+      "root_cause": "Had `uVisibilityMode`",
+      "fix": "Changed to 't needed — atlas was always 4-channel half-float;",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T10:33:55.029Z"
+    },
+    {
+      "id": "bug-106",
+      "timestamp": "2026-05-14T10:34:14.572Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase1.5_and_phase2_plan.md",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 4→10 lines (3 removed) | Also: ### 3.7 Cost expectation (revised per critic 07 M2; - 8 corners × D² × `vec4` fetch (same bandwidth as | Also: ### 3.8 Pre-flight tasks; 1. **Fetch-site enumeration.** Run `Grep uDirectio | Also: ### 3.11 Scope estimate; **2.5–4.5 days**, broken down (extended from earli | Also: ### 4.4 Happy-path timeline (critic 07 E5; revised; If everything goes well from today's data + the §4",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 5,
+      "last_seen": "2026-05-14T10:36:21.283Z"
+    },
+    {
+      "id": "bug-107",
+      "timestamp": "2026-05-14T10:49:09.433Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 7→8 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T10:49:09.433Z"
+    },
+    {
+      "id": "bug-108",
+      "timestamp": "2026-05-14T10:49:41.166Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 5→6 lines (4 removed) | Also: (currentOBJPath == \"cornell\")        ? \"res/scene/; (currentOBJPath == \"cornell_orig\")   ? \"res/scene/",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-14T10:50:07.992Z"
+    },
+    {
+      "id": "bug-109",
+      "timestamp": "2026-05-14T10:56:14.837Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 16→28 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T10:56:14.837Z"
+    },
+    {
+      "id": "bug-110",
+      "timestamp": "2026-05-14T11:04:35.349Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 28→35 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T11:04:35.349Z"
+    },
+    {
+      "id": "bug-111",
+      "timestamp": "2026-05-14T11:10:40.849Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 10→5 lines (8 removed) | Also: // H6 (kilo P2): probe-to-surface visibility. Mode; // \"dot banding\" artifact (critic 02 C4 prediction | Also: // Mode-3 variant: per-direction-bin visibility. F; // bin, cast a short shadow ray from the surface i | Also: if (uVisibilityMode == 0) {; // OFF — pre-H6 behavior: no visibility check at a",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-14T11:12:31.887Z"
+    },
+    {
+      "id": "bug-112",
+      "timestamp": "2026-05-14T11:12:50.423Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.h",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 10→9 lines (8 removed) | Also: /** H6 probe-to-surface visibility mode (raymarch.; *   0 = bake-side α-gated (Phase 2 — the new corre",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-14T11:13:12.458Z"
+    },
+    {
+      "id": "bug-113",
+      "timestamp": "2026-05-14T11:14:02.512Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "14 lines replaced/restructured",
+      "fix": "Rewrote 15→3 lines (14 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T11:14:02.512Z"
+    },
+    {
+      "id": "bug-114",
+      "timestamp": "2026-05-14T11:44:52.650Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase2_impl.md",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 7→20 lines (3 removed) | Also: | v3 (drop bake merge, sky α=0) | Original `hit.rg; | v4 (cos-only render normalization) | Same as v3  | Also: `reduction_3d` +42% (~280 μs absolute) is in the s; `gi_blur` swung from +17% (Mode 4 vs Mode 0) to +0 | Also: - **Plan over-promised \"bake-time leaks fixed.\"** ; - **`reduction_3d` +42%** — within single-frame no",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-14T11:46:53.046Z"
+    },
+    {
+      "id": "bug-115",
+      "timestamp": "2026-05-14T15:06:57.651Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.cpp",
+      "root_cause": "No early return/throw for edge case: d.z < 0.0f",
+      "fix": "Added guard clause: if (d.z < 0.0f)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:06:57.651Z"
+    },
+    {
+      "id": "bug-116",
+      "timestamp": "2026-05-14T15:07:50.764Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 3→7 lines (3 removed) | Also: // After bakeLeakTestFramesAfter frames have rende; // convergence at α=0.1 — in practice convergence ",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-14T15:09:34.374Z"
+    },
+    {
+      "id": "bug-117",
+      "timestamp": "2026-05-14T15:08:04.855Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (arg.rfind(\"--visibility-mode=\", 0)",
+      "fix": "Changed to: if (arg.rfind(\"--bake-leak-test=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:08:04.855Z"
+    },
+    {
+      "id": "bug-118",
+      "timestamp": "2026-05-14T15:13:12.105Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "33 lines replaced/restructured",
+      "fix": "Rewrote 37→17 lines (33 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:13:12.105Z"
+    },
+    {
+      "id": "bug-119",
+      "timestamp": "2026-05-14T15:14:16.863Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 8→3 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:14:16.863Z"
+    },
+    {
+      "id": "bug-120",
+      "timestamp": "2026-05-14T15:14:31.728Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.h",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 11→7 lines (9 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:14:31.728Z"
+    },
+    {
+      "id": "bug-121",
+      "timestamp": "2026-05-14T15:21:08.874Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 5→18 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:21:08.874Z"
+    },
+    {
+      "id": "bug-122",
+      "timestamp": "2026-05-14T15:21:20.568Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (probeWorld.x <= alcoveXMin)",
+      "fix": "Changed to: if (probeWorld.x <= alcoveXMin || probeWorld.x >= alco)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:21:20.568Z"
+    },
+    {
+      "id": "bug-123",
+      "timestamp": "2026-05-14T15:22:00.625Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 3→9 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:22:00.625Z"
+    },
+    {
+      "id": "bug-124",
+      "timestamp": "2026-05-14T15:24:00.250Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase2.5_impl.md",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 14→16 lines (9 removed) | Also: ### Verdict: NO α-COUPLED CODE.; **Conclusion**: the +42% timing anomaly observed i | Also: ### What was deleted; - **`--visibility-mode=N` CLI flag** ([main3d.cpp:",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-14T15:25:04.433Z"
+    },
+    {
+      "id": "bug-125",
+      "timestamp": "2026-05-15T02:07:56.453Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 8→28 lines (3 removed) | Also: // Strictly positive (0,1] so histogram script can; // diagnostic surface bins (vs sky=0 and miss=1).",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-15T02:11:12.868Z"
+    },
+    {
+      "id": "bug-126",
+      "timestamp": "2026-05-15T02:09:17.837Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 10→18 lines (4 removed) | Also: << \", \\\"leak_max\\\": \" << results[ci].leakMax; << \"}\" << (ci + 1 < cascadeCount ? \",\" : \"\") << \"\\",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-15T02:09:48.787Z"
+    },
+    {
+      "id": "bug-127",
+      "timestamp": "2026-05-15T02:15:58.384Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (arg.rfind(\"--diag-alpha-mode=\", 0)",
+      "fix": "Changed to: if (arg.rfind(\"--cam-preset=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T02:15:58.384Z"
+    },
+    {
+      "id": "bug-128",
+      "timestamp": "2026-05-15T02:18:41.875Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 13→17 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T02:18:41.875Z"
+    },
+    {
+      "id": "bug-129",
+      "timestamp": "2026-05-15T02:24:39.889Z",
+      "error_message": "Wrong return value",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Was returning: false;",
+      "fix": "Now returns: value if it cares.",
+      "tags": [
+        "auto-detected",
+        "return-value",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T02:24:39.889Z"
+    },
+    {
+      "id": "bug-130",
+      "timestamp": "2026-05-15T02:25:24.414Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: m == diagAlphaMode",
+      "fix": "Added guard clause: if (m == diagAlphaMode)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T02:25:24.414Z"
+    },
+    {
+      "id": "bug-131",
+      "timestamp": "2026-05-15T02:26:16.746Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase2.5d_impl.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 8→25 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T02:26:16.746Z"
+    },
+    {
+      "id": "bug-132",
+      "timestamp": "2026-05-15T03:02:03.493Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "12 lines replaced/restructured",
+      "fix": "Rewrote 12→19 lines (12 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T03:02:03.493Z"
+    },
+    {
+      "id": "bug-133",
+      "timestamp": "2026-05-15T03:04:21.383Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (cliCameraPosSet)",
+      "fix": "Changed to: if (cliCameraPresetName == \"alcove\")",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T03:04:21.383Z"
+    },
+    {
+      "id": "bug-134",
+      "timestamp": "2026-05-15T03:04:38.822Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/main3d.cpp",
+      "root_cause": "14 lines replaced/restructured",
+      "fix": "Rewrote 27→17 lines (14 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T03:04:38.822Z"
+    },
+    {
+      "id": "bug-135",
+      "timestamp": "2026-05-15T03:10:37.987Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase2.5d_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→3 lines (2 removed) | Also: | **1** | **(0.0625, 0.125]** | **30843** | **68.7; | 4 | (0.25, 0.3125] | 1 | 0.0% | |",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-15T03:11:56.972Z"
+    },
+    {
+      "id": "bug-136",
+      "timestamp": "2026-05-15T03:10:54.087Z",
+      "error_message": "Incorrect value in code",
+      "file": "doc/6/claude_plan/visibility_phase2.5d_impl.md",
+      "root_cause": "Had 's small. SDF doesn'",
+      "fix": "Changed to 's small. **The SDF SCALAR at a nearby point doesn",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T03:10:54.087Z"
+    },
+    {
+      "id": "bug-137",
+      "timestamp": "2026-05-15T03:34:14.767Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase2.5d_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 8→12 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T03:34:14.767Z"
+    },
+    {
+      "id": "bug-138",
+      "timestamp": "2026-05-15T03:44:56.636Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase3_plan.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 11→15 lines (6 removed) | Also: ## 2. Phase 3a — Pre-flight + Per-Corner Refactor ; Restructure the existing `radiance_3d.comp` bake s | Also: ### Algorithm spec; // Compute upper-cascade voxel size (from existing | Also: ## 6. Honest risks; - **My algorithm spec may have errors**, just like | Also: - **Option A (rejected):** Add `uUpperGridOrigin` ; - **Option B (chosen):** Compute the 8 corner worl",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 5,
+      "last_seen": "2026-05-15T03:51:21.664Z"
+    },
+    {
+      "id": "bug-139",
+      "timestamp": "2026-05-15T03:49:56.124Z",
+      "error_message": "Incorrect value in code",
+      "file": "doc/6/claude_plan/visibility_phase3_plan.md",
+      "root_cause": "Had `[Claude] Phase 3a: per-corner upper-cascade refac",
+      "fix": "Changed to `[Claude] Phase 3a: per-corner upper-cascade refac",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T03:49:56.124Z"
+    },
+    {
+      "id": "bug-140",
+      "timestamp": "2026-05-15T07:46:46.227Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 13→21 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T07:46:46.227Z"
+    },
+    {
+      "id": "bug-141",
+      "timestamp": "2026-05-15T07:48:46.716Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v == useWeightedSample",
+      "fix": "Added guard clause: if (v == useWeightedSample)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T07:48:46.716Z"
+    },
+    {
+      "id": "bug-142",
+      "timestamp": "2026-05-15T07:48:57.435Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (arg.rfind(\"--visibility-mode=\", 0)",
+      "fix": "Changed to: if (arg.rfind(\"--use-weighted-sample=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T07:48:57.435Z"
+    },
+    {
+      "id": "bug-143",
+      "timestamp": "2026-05-15T07:57:47.036Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 21→27 lines (9 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T07:57:47.036Z"
+    },
+    {
+      "id": "bug-144",
+      "timestamp": "2026-05-15T07:59:38.269Z",
+      "error_message": "Wrong operator: == should be !=",
+      "file": "doc/6/claude_plan/visibility_phase3_impl.md",
+      "root_cause": "Used \"==\" instead of \"!=\"",
+      "fix": "Changed operator == → !=",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T07:59:38.269Z"
+    },
+    {
+      "id": "bug-145",
+      "timestamp": "2026-05-15T07:59:52.286Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase3_impl.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 8→7 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T07:59:52.286Z"
+    },
+    {
+      "id": "bug-146",
+      "timestamp": "2026-05-15T08:06:50.636Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/visibility_phase3_impl.md",
+      "root_cause": "16 lines replaced/restructured",
+      "fix": "Rewrote 29→34 lines (16 removed) | Also: Cornell-orig-alcove A/B with `--cam-preset=alcove`; | Pixels with any difference | 76.15% | | Also: ## Honest assessment; - **Code lands clean**, builds, runs without crash | Also: - [res/shaders/radiance_3d.comp](../../res/shaders; Plan rev 2 + critic 13's checklist applied: H1 (si",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-15T08:08:00.504Z"
+    },
+    {
+      "id": "bug-147",
+      "timestamp": "2026-05-15T08:44:57.894Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v < 1",
+      "fix": "Added guard clause: if (v < 1)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T08:44:57.894Z"
+    },
+    {
+      "id": "bug-148",
+      "timestamp": "2026-05-15T08:45:03.959Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (arg.rfind(\"--use-weighted-sample=\", 0)",
+      "fix": "Changed to: if (arg.rfind(\"--stagger=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-15T08:48:00.593Z"
+    },
+    {
+      "id": "bug-149",
+      "timestamp": "2026-05-15T08:48:30.848Z",
+      "error_message": "Wrong reference: useProbeJitter should be setUseProbeJitter",
+      "file": "src/main3d.cpp",
+      "root_cause": "Used \"useProbeJitter\" instead of \"setUseProbeJitter\"",
+      "fix": "Changed useProbeJitter → setUseProbeJitter",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-15T08:48:45.287Z"
+    },
+    {
+      "id": "bug-150",
+      "timestamp": "2026-05-15T08:52:27.750Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 7→11 lines (4 removed) | Also: // DIAGNOSTIC OVERRIDE (2026-05-15): EMA-blend α t; // the per-bin α flicker (from probe jitter cyclin",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-15T08:53:49.253Z"
+    },
+    {
+      "id": "bug-151",
+      "timestamp": "2026-05-15T08:54:05.723Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/temporal_blend.comp",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 14→8 lines (7 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T08:54:05.723Z"
+    },
+    {
+      "id": "bug-152",
+      "timestamp": "2026-05-16T13:21:27.529Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 7→18 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T13:21:27.529Z"
+    },
+    {
+      "id": "bug-153",
+      "timestamp": "2026-05-16T00:00:00.000Z",
+      "error_message": "User-reported: temporal accumulation on default Cornell, pattern swaps between frames and cannot stabilize",
+      "file": "res/shaders/radiance_3d.comp + res/shaders/temporal_blend.comp",
+      "root_cause": "Three-piece chain: (1) Phase 14a/b probe jitter (8-position Halton × 2 hold-frames) cycles probe positions every 2 frames; (2) pre-existing `fresh α only` policy in both temporal EMA paths (fused in radiance_3d.comp:600 and fallback in temporal_blend.comp:90) overwrites blended α with current frame's α; (3) Phase 2 raymarch.frag sampleProbeDir does `w = wcos * a.a`, so display directly multiplies by per-frame fresh α. Net: per-bin α flips 0↔1 frame-to-frame as jitter shifts probes; display weighting flickers; RGB is EMA-smoothed but α-gating undoes the smoothing. Measured: consecutive-frame RMSE 0.013, 22% pixels changed.",
+      "fix": "EMA-blend α together with RGB in both paths (radiance_3d.comp fused path and temporal_blend.comp fallback). `blendedAlpha = mix(hist.a, alpha, uTemporalAlpha)` replaces `blended.a = cur.a`. Trade-off accepted: α drifts from Phase 2's binary {0,1} to a soft time-average of per-bin visibility — more info, but breaks any code asserting α ∈ {0,1}. Bake-leak metric (counts α<0.001 bins) still works as a soft threshold; numbers shift slightly (44925→44752 bins counted on default cornell-orig-alcove) but Phase 3 v1 effect (11% reduction OFF→ON) preserved. Verified consecutive-frame RMSE 0.013 → 0.0003 (40× reduction).",
+      "tags": [
+        "temporal",
+        "probe-jitter",
+        "alpha-encoding",
+        "phase-2",
+        "user-reported"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T00:00:00.000Z"
+    },
+    {
+      "id": "bug-154",
+      "timestamp": "2026-05-16T22:23:07.462Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (arg.rfind(\"--use-probe-jitter=\", 0)",
+      "fix": "Changed to: if (arg.rfind(\"--shots-prefix=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T22:23:07.462Z"
+    },
+    {
+      "id": "bug-155",
+      "timestamp": "2026-05-16T22:35:45.338Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (exitAfterFrames > 0 && ++frameCounter >= exitAfter)",
+      "fix": "Changed to: if (exitAfterFrames > 0 && frameCounter >= exitAfterFr)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T22:35:45.338Z"
+    },
+    {
+      "id": "bug-156",
+      "timestamp": "2026-05-16T22:36:42.305Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "15 lines replaced/restructured",
+      "fix": "Rewrote 18→5 lines (15 removed) | Also: // TEMPORARY REVERT for pre-fix A/B test (will res; imageStore(oAtlas, atlasTxl, vec4(blended, alpha))",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-16T22:37:22.258Z"
+    },
+    {
+      "id": "bug-157",
+      "timestamp": "2026-05-16T22:37:56.388Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/temporal_alpha_stability_impl.md",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 11→47 lines (7 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T22:37:56.388Z"
+    },
+    {
+      "id": "bug-158",
+      "timestamp": "2026-05-17T09:40:36.490Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "12 lines replaced/restructured",
+      "fix": "Rewrote 27→41 lines (12 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T09:40:36.490Z"
+    },
+    {
+      "id": "bug-159",
+      "timestamp": "2026-05-18T02:20:41.776Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 17→37 lines (2 removed) | Also: // Phase 3 (bake-side leak fix): when uUseWeighted; // the trilinear path (the only one with 8-corner ",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-18T02:24:44.918Z"
+    },
+    {
+      "id": "bug-160",
+      "timestamp": "2026-05-18T02:21:17.242Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v == phase3DebugMode",
+      "fix": "Added guard clause: if (v == phase3DebugMode)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T02:21:17.242Z"
+    },
+    {
+      "id": "bug-161",
+      "timestamp": "2026-05-18T02:21:24.574Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (arg.rfind(\"--use-weighted-sample=\", 0)",
+      "fix": "Changed to: if (arg.rfind(\"--phase3-debug=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T02:21:24.574Z"
+    },
+    {
+      "id": "bug-162",
+      "timestamp": "2026-05-18T05:13:28.887Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 13→15 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:13:28.887Z"
+    },
+    {
+      "id": "bug-163",
+      "timestamp": "2026-05-18T05:14:33.781Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 15→34 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:14:33.781Z"
+    },
+    {
+      "id": "bug-164",
+      "timestamp": "2026-05-18T05:15:31.961Z",
+      "error_message": "Wrong reference: 05f should be 5f",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Used \"05f\" instead of \"5f\"",
+      "fix": "Changed 05f → 5f",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:15:31.961Z"
+    },
+    {
+      "id": "bug-165",
+      "timestamp": "2026-05-18T05:16:49.875Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/leak_suspect_heatmap_impl.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 9→21 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:16:49.875Z"
+    },
+    {
+      "id": "bug-166",
+      "timestamp": "2026-05-18T05:35:49.266Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "18 lines replaced/restructured",
+      "fix": "Rewrote 85→39 lines (18 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:35:49.266Z"
+    },
+    {
+      "id": "bug-167",
+      "timestamp": "2026-05-18T05:36:26.891Z",
+      "error_message": "Wrong reference: sampleDirectionalGIWithLeak should be sampleDirectionalGI",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "Used \"sampleDirectionalGIWithLeak\" instead of \"sampleDirectionalGI\"",
+      "fix": "Changed sampleDirectionalGIWithLeak → sampleDirectionalGI",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:36:26.891Z"
+    },
+    {
+      "id": "bug-168",
+      "timestamp": "2026-05-18T05:37:44.896Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/6/claude_plan/leak_suspect_heatmap_impl.md",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 6→28 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:37:44.896Z"
+    },
+    {
+      "id": "bug-169",
+      "timestamp": "2026-05-18T06:10:44.806Z",
+      "error_message": "Missing guard clause",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "No early return/throw for edge case: any(lessThan(uvw, vec3(0.0",
+      "fix": "Added guard clause: if (any(lessThan(uvw, vec3(0.0)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T06:10:44.806Z"
+    },
+    {
+      "id": "bug-170",
+      "timestamp": "2026-05-18T06:11:55.349Z",
+      "error_message": "Incorrect value in code",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Had \"    toggle for A/B comparison; lower the divisor ",
+      "fix": "Changed to \"    toggle for A/B comparison; lower the divisor ",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T06:11:55.349Z"
+    },
+    {
+      "id": "bug-171",
+      "timestamp": "2026-05-18T06:25:29.764Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "17 lines replaced/restructured",
+      "fix": "Rewrote 31→69 lines (17 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T06:25:29.764Z"
+    },
+    {
+      "id": "bug-172",
+      "timestamp": "2026-05-18T06:57:39.632Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/pt_reference_plan.md",
+      "root_cause": "10 lines replaced/restructured",
+      "fix": "Rewrote 18→22 lines (10 removed) | Also: ## TL;DR (rev 2); - **Tile-based + half-res dispatch from day one**  | Also: ### Open questions; 2. **Should ambient floor (`uAmbientBakeStrength`) | Also: ### 7.1 Sanity tests (in order); 2. **Mode 16 with single bounce shows direct shadi | Also: ## 6. Sequencing (~3-4 days); ### Day 1 — Shader skeleton + plumbing | Also: ## 11. Success criteria; v1 is successful when ALL of:",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 6,
+      "last_seen": "2026-05-18T07:02:25.275Z"
+    },
+    {
+      "id": "bug-173",
+      "timestamp": "2026-05-18T06:58:08.133Z",
+      "error_message": "Wrong operator: && should be ==",
+      "file": "doc/7/pt_reference_plan.md",
+      "root_cause": "Used \"&&\" instead of \"==\"",
+      "fix": "Changed operator && → ==",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T06:58:08.133Z"
+    },
+    {
+      "id": "bug-174",
+      "timestamp": "2026-05-18T06:59:27.103Z",
+      "error_message": "Wrong condition in logic",
+      "file": "doc/7/pt_reference_plan.md",
+      "root_cause": "Condition was: if (bounce == 0)",
+      "fix": "Changed to: if (uPtCascadeMatch != 0 && bounce == 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T06:59:27.103Z"
+    },
+    {
+      "id": "bug-175",
+      "timestamp": "2026-05-18T07:08:48.897Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.cpp",
+      "root_cause": "No early return/throw for edge case: targetW < 1",
+      "fix": "Added guard clause: if (targetW < 1)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T07:08:48.897Z"
+    },
+    {
+      "id": "bug-176",
+      "timestamp": "2026-05-18T07:13:51.382Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/pt_reference.comp",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 12→19 lines (7 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T07:13:51.382Z"
+    },
+    {
+      "id": "bug-177",
+      "timestamp": "2026-05-18T07:18:29.585Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (arg.rfind(\"--phase3-debug=\", 0)",
+      "fix": "Changed to: if (arg.rfind(\"--pt-cascade-match=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T07:18:29.585Z"
+    },
+    {
+      "id": "bug-178",
+      "timestamp": "2026-05-18T08:49:13.347Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/multi_bounce_temporal_plan.md",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 6→7 lines (3 removed) | Also: ## TL;DR; - In the cascade bake's `raymarchSDF`, when a ray  | Also: ## 3. Algorithm; ### v1 algorithm (isotropic feedback) | Also: ## 4. Implementation; Two new uniforms: | Also: ## 5. Sequencing (~2 days for v1); ### Day 1 — Shader + C++ + GUI plumbing | Also: ## 9. Success criteria; v1 successful when ALL of:",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 6,
+      "last_seen": "2026-05-18T08:51:41.215Z"
+    },
+    {
+      "id": "bug-179",
+      "timestamp": "2026-05-18T08:58:47.340Z",
+      "error_message": "Missing guard clause",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "No early return/throw for edge case: uHasPrevFrame == 0 || uPrevFrameC0DirRes <= 0",
+      "fix": "Added guard clause: if (uHasPrevFrame == 0 || uPrevFrameC0DirRes)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T08:58:47.340Z"
+    },
+    {
+      "id": "bug-180",
+      "timestamp": "2026-05-18T08:59:30.462Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v == useMultiBounce",
+      "fix": "Added guard clause: if (v == useMultiBounce)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T08:59:30.462Z"
+    },
+    {
+      "id": "bug-181",
+      "timestamp": "2026-05-18T09:00:21.288Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Condition was: if (arg.rfind(\"--pt-cascade-match=\", 0)",
+      "fix": "Changed to: if (arg.rfind(\"--use-multi-bounce=\", 0)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T09:00:21.288Z"
+    },
+    {
+      "id": "bug-182",
+      "timestamp": "2026-05-18T09:10:34.709Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 21→37 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T09:10:34.709Z"
+    },
+    {
+      "id": "bug-183",
+      "timestamp": "2026-05-18T11:37:45.965Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "29 lines replaced/restructured",
+      "fix": "Rewrote 66→114 lines (29 removed) | Also: // Per critic-15 N3: atlas .a can be 0 for both su; // For multi-bounce we just take .rgb at face valu",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-18T11:40:21.326Z"
+    },
+    {
+      "id": "bug-184",
+      "timestamp": "2026-05-18T11:44:14.028Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/multi_bounce_temporal_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 6→64 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T11:44:14.028Z"
+    },
+    {
+      "id": "bug-185",
+      "timestamp": "2026-05-19T03:01:00.683Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 20→34 lines (3 removed) | Also: // Phase 7 (PT reference, doc/7): dispatch PT comp; // Mode 16 displays PT directly; Mode 18 (2026-05- | Also: // Mode 18 (cascade-vs-PT delta heatmap, 2026-05-1; if (raymarchRenderMode == 18) {",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-19T03:02:43.728Z"
+    },
+    {
+      "id": "bug-186",
+      "timestamp": "2026-05-19T04:10:12.491Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (ImGui::Checkbox(\"Temporal multi-bounce (Phase MB)",
+      "fix": "Changed to: if (ImGui::Button(\"Cheap (single-bounce)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T04:10:12.491Z"
+    },
+    {
+      "id": "bug-187",
+      "timestamp": "2026-05-19T04:13:15.126Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/hybrid_rc_pixel_correction_plan.md",
+      "root_cause": "11 lines replaced/restructured",
+      "fix": "Rewrote 18→22 lines (11 removed) | Also: ### 2.4 Blend weight semantics; `uHybridBlendWeight` ∈ [0, 1]: | Also: uniform float uHybridBlendWeight;    // 0..1; defa; uniform float uHybridMaxDist;        // max raymar | Also: ## 5. Sequencing (~3-4 days); ### Day 1 — v0.5 prototype (inline shader path) | Also: ## 9. Success criteria; - ☐ Default OFF preserves bit-exact pre-hybrid beh",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 5,
+      "last_seen": "2026-05-19T04:14:32.868Z"
+    },
+    {
+      "id": "bug-188",
+      "timestamp": "2026-05-19T07:27:04.015Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v == useHybrid",
+      "fix": "Added guard clause: if (v == useHybrid)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T07:27:04.015Z"
+    },
+    {
+      "id": "bug-189",
+      "timestamp": "2026-05-19T07:29:26.523Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.cpp",
+      "root_cause": "No early return/throw for edge case: targetW < 1",
+      "fix": "Added guard clause: if (targetW < 1)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T07:29:26.523Z"
+    },
+    {
+      "id": "bug-190",
+      "timestamp": "2026-05-19T07:35:32.748Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/hybrid_correction.comp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 8→14 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T07:35:32.748Z"
+    },
+    {
+      "id": "bug-191",
+      "timestamp": "2026-05-19T07:58:00.692Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (useGIBlur && (raymarchRenderMode == 0 || raymarchR)",
+      "fix": "Changed to: if ((useGIBlur || useHybrid)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T07:58:00.692Z"
+    },
+    {
+      "id": "bug-192",
+      "timestamp": "2026-05-19T08:22:10.264Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.h",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 12→20 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T08:22:10.264Z"
+    },
+    {
+      "id": "bug-193",
+      "timestamp": "2026-05-19T08:23:51.385Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 10→16 lines (8 removed) | Also: vec3 correction = texture(uHybridAccum, vUV).rgb;; if (uHybridUseMax != 0) {",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-19T08:24:03.811Z"
+    },
+    {
+      "id": "bug-194",
+      "timestamp": "2026-05-19T08:24:34.305Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if ((useGIBlur || useHybrid)",
+      "fix": "Changed to: if (useGIBlur && (raymarchRenderMode == 0 || raymarchR)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-19T08:25:03.257Z"
+    },
+    {
+      "id": "bug-195",
+      "timestamp": "2026-05-19T08:24:53.255Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "15 lines replaced/restructured",
+      "fix": "Rewrote 24→37 lines (15 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T08:24:53.255Z"
+    },
+    {
+      "id": "bug-196",
+      "timestamp": "2026-05-19T08:39:09.085Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 8→14 lines (6 removed) | Also: // Cooperative inverse-variance merge — both signa; // signal confidence. var_corr from tracked E[L^2]",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-19T08:39:21.307Z"
+    },
+    {
+      "id": "bug-197",
+      "timestamp": "2026-05-19T08:40:02.326Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 11→20 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T08:40:02.326Z"
+    },
+    {
+      "id": "bug-198",
+      "timestamp": "2026-05-19T08:54:17.408Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.cpp",
+      "root_cause": "No early return/throw for edge case: hybridSweepState == HybridSweepState::Idle ||\n        hybrid",
+      "fix": "Added guard clause: if (hybridSweepState == HybridSweepState::Id)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T08:54:17.408Z"
+    },
+    {
+      "id": "bug-199",
+      "timestamp": "2026-05-19T08:56:28.131Z",
+      "error_message": "Wrong reference: startHybridSweep should be startHybridSweepPublic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Used \"startHybridSweep\" instead of \"startHybridSweepPublic\"",
+      "fix": "Changed startHybridSweep → startHybridSweepPublic",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T08:56:28.131Z"
+    },
+    {
+      "id": "bug-200",
+      "timestamp": "2026-05-19T08:56:35.242Z",
+      "error_message": "Wrong reference: startHybridSweep should be startHybridSweepPublic",
+      "file": "src/main3d.cpp",
+      "root_cause": "Used \"startHybridSweep\" instead of \"startHybridSweepPublic\"",
+      "fix": "Changed startHybridSweep → startHybridSweepPublic",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T08:56:35.242Z"
+    },
+    {
+      "id": "bug-201",
+      "timestamp": "2026-05-19T09:09:37.854Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "25 lines replaced/restructured",
+      "fix": "Rewrote 33→5 lines (25 removed) | Also: if (false && itBlur != shaders.end()) {  // BISECT; glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEX | Also: // Phase 8 Day 3: GL_TIMESTAMP query around dispat; // black-output bug; see Phase 8 self-critic K7).",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-19T09:12:47.905Z"
+    },
+    {
+      "id": "bug-202",
+      "timestamp": "2026-05-19T09:10:52.115Z",
+      "error_message": "Wrong condition in logic",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "Condition was: if (uHybridCorrection != 0 && uHybridAccumValid != 0)",
+      "fix": "Changed to: if (false && uHybridCorrection != 0 && uHybridAccumVal)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-19T09:12:36.784Z"
+    },
+    {
+      "id": "bug-203",
+      "timestamp": "2026-05-19T09:11:36.631Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (itBlur != shaders.end()",
+      "fix": "Changed to: if (false && itBlur != shaders.end()",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T09:11:36.631Z"
+    },
+    {
+      "id": "bug-204",
+      "timestamp": "2026-05-20T07:41:45.705Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/hybrid_correction.comp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→9 lines (2 removed) | Also: // 6a. v1.2.3 (Phase 8 follow-up): TAA-style color; //     Read 3x3 neighborhood of CURRENT accumulato",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-20T07:42:08.683Z"
+    },
+    {
+      "id": "bug-205",
+      "timestamp": "2026-05-20T07:43:19.060Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 17→26 lines (9 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T07:43:19.060Z"
+    },
+    {
+      "id": "bug-206",
+      "timestamp": "2026-05-20T18:14:00.000Z",
+      "error_message": "user: the TAA AABB clamping is killing the pt results + MBRC with inverse variance mix",
+      "file": "res/shaders/hybrid_correction.comp",
+      "root_cause": "v1.2.3 symmetric AABB clamp [lumMin/slack, lumMax*slack] used the same noisy accumulator as both reference AND clamped subject. The 3x3 neighborhood lumMin was arbitrarily dim at low spp, so bright legitimate PT samples (Cornell red-wall bounce, ceiling bounce) got scaled DOWN toward the dim neighborhood mean. Accumulator never accumulated them; cooperative merge with cascade then read as cascade-only with extra cost. Verified by R-channel collapse: Cornell R=62 v1.2.4 (red bleed visible) -> R=52 v1.2.3 (grey-balanced, red signal gone).",
+      "fix": "v1.2.4: removed low-side clamp entirely (firefly-only HIGH clamp); added uHybridAabbMinSpp gate (default 4) so 3x3 isn't itself pure noise; defaulted hybridAabbClamp=false (opt-in); loosened slack default 1.5->2.0. Also lowered hybridEMAAlpha default 0.1->0.05 per same user complaint that PT too noisy (wider history window).",
+      "tags": [
+        "hybrid",
+        "taa",
+        "aabb",
+        "shader",
+        "signal-killing",
+        "asymmetric-filter",
+        "regression"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T18:14:00.000Z"
+    },
+    {
+      "id": "bug-207",
+      "timestamp": "2026-05-20T07:47:26.443Z",
+      "error_message": "Incorrect value in code",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md",
+      "root_cause": "Had 's built, what'",
+      "fix": "Changed to \"dump impl to doc\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T07:47:26.443Z"
+    },
+    {
+      "id": "bug-208",
+      "timestamp": "2026-05-20T07:54:28.605Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/hybrid_correction.comp",
+      "root_cause": "13 lines replaced/restructured",
+      "fix": "Rewrote 48→90 lines (13 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T07:54:28.605Z"
+    },
+    {
+      "id": "bug-209",
+      "timestamp": "2026-05-20T08:22:52.302Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "doc/7/hybrid_v12_validation_phase8_impl.md",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T08:22:52.302Z"
+    },
+    {
+      "id": "bug-210",
+      "timestamp": "2026-05-20T09:15:44.249Z",
+      "error_message": "Significant refactor of ",
+      "file": "tools/hybrid_validation/v13_nee_variance/run_variance_sweep.ps1",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 30→44 lines (3 removed) | Also: & $exe @ptArgs 2>&1 | Select-String -Pattern \"MAIN; Write-Host \"  done in $($sw.Elapsed.TotalSeconds.T | Also: # Redirect stdout+stderr to log file via cmd /c; a; # 2>&1 wrap that produces NativeCommandError recor | Also: Invoke-Sweep \"a00\" @(\"--hybrid-nee=0.0\", \"--hybrid; Invoke-Sweep \"a05\" @(\"--hybrid-nee=0.5\", \"--hybrid | Also: Invoke-Sweep \"a00\" @(\"--use-hybrid=1\", \"--hybrid-n; Invoke-Sweep \"a05\" @(\"--use-hybrid=1\", \"--hybrid-n",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ps1"
+      ],
+      "related_bugs": [],
+      "occurrences": 5,
+      "last_seen": "2026-05-20T09:24:54.386Z"
+    },
+    {
+      "id": "bug-211",
+      "timestamp": "2026-05-20T17:55:00.000Z",
+      "error_message": "raylib TakeScreenshot(absolute_path.png) silently strips path, writes file to current working directory using basename only",
+      "file": "src/main3d.cpp (--shots-prefix path handling)",
+      "root_cause": "raylib's TakeScreenshot internally calls rl_LoadFileText/save with the basename relative to CWD. Absolute Windows paths get the prefix discarded.",
+      "fix": "Either (a) chdir to target dir before calling TakeScreenshot, or (b) accept basename-only paths and Move-Item to target dir post-run. PS harness chose (b).",
+      "tags": [
+        "raylib",
+        "screenshot",
+        "path-handling",
+        "windows",
+        "v1.3.1"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T17:55:00.000Z"
+    },
+    {
+      "id": "bug-212",
+      "timestamp": "2026-05-20T17:55:00.000Z",
+      "error_message": "v1.3 NEE CLI flag --hybrid-nee=0.5 has no observable effect; a00 and a05 capture sequences produce bit-identical PNG hashes per-frame",
+      "file": "tools/hybrid_validation/v13_nee_variance/run_variance_sweep.ps1",
+      "root_cause": "Demo3D::useHybrid defaults to false (opt-in, see demo3d.h:1368). The v1.3 NEE code lives entirely inside the hybrid correction compute dispatch which is gated by `if (useHybrid)`. CLI flags like --hybrid-nee= set hybridNEEFraction state but the dispatch never runs without --use-hybrid=1. Silent no-op.",
+      "fix": "Add --use-hybrid=1 to any sweep/test that exercises v1.3 NEE code. Documented in doc/7/hybrid_v12_validation_phase8_impl.md §10.4 B3.",
+      "tags": [
+        "v1.3",
+        "NEE",
+        "hybrid",
+        "CLI",
+        "silent-failure",
+        "validation-gap"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T17:55:00.000Z"
+    },
+    {
+      "id": "bug-213",
+      "timestamp": "2026-05-20T17:55:00.000Z",
+      "error_message": "PowerShell 5.1 ErrorActionPreference=Stop + native exe 2>&1 | filter pipeline aborts script even when exe exits 0",
+      "file": "tools/hybrid_validation/v13_nee_variance/run_variance_sweep.ps1",
+      "root_cause": "PS 5.1 wraps each stderr line from a native exe as a NativeCommandError record. Under ErrorActionPreference=Stop these terminate the script. The exe in our case writes a Python ModuleNotFoundError to stderr from a non-critical sub-process (auto-analyze script's dotenv import) — non-fatal to the exe but fatal to the harness.",
+      "fix": "Set ErrorActionPreference=Continue and redirect via '*> $logFile' instead of '2>&1 | ...'. Cerebrum already has a Do-Not-Repeat entry for this pattern.",
+      "tags": [
+        "powershell",
+        "windows",
+        "harness",
+        "native-exe",
+        "stderr"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-20T17:55:00.000Z"
+    },
+    {
+      "id": "bug-214",
+      "timestamp": "2026-05-20T09:37:33.272Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "16 lines replaced/restructured",
+      "fix": "Rewrote 38→51 lines (16 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T09:37:33.272Z"
+    },
+    {
+      "id": "bug-215",
+      "timestamp": "2026-05-20T09:40:12.660Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 30→33 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T09:40:12.660Z"
+    },
+    {
+      "id": "bug-216",
+      "timestamp": "2026-05-20T11:46:34.428Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/mbrc_quality_plan.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 7→25 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T11:46:34.428Z"
+    },
+    {
+      "id": "bug-217",
+      "timestamp": "2026-05-20T11:58:31.132Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/mbrc_v20_pre_measurement_plan.md",
+      "root_cause": "12 lines replaced/restructured",
+      "fix": "Rewrote 13→36 lines (12 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-20T11:58:31.132Z"
+    },
+    {
+      "id": "bug-218",
+      "timestamp": "2026-05-21T06:22:22.088Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/mbrc_v20_pre_measurement_plan.md",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 10→23 lines (4 removed) | Also: Each measurement produces one artifact (PNG / CSV ; same cornell-orig-alcove scene with three camera p | Also: ### 2.2 Spatial vs angular error decomposition hea; **Hypothesis tested:** Q1 + Q2 (long-distance spat | Also: ### 2.3 Reference noise floor + reference adequacy; **Method:** Mode 16 PT reference accumulates progr | Also: ### 2.4 Cascade-RC own variance (noise floor); **Method:** Cascade GI uses stochastic single-samp | Also: cam1 and cam2 are added in `tools/hybrid_validatio; | Change | File(s) | Effort | | Also: 6. `doc/7/mbrc_v20_pre_measurement_report.md` — wr; - Q1-Q5 answered with numbers from the CSVs | Also: ### 7.2 Revised effort; - Instrumentation: ~7h (was 5.75; +1h for leave-on | Also: 3. **Hybrid-on baseline (§2.7) uses variance-harne; shipped defaults. Implementation must pull cmin/cm | Also: ### What this locks in; - §2 RMSE def updates to **luminance-RMSE primary,",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 10,
+      "last_seen": "2026-05-21T06:25:48.318Z"
+    },
+    {
+      "id": "bug-219",
+      "timestamp": "2026-05-21T06:50:43.389Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/mbrc_v20_pre_measurement_plan.md",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 10→14 lines (9 removed) | Also: ### What this locks in (REV 2 — H3 flagged); - §2.7 hybrid baseline: ~~variance-harness-tuned~~",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-21T06:50:53.239Z"
+    },
+    {
+      "id": "bug-220",
+      "timestamp": "2026-05-21T06:51:19.417Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/critic/reply/reply_06_mbrc_v20_pre_measurement_plan_review.md",
+      "root_cause": "15 lines replaced/restructured",
+      "fix": "Rewrote 19→31 lines (15 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T06:51:19.417Z"
+    },
+    {
+      "id": "bug-221",
+      "timestamp": "2026-05-21T06:59:40.722Z",
+      "error_message": "Missing guard clause",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "No early return/throw for edge case: uRenderMode == 20",
+      "fix": "Added guard clause: if (uRenderMode == 20)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T06:59:40.722Z"
+    },
+    {
+      "id": "bug-222",
+      "timestamp": "2026-05-21T07:00:59.714Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v < -1",
+      "fix": "Added guard clause: if (v < -1)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T07:00:59.714Z"
+    },
+    {
+      "id": "bug-223",
+      "timestamp": "2026-05-21T07:02:54.118Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 5→8 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T07:02:54.118Z"
+    },
+    {
+      "id": "bug-224",
+      "timestamp": "2026-05-21T07:07:19.679Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v < -1",
+      "fix": "Added guard clause: if (v < -1)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T07:07:19.679Z"
+    },
+    {
+      "id": "bug-225",
+      "timestamp": "2026-05-21T07:09:00.409Z",
+      "error_message": "Missing guard clause",
+      "file": "src/main3d.cpp",
+      "root_cause": "No early return/throw for edge case: !f",
+      "fix": "Added guard clause: if (!f)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T07:09:00.409Z"
+    },
+    {
+      "id": "bug-226",
+      "timestamp": "2026-05-21T08:22:10.381Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 9→13 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T08:22:10.381Z"
+    },
+    {
+      "id": "bug-227",
+      "timestamp": "2026-05-21T09:00:00.000Z",
+      "error_message": "Mode 20 Error-Decomposition heatmap shows all-red on every sub-mode (0/1/2/3) — looks like cascade is uniformly brighter than PT everywhere, contradicting mode 18/19 which show LEFT BLUE / RIGHT PINK on same camera.",
+      "file": "src/demo3d.cpp",
+      "root_cause": "PT compute-shader dispatch gate at line 1244 included only modes 16/18/19, not mode 20. When mode 20 is active the PT accumulators (uPtAccum, uPtDirectAccum) are never populated this frame and uPtAccumValid stays 0, so the shader uses ptTruth = vec3(0). Then delta = cascadeFull - 0 = cascadeFull → always positive → red. Sub-modes 1/2/3 fail the same way because they read uPtDirectAccum / uPtAccum without checking validity.",
+      "fix": "Extended dispatch gate to include mode 20: `if (raymarchRenderMode == 16 || 18 || 19 || 20) ptDispatchReference();`. Same condition shape as the original gate. Comment added pointing back to this bug id.",
+      "tags": [
+        "diagnostics",
+        "pt-reference",
+        "mode-20",
+        "error-decomposition",
+        "self-inflicted",
+        "v20-pre"
+      ],
+      "related_bugs": [
+        "bug-211"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T09:00:00.000Z"
+    },
+    {
+      "id": "bug-228",
+      "timestamp": "2026-05-21T08:33:37.191Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→12 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T08:33:37.191Z"
+    },
+    {
+      "id": "bug-229",
+      "timestamp": "2026-05-21T09:00:39.004Z",
+      "error_message": "Significant refactor of ",
+      "file": "tools/v20_pre_measurement/cameras.json",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 12→12 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "json"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T09:00:39.004Z"
+    },
+    {
+      "id": "bug-230",
+      "timestamp": "2026-05-21T11:30:00.000Z",
+      "error_message": "v2.0-pre full sweep: --noise-seed-offset=0/1/2 produces BIT-IDENTICAL captures across mode 16 (PT) AND mode 18 (Δ). md5 of cam0_s{0,1,2}_h0_m18.png all == 689da669139b893cbece81c1d80f36a6. Variance harness axis of plan §2.4 / M2 is non-functional.",
+      "file": "src/demo3d.cpp:2577",
+      "root_cause": "noiseSeedOffset is wired ONLY into uMBFrameSeed (multi-bounce cascade resampling). It is NOT added to (a) ptFrameIndex → uFrameIndex in pt_reference.comp [demo3d.cpp:3267], or (b) hybridFrameSeed → uHybridFrameSeed in hybrid_correction.comp [demo3d.cpp:3618]. Result: PT ground truth is bit-identical across seed offsets, and the cascade primary sampling (non-MB) is also identical, so mode 18/19 deltas are bit-identical. The MB feedback IS reseeded but contributes too little to mode-18 luminance delta to register at 256-level PNG quantization. Doc comment in demo3d.h:1453-1457 already says 'Added to the cascade-bake RNG site (uMBFrameSeed) AND MB v2 stochastic sampler' — the AND was aspirational; only the cascade-bake site shipped.",
+      "fix": "PENDING — not yet fixed. Required for any future variance-bound work: add noiseSeedOffset*9973 to ptFrameIndex when dispatching pt_reference.comp, and to hybridFrameSeed when dispatching hybrid_correction.comp. After fix, re-validate by md5 cmp of mode 16 captures across seeds (must differ). For now, the v2.0-pre full sweep is documented as effectively single-seed: cam{0,1,2} × hybrid{0,1} × mode{0,16,18,19} = 24 effective unique captures (48 redundant).",
+      "tags": [
+        "v20-pre",
+        "diagnostics",
+        "pt-reference",
+        "hybrid",
+        "rng",
+        "instrumentation",
+        "variance-harness",
+        "self-inflicted"
+      ],
+      "related_bugs": [
+        "bug-227"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T11:30:00.000Z"
+    },
+    {
+      "id": "bug-231",
+      "timestamp": "2026-05-21T09:19:57.076Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 8→13 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T09:19:57.076Z"
+    },
+    {
+      "id": "bug-232",
+      "timestamp": "2026-05-21T12:05:15.787Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→7 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T12:05:15.787Z"
+    },
+    {
+      "id": "bug-233",
+      "timestamp": "2026-05-21T16:44:45.623Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/cascade_config_sweep_impl.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→3 lines (2 removed) | Also: The cascade-vs-PT asymmetric Δ pattern is **not** ; - **(β) multi-bounce gain at wrong fixed point** — | Also: - **(β) MB-gain discriminator sweep** — cheap, rec; - **(α) merge-mode A/B** — requires 2-3h engine wo",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-21T16:46:08.661Z"
+    },
+    {
+      "id": "bug-234",
+      "timestamp": "2026-05-22T08:05:00.000Z",
+      "error_message": "(beta) MB-gain discriminator sanity test: --multi-bounce-gain=1.0 vs --multi-bounce-gain=2.0 at --measurement-camera=0 produces BIT-IDENTICAL PNGs (both md5=26005a6c2e82b8f4523c028e8be5a1db). The full (beta) sweep would have produced a meaningless null result if not caught.",
+      "file": "src/demo3d.cpp:980",
+      "root_cause": "Measurement-camera mode pins probe jitter to zero (demo3d.cpp:962+977) for reproducibility. The per-frame cascadeReady=false invalidation only fires from jitter advance (line 974) or GUI/SDF/toggle changes. With jitter pinned and no GUI toggles in a headless run, cascadeReady becomes true after frame 0's bake and STAYS true. Phase MB requires per-frame rebakes to accumulate temporal feedback (the GUI tooltip even says 'each frame's bake includes previous frame's indirect'). Net: in measurement mode, MB feedback runs exactly once at frame 0 with historyNeedsSeed=true (so MB is gated OFF that frame anyway); frames 1..N skip the bake entirely. Result: multiBounceGain CLI parses fine, setter fires, gain reaches uniforms, but the shader never executes the gain*feedback path on any frame.",
+      "fix": "Added 4-line conditional in render() at demo3d.cpp:986-994: 'if (measurementCamera >= 0 && useMultiBounce) cascadeReady = false;' This forces per-frame rebake when both measurement mode AND MB are active. Verified: post-fix md5(sanity_g100.png)=2fd0a272... vs md5(sanity_g200.png)=5118d014... (distinct). Cost: ~5-15s extra per 512-frame capture at scaled-D=8 cornell (bake ~10-30ms). Hybrid sweep mode does NOT need a parallel fix because hybrid dispatches every frame regardless of cascadeReady. PT-only modes also unaffected (they don't depend on MB).",
+      "tags": [
+        "v20-pre",
+        "mbrc",
+        "measurement-mode",
+        "multi-bounce",
+        "silent-failure",
+        "discriminator-sweep",
+        "self-inflicted"
+      ],
+      "related_bugs": [
+        "bug-212",
+        "bug-230"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T08:05:00.000Z"
+    },
+    {
+      "id": "bug-235",
+      "timestamp": "2026-05-22T00:16:20.721Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 7→15 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T00:16:20.721Z"
+    }
+  ]
+}

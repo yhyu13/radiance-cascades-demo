@@ -628,3 +628,142 @@ becomes a regression-detector for the gain change, not a prerequisite.
   pattern is angular-resolution-invariant. Leading hypothesis flips back to
   (α) merge-weighting / (β) MB-gain. Recommended next action: cheap (β)
   multi-bounce-gain sweep, then (α) merge-mode A/B if (β) also rejects.
+- 2026-05-22 morning — (β) MB-gain sweep executed (20 captures, 5 gains × 2 cams
+  × 2 modes, 5.5 min). Added §13. **Hypothesis (β) DEMOTED**: gain has strong
+  leverage but is not a global cure. g=2.0 *increases* mode-19 Δ-band area by
+  +363.4% / +213.6% on cam0/cam2 (opposite of pre-committed STRONG_BETA "≥30%
+  reduction" rule). Pattern is U-shaped with minimum near g=1.0; above g=1.5
+  the cascade overshoots PT into a runaway-red Δ band. Pattern *reorganizes*
+  shape between g=1.0 and g=1.5 (not just intensity shift) → suggests MB-gain
+  × merge-weighting interaction → **(α) promoted to leading candidate**. Also
+  surfaced + fixed bug-234 (measurement-camera mode disables MB feedback
+  silently by pinning probe jitter → no rebake trigger → MB gate never opens).
+  Recommended next action: (α) isotropic-merge A/B (~2-3h engine work + 8-capture
+  sweep). See [doc/7/mb_gain_sweep_impl.md](mb_gain_sweep_impl.md).
+
+---
+
+## 13. (β) MB-gain discriminator sweep — Δ-area leverage, not a cure
+
+Companion impl notes: [mb_gain_sweep_impl.md](mb_gain_sweep_impl.md).
+
+### 13.1. Scope
+
+- 20 captures: 5 `multiBounceGain` values {0.5, 1.0, 1.5, 2.0, 3.0} × 2 cams
+  (cam0 main-room, cam2 alcove-elevated) × 2 modes (18 combined Δ, 19 GI-only
+  Δ). Single seed (bug-230 still open; gated on (β) WEAK — not triggered).
+  Hybrid OFF, `--cascade-scaled-dir-res=1`, `--exit-frames=512`. Cornell-orig-alcove.
+- Harness: [tools/v20_pre_measurement/mb_gain_sweep.ps1](../../tools/v20_pre_measurement/mb_gain_sweep.ps1).
+- Analyzer: [tools/v20_pre_measurement/analyze_mb_gain.py](../../tools/v20_pre_measurement/analyze_mb_gain.py)
+  — mirrors `analyze_cascade_config.py` thresholds (SAT=0.55, LUMA=0.05) so
+  results are directly comparable with §12.
+- bug-234 fix [src/demo3d.cpp:986-994](../../src/demo3d.cpp#L986-L994) required
+  before the sweep produced meaningful data (md5-identical PNGs at g=1.0 vs 2.0
+  pre-fix; distinct post-fix). See impl notes §3 for root cause.
+
+### 13.2. B1 (Δ-band area, mode 19) — main result
+
+| cam | g=0.5 | g=1.0 | g=1.5 | g=2.0 | g=3.0 | (g2−g1)/g1 |
+|---|---:|---:|---:|---:|---:|---:|
+| cam0 | 24.33% | 21.55% | 56.44% | 99.86% | 99.89% | **+363.4%** |
+| cam2 | 21.27% | 22.87% | 30.22% | 71.72% | 71.75% | **+213.6%** |
+
+Pre-committed rule (`mb_gain_sweep_impl.md` §2 of the prior cascade-config doc):
+STRONG_BETA = g=2.0 *reduces* both cams' Δ-area by ≥30%. Result is the
+opposite sign, several times the magnitude. The analyzer enum has no slot for
+"wrong direction, larger magnitude" → falls through to MIXED. The right
+narrative label is **BETA_REJECT_AS_GLOBAL_CURE**.
+
+Color breakdown shows what is happening underneath the total:
+
+| cam,gain | blue% | red% | reading |
+|---|---:|---:|---|
+| cam0, g=0.5 | 24.14% | 0.19% | almost pure under-illumination |
+| cam0, g=1.0 | 19.67% | 1.88% | the §3.5 baseline pattern |
+| cam0, g=1.5 | 2.46%  | 53.98% | pattern FLIPPED to mostly red |
+| cam0, g=2.0 | 0.07%  | 99.79% | runaway over-illumination |
+| cam0, g=3.0 | 0.07%  | 99.81% | pegged at heatmap divisor saturation |
+
+The U-shape on cam0 has its minimum at the engine default (g=1.0); cam2's
+minimum is at g=0.5. The current default is *already near* the local Δ-area
+optimum on this scene — not the under-tuned value the plan presumed.
+
+### 13.3. Visual cross-check (three findings)
+
+1. **Nonlinear leverage**: g=1.0 → g=2.0 doesn't double brightness, it pegs
+   the heatmap divisor. The Phase MB GUI tooltip's "+9.9% brightness at
+   gain=2.0" was per-scene-specific or predates a cascade-bake change; the
+   relationship between gain and cascade-vs-PT Δ is not a linear scale.
+2. **Pattern reorganization at g=1.5**, not just intensity shift. The blue
+   stripe near the partition gap survives at g=1.5 while surrounding pixels
+   flip to red. If MB-gain were a pure global multiplier of cascade GI, the
+   |Δ| shape should shift uniformly in luminance space, not *reorganize*. The
+   reorganization is consistent with MB-gain × merge-weighting interaction —
+   evidence (suggestive, not conclusive) for hypothesis (α).
+3. **The default (g=1.0) is already near optimal** on cornell-orig-alcove.
+
+### 13.4. Why the verdict is BETA_LEVERAGE_NOT_CURE, not BETA_REJECT
+
+(β) has *the strongest leverage on the Δ pattern* of any axis tested so far
+(more than D, more than hybrid). It is not a cure because:
+
+- No tested gain produces |Δ| less than ~21% blue (cam0) / ~21% blue (cam2);
+  the under-illumination "floor" is at g≈1.0 and the over-illumination ceiling
+  starts at g≈1.5. There is no gain value that produces |Δ|≈0.
+- The pattern *shape* changes with gain (finding 2 above); a single global
+  scalar cannot match a per-pixel-variable target.
+
+(β) is therefore a knob that affects energy throughput but not the directional
+correctness of the cascade integration. The asymmetric Δ pattern is preserved
+under (β) — moved to a different place, but not eliminated.
+
+### 13.5. Decision-tree update (2026-05-22)
+
+- **(α) merge-time directional weighting** — *promoted to leading candidate*.
+  §13.3 finding 2 plus §12 (γ) rejection plus §13.4 (β) demotion converge on
+  (α). Direct test needs the isotropic-merge A/B flag in `radiance_3d.comp`
+  (~2-3h engine work).
+- **(β) MB-gain** — *demoted to "knob has leverage but is not a cure"*. Not
+  eliminated as a contributor; eliminated as the single global fix.
+- **(γ) angular under-sampling** — REJECTED 2026-05-21 (§12).
+- **(δ) spatial probe density / smoothstep blending** — *unchanged; still
+  untested*. Add `--cascade-c0-res=N` CLI to discriminate after (α).
+
+### 13.6. Self-critiques on this sweep (impl §7 has full list)
+
+- **The pre-committed rule was malformed** (unidirectional "gain↑ → Δ↓"); the
+  data showed gain↑ → Δ↑ in spades. New cerebrum DNR: pre-commit rules must
+  enumerate failure modes including "knob has leverage but wrong direction".
+- **The 5-point grid {0.5, 1.0, 1.5, 2.0, 3.0} missed the interesting region
+  {1.0-1.5}** where the pattern flips. Robust to grid spacing for the global
+  verdict; finer grid is §13.7 optional.
+- **mean_fg_luma is the wrong B2-lite proxy** — mode 19 is bipolar so luma
+  *decreases* as Δ-area saturates. Treat the column as B1-restated, not
+  brightness. Real B2 still needs a mode-22 PT-GI-only pass.
+- **bug-234 fix scope is minimal** — only triggers on `useMultiBounce`. Hybrid
+  + MB combo path not re-tested.
+
+### 13.7. Recommended next action
+
+Run (α) isotropic-merge A/B sweep:
+
+- Add `--cascade-isotropic-merge=0|1` CLI flag and `uUseIsotropicMerge` uniform
+  to [radiance_3d.comp](../../res/shaders/radiance_3d.comp). Engine work ~2-3h.
+- Sweep cam{0,2} × mode{18,19} × merge{cosine, isotropic} × gain{1.0} × hybrid{0}
+  = 8 captures, ~2 min.
+- Pre-committed rule (write BEFORE running, per §6.1): if isotropic-merge
+  reduces mode-19 Δ-area on BOTH cams by ≥20% → **ALPHA_CONFIRMED** → ship
+  the isotropic path or investigate the specific weighting bug; if ≤5% on
+  both → **ALPHA_REJECT** → pivot to (δ) probe density; else **WEAK_ALPHA**
+  (one-cam-only or 5-20% band) → finer grid + bug-230 fix mandatory.
+
+If (α) also rejects, only (δ) remains in the named-hypothesis tree; at that
+point bug-230 must be fixed and the search reopens to "unidentified RC quality
+bug" (perhaps in the directional-bin smoothstep blend, or in the cascade
+falloff between C0 and upper cascades).
+
+Optional follow-ups (defer until (α) reports):
+- Finer (β) grid g ∈ {0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5} (~4 min, locates
+  exact Δ-area minimum; will not change global verdict).
+- Mode 22 (PT-GI-only) for honest B2 (~30 min shader work).
+- bug-230 fix (defer per §13.6; not in WEAK band per §13.2).
