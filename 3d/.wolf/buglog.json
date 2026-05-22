@@ -3792,6 +3792,38 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-22T00:16:20.721Z"
+    },
+    {
+      "id": "bug-236",
+      "timestamp": "2026-05-22T01:51:21.984Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v == useDirectionalMerge",
+      "fix": "Added guard clause: if (v == useDirectionalMerge)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T01:51:21.984Z"
+    },
+    {
+      "id": "bug-237",
+      "timestamp": "2026-05-22T02:02:30.254Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 13→16 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T02:02:30.254Z"
     }
   ]
 }

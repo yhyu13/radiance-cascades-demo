@@ -1746,3 +1746,18 @@
 | 08:16 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified verdict() | ~760 |
 | 08:17 | Edited .wolf/cerebrum.md | +2 DNR entries (pre-commit rule failure-mode enumeration, GUI-vs-headless control-flow divergence) | ~1.7k |
 | 08:18 | (β) MB-gain sweep wrap-up: report §13 + impl doc + memory + cerebrum + buglog all updated. Verdict: BETA_LEVERAGE_NOT_CURE (g=2.0 increases Δ-area by +363%/+213% on cam0/cam2 — opposite sign of pre-committed STRONG_BETA rule). (α) promoted to leading. bug-234 fix verified via md5. Ready to commit. | doc/7/{mb_gain_sweep_impl.md, mbrc_v20_pre_measurement_report.md}, src/demo3d.cpp, tools/v20_pre_measurement/{mb_gain_sweep.ps1, analyze_mb_gain.py, mb_gain_results.json}, .wolf/{buglog.json, cerebrum.md, memory.md}, memory/project_phase_status.md | sweep landed, hypothesis tree updated | ~12k |
+| 08:18 | Session end: 2 writes across 2 files (mbrc_v20_pre_measurement_report.md, project_phase_status.md) | 4 reads | ~19941 tok |
+| 09:51 | Edited src/demo3d.h | added 3 condition(s) | ~434 |
+| 09:51 | Edited src/main3d.cpp | added 3 condition(s) | ~345 |
+| 09:53 | Created tools/v20_pre_measurement/alpha_merge_sweep.ps1 | — | ~998 |
+| 09:53 | Created tools/v20_pre_measurement/analyze_alpha_merge.py | — | ~1954 |
+
+## Session: 2026-05-22 09:54
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:00 | Created doc/7/alpha_merge_sweep_impl.md | — | ~5116 |
+| 10:01 | Edited doc/7/mbrc_v20_pre_measurement_report.md | added 1 condition(s) | ~1842 |
+| 10:02 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified verdict() | ~898 |
+| 10:05 | Edited .wolf/cerebrum.md | +1 DNR entry (read shader for already-shipped toggle uniforms before estimating engine work) | ~1.0k |
+| 10:06 | (α) merge-mode sweep wrap-up: report §14 + impl doc + memory + cerebrum all updated. Verdict: MIXED + ALPHA_LEVERAGE_WRONG_DIR — (α) rejected as cure. Engine work was ~15min not the predicted 2-3h (toggles already existed; only CLI wiring missing). cam0 nearly insensitive to all OFF-arms; cam2 sensitive only to useDirectionalMerge — turning it OFF *increases* Δ-area by +14.6%/+19.6%. Net hypothesis tree: (γ),(β),(α) all eliminated as global cures; (δ) sole leading candidate; (ε) new follow-on. Ready to commit. | doc/7/{alpha_merge_sweep_impl.md, mbrc_v20_pre_measurement_report.md}, src/{demo3d.h, main3d.cpp}, tools/v20_pre_measurement/{alpha_merge_sweep.ps1, analyze_alpha_merge.py, alpha_merge_results.json}, .wolf/{cerebrum.md, memory.md}, memory/project_phase_status.md | sweep landed, hypothesis tree updated | ~12k |

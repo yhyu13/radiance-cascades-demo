@@ -686,6 +686,40 @@ public:
         std::cout << "[Demo3D] multiBounceGain=" << v << "\n";
     }
 
+    // Cascade merge-mode A/B setters (Phase 5c/5d/5f -- (alpha) discriminator harness).
+    // All three toggles already had GUI checkboxes; CLI setters added 2026-05-22 for
+    // the (alpha) merge-mode sweep (doc/7/alpha_merge_sweep_impl.md). render() also
+    // detects changes via last* sentinels and invalidates cascadeReady -- the explicit
+    // invalidation here mirrors the setUseMultiBounce style so CLI-driven changes
+    // before the first frame are unambiguous.
+    void setUseDirectionalMergeCLI(bool v) {
+        if (v == useDirectionalMerge) return;
+        useDirectionalMerge = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] useDirectionalMerge=" << (v ? "ON" : "OFF (isotropic fallback)") << "\n";
+    }
+    void setUseDirBilinearCLI(bool v) {
+        if (v == useDirBilinear) return;
+        useDirBilinear = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] useDirBilinear=" << (v ? "ON (4-bin bilinear)" : "OFF (nearest-bin)") << "\n";
+    }
+    void setUseSpatialTrilinearCLI(bool v) {
+        if (v == useSpatialTrilinear) return;
+        useSpatialTrilinear = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] useSpatialTrilinear=" << (v ? "ON (8-neighbor)" : "OFF (nearest-parent)") << "\n";
+    }
+
     // Hybrid correction setters + invalidation (doc/7)
     void resetHybridAccumulator() { hybridDirty = true; hybridSampleCount = 0; }
     void setUseHybrid(bool v) {

@@ -421,6 +421,21 @@ int main(int argc, char* argv[]) {
             float v = static_cast<float>(std::atof(arg.substr(20).c_str()));
             demo->setMultiBounceGain(v);
             std::cout << "[MAIN] --multi-bounce-gain=" << v << "\n";
+        } else if (arg.rfind("--use-directional-merge=", 0) == 0) {
+            int v = std::atoi(arg.substr(24).c_str());
+            demo->setUseDirectionalMergeCLI(v != 0);
+            std::cout << "[MAIN] --use-directional-merge=" << v
+                      << " (1=per-direction-bin upper sampling [default]; 0=isotropic cascade-texture fallback)\n";
+        } else if (arg.rfind("--use-dir-bilinear=", 0) == 0) {
+            int v = std::atoi(arg.substr(19).c_str());
+            demo->setUseDirBilinearCLI(v != 0);
+            std::cout << "[MAIN] --use-dir-bilinear=" << v
+                      << " (1=4-bin bilinear inside per-direction lookup [default]; 0=nearest-bin texelFetch)\n";
+        } else if (arg.rfind("--use-spatial-trilinear=", 0) == 0) {
+            int v = std::atoi(arg.substr(24).c_str());
+            demo->setUseSpatialTrilinearCLI(v != 0);
+            std::cout << "[MAIN] --use-spatial-trilinear=" << v
+                      << " (1=8-neighbor spatial blend across upper probes [default]; 0=nearest-parent)\n";
         } else if (arg.rfind("--pt-cascade-match=", 0) == 0) {
             int v = std::atoi(arg.substr(19).c_str());
             demo->setPtCascadeMatch(v);

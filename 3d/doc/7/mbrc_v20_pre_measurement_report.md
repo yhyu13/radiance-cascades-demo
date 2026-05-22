@@ -767,3 +767,131 @@ Optional follow-ups (defer until (α) reports):
   exact Δ-area minimum; will not change global verdict).
 - Mode 22 (PT-GI-only) for honest B2 (~30 min shader work).
 - bug-230 fix (defer per §13.6; not in WEAK band per §13.2).
+
+## 14. (α) merge-mode sweep — 2026-05-22 afternoon
+
+**Verdict: MIXED + ALPHA_LEVERAGE_WRONG_DIR — (α) rejected as a cure.**
+**Net hypothesis-tree status: (γ), (β), (α) all eliminated as global cures.
+(δ) is now the sole leading candidate.**
+
+Full impl notes: [alpha_merge_sweep_impl.md](alpha_merge_sweep_impl.md).
+
+### 14.1. Engine work undercut the time estimate by 10×
+
+§13.7 estimated "~2-3h engine work" for (α). Reading the shader before writing
+the plan caught that the three relevant toggles (`useDirectionalMerge`,
+`useDirBilinear`, `useSpatialTrilinear`) **already existed** in
+[radiance_3d.comp](../../res/shaders/radiance_3d.comp) with full uniform
+plumbing and GUI checkbox control. The Phase 5 work that shipped directional
+bilinear (5f) and spatial trilinear (5d) had wired these uniforms for the GUI
+but never connected them to CLI. Adding 3 setters in [demo3d.h](../../src/demo3d.h)
+and 3 CLI parsers in [main3d.cpp](../../src/main3d.cpp) totaled ~15 min instead.
+
+**Lesson promoted to cerebrum:** before estimating engine work for a measurement
+discriminator, read the shader for already-shipped toggle uniforms. The shader
+often carries more knobs than the GUI surfaces or the CLI parses.
+
+### 14.2. Pre-sweep md5 sanity check passed (bug-234 lesson absorbed)
+
+Captured cam0 m19 three ways before the full sweep:
+- baseline (all on): md5 `21A32105…`
+- `--use-directional-merge=0`: md5 `F69B5801…` — distinct
+- `--use-dir-bilinear=0`: md5 `1A9A69BB…` — distinct from both
+
+All 3 flags actually changed shader output. No bug-234-class silent fail.
+
+### 14.3. B1 — Δ-band area (mode 19, blue% + red%)
+
+5 configs × 2 cams. Engine default = M0 (all on). MB OFF, hybrid OFF, single
+seed, frames=512, cornell-orig-alcove.
+
+| cam | M0 baseline | M1 no_bilin | M2 iso_merge | M3 no_spatialtri | M4 iso+nearest |
+|---|---:|---:|---:|---:|---:|
+| cam0 | 26.53% ref | 26.66% (+0.5%) | 25.64% (−3.4%) | 26.37% (−0.6%) | 25.18% (−5.1%) |
+| cam2 | 20.43% ref | 20.56% (+0.6%) | 23.41% (**+14.6%**) | 21.26% (+4.1%) | 24.44% (**+19.6%**) |
+
+Pre-committed thresholds: STRONG_ALPHA = ≥20% **reduction** on both cams in
+any arm; WEAK_ALPHA = 10-20% on both, or ≥20% on one cam; ALPHA_REJECT = all
+arms within ±10% on both cams; **ALPHA_LEVERAGE_WRONG_DIR** = any arm
+**increases** Δ-area >10% on either cam (bidirectional reporting, written
+this way from the start per the (β) DNR).
+
+The data fits none of STRONG / WEAK / REJECT cleanly; the analyzer correctly
+prints **MIXED -- requires manual inspection** and simultaneously flags
+**ALPHA_LEVERAGE_WRONG_DIR** for M2 cam2 (+14.6%) and M4 cam2 (+19.6%).
+
+### 14.4. Per-axis isolation reading
+
+- **`useDirBilinear` (M1)**: cam0 +0.5%, cam2 +0.6% — **neutral**. The 4-bin
+  directional bilinear is essentially zero net effect; nearest-bin fallback is
+  statistically indistinguishable from it.
+- **`useDirectionalMerge` (M2)**: cam0 −3.4%, cam2 **+14.6%** — **asymmetric
+  and view-dependent**. Falling back to the isotropic-cascade-texture path
+  slightly helps cam0 but materially hurts cam2. The per-direction-bin upper
+  sampling is *doing useful work* for cam2's view.
+- **`useSpatialTrilinear` (M3)**: cam0 −0.6%, cam2 +4.1% — **minor**.
+  8-neighbor spatial blend is a small contributor.
+- **Stress combo M4 (no_bilin + iso_merge)**: cam0 −5.1%, cam2 **+19.6%** —
+  same shape as M2 dominates; bilinear OFF on top doesn't compound badly
+  because bilinear is already a no-op.
+
+Visual cross-check (cam2 M0 vs M4 mode 19): the blue spill onto the floor in
+front of the partition is clearly larger and more saturated at M4; right-side
+blue stripe is also more saturated. Classifier and eye agree.
+
+### 14.5. Reading
+
+The merge-time directional weighting is **not the source** of the residual
+asymmetric Δ pattern. If anything it is *masking* it on cam2. Turning it off
+makes the leak worse, not better.
+
+Combined with §12 ((γ) rejected) and §13 ((β) demoted to "leverage but not
+cure"), the named-hypothesis tree is now:
+
+- **(α) merge-time directional weighting** — *demoted from leading to
+  "necessary but not sufficient"*. ON is the right default. Cannot be tuned
+  away.
+- **(β) MB-gain** — unchanged: leverage but not a global cure.
+- **(γ) angular under-sampling** — REJECTED 2026-05-21 (§12).
+- **(δ) spatial probe density / smoothstep blending** — **promoted to sole
+  leading candidate**. With (α), (β), (γ) all eliminated as cures and the
+  residual concentrated in cam2's deep-pixel geometry (partition-shadowed
+  floor, alcove gap), spatial probe layout is the next axis to discriminate.
+- **(ε) — new follow-on candidate**: per-direction-bin **upper-cascade
+  sampling fetch geometry** itself (not the weighting). The §14.4 observation
+  that bilinear is neutral but directional-bin lookup is not suggests the
+  *which texel* matters more than the *4-bin blend across it*. Defer until
+  after (δ).
+
+### 14.6. Self-critiques on this sweep (impl §7 has full list)
+
+- **Engine-effort estimate was 10× too high** (C1 in impl doc) — engine work
+  estimates must include a shader-read step.
+- **5-config matrix doesn't cover full 3-toggle lattice** (8 cells; 5
+  sampled). Robust to verdict; tagged for follow-up if (δ) doesn't fully
+  account for residual.
+- **bug-230 still open** (single-seed concern). Sweep result was MIXED, not
+  WEAK, so 2-seed re-run unlikely to flip verdict — +14-20% on cam2 is well
+  out of noise.
+- **"MIXED" wording understates certainty** — data is unambiguous. Right
+  label is closer to "REJECTED_AS_CURE_WITH_LEVERAGE_CONFIRMED". (β) had the
+  same complaint; consider 3rd-tier analyzer labels for (δ).
+- **cam0 silence is itself diagnostic** but the analyzer doesn't flag the
+  one-cam-leverage asymmetry. (δ) analyzer should.
+
+### 14.7. Recommended next action
+
+Run (δ) spatial probe density sweep:
+
+- Add `--cascade-c0-res=N` CLI flag (analogue of `--cascade-scaled-dir-res=`).
+  If a smoothstep-blend toggle exists, add `--cascade-c0-smoothstep=0|1` too.
+- Sweep N ∈ {16, 32, 48, 64} × cam{0,2} × mode{19} = 8 captures, ~2 min.
+- Pre-committed bidirectional rule: **STRONG_DELTA** if any N reduces cam2
+  Δ-area ≥20% AND keeps cam0 within ±10%; **WEAK_DELTA** if 10-20% reduction;
+  **DELTA_REJECT** if all within ±10% on both cams; **DELTA_LEVERAGE_WRONG_DIR**
+  if any N increases Δ-area >10% on either cam.
+
+If (δ) also rejects as a cure, all four named hypotheses are out and the next
+session opens to "(ε) — per-direction-bin upper-cascade sampling fetch
+geometry" plus a broader review of cascade falloff between C0 and upper
+cascades. At that point bug-230 must be fixed before any further sweep.
