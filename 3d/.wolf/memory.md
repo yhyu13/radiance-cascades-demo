@@ -1847,3 +1847,26 @@
 | 12:40 | Appended 3 cerebrum DNR entries: "LDR-saturation hypothesis 50% right (2 of 4 reverse)", "MB g=1.0 is largest brightness knob hidden by LDR", "Bidirectional |movement| baseline rule lands LEVERAGE/TIE cleanly without direction-of-expectation patch" | .wolf/cerebrum.md | Pattern captured for next session | ~800 |
 
 | 12:40 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified session() | ~896 |
+| 12:41 | Session end: 1 writes across 1 files (project_phase_status.md) | 2 reads | ~960 tok |
+| 23:28 | Created tools/v20_pre_measurement/alpha_m4_stack_sweep.ps1 | — | ~1172 |
+| 23:32 | Created tools/v20_pre_measurement/analyze_m4_stack.py | — | ~2720 |
+| 23:35 | Created doc/7/alpha_m4_deepdive_impl.md | — | ~4205 |
+
+## Session: 2026-05-22 23:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 23:37 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified stacking() | ~1268 |
+
+## Session: 2026-05-22 PM (alpha M4 deep-dive + 2x2x2 stacking)
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| PM | Read radiance_3d.comp:206 + :656-682 to confirm M0/M3 hemisphere-avg energy suppression | res/shaders/radiance_3d.comp | Shader semantics table | ~1.2k |
+| PM | Wrote 8-cell M4xMBxD=16 sweep harness | tools/v20_pre_measurement/alpha_m4_stack_sweep.ps1 | 3.7 min capture, 8 cells x 2 cams | ~1.0k |
+| PM | Wrote 2x2x2 grid analyzer (reuses 8 baseline cells from captures_hdr_{alpha,beta,gamma}) | tools/v20_pre_measurement/analyze_m4_stack.py | Main effects + additivity + triple ceiling | ~1.6k |
+| PM | Visual A/B M0 vs M4 cam0+cam2 (existing PNGs) | tools/v20_pre_measurement/captures_hdr_alpha/* | M4 shows real color bleed at cost of voxel-grid moire | — |
+| PM | Visual triple-stack PNG check | tools/v20_pre_measurement/captures_hdr_m4stack/cam{0,2}_S4_M4_MBon_D16unif_m17.png | Recognizable Cornell, no fireworks | — |
+| PM | Wrote 10-section deepdive impl doc | doc/7/alpha_m4_deepdive_impl.md | Headline 0.201 -> 0.681 triple, super-additive +16.8%/+39.4% | ~3.5k |
+| PM | Updated cerebrum (3 new DNRs: super-additivity, triple-stack ceiling, structural % misattribution) | .wolf/cerebrum.md | — | ~1.5k |
+| PM | Updated project_phase_status memory | memory/project_phase_status.md | Engine-default recommendation pending Sponza A/B | ~1.5k |
