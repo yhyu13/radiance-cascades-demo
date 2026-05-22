@@ -1870,3 +1870,14 @@
 | PM | Wrote 10-section deepdive impl doc | doc/7/alpha_m4_deepdive_impl.md | Headline 0.201 -> 0.681 triple, super-additive +16.8%/+39.4% | ~3.5k |
 | PM | Updated cerebrum (3 new DNRs: super-additivity, triple-stack ceiling, structural % misattribution) | .wolf/cerebrum.md | — | ~1.5k |
 | PM | Updated project_phase_status memory | memory/project_phase_status.md | Engine-default recommendation pending Sponza A/B | ~1.5k |
+| 23:39 | Session end: 1 writes across 1 files (project_phase_status.md) | 3 reads | ~6498 tok |
+| 06:43 | Created tools/v20_pre_measurement/sponza_cam.json | — | ~165 |
+| 06:43 | Created tools/v20_pre_measurement/engine_default_validation_sweep.ps1 | — | ~1122 |
+| 06:45 | Created tools/v20_pre_measurement/analyze_engine_default.py | — | ~1758 |
+
+## Session: 2026-05-22 06:48
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 06:50 | Created doc/7/engine_default_validation_impl.md | — | ~2945 |
+| 06:51 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified validation() | ~590 |
