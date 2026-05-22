@@ -902,6 +902,24 @@ public:
     // can assert equivalence at its own capture.
     void requestCascadeConfigDump() { pendingCascadeConfigDump = true; }
 
+    // 2026-05-22 HDR-EXR honest metric (doc/7/hdr_exr_metric_impl.md):
+    //   When ON + render-mode=17, the next screenshot emits 3 EXR sidecars
+    //   (cascade_gi.exr / pt_full.exr / pt_direct.exr) from the existing
+    //   HDR-linear float textures. Forces the PT dispatch + GI-MRT bind so
+    //   both data sources populate this frame.
+    void setExrCapture(bool v) {
+        if (v == exrCapture) return;
+        exrCapture = v;
+        // PT accumulator must restart so the EXR sample is from a clean
+        // mean (otherwise residual rays from a prior camera leak in).
+        ptDirty = true;
+        ptSampleCount = 0;
+        std::cout << "[Demo3D] exrCapture=" << (v ? "ON" : "OFF")
+                  << " (next screenshot in mode 17 will dump cascade_gi/pt_full/pt_direct EXRs)\n";
+    }
+    bool getExrCapture() const { return exrCapture; }
+    void dumpScreenshotEXRs(const std::string& stem);
+
     // codex 11 F1/F2 — lets main3d.cpp programmatically trigger the scene-aware
     // reset path (proves the helper that R-key and ImGui button now share).
     void testResetCameraHelper() {
@@ -1521,6 +1539,10 @@ private:
     glm::vec3 measurementCameraTargets[kMeasurementCameraSlots]   = {};
     bool      measurementCameraValid[kMeasurementCameraSlots]     = {};
     bool pendingCascadeConfigDump = false;
+    // 2026-05-22 HDR-EXR honest metric. Default OFF. When ON, render() extends
+    // the PT-dispatch + GI-MRT gates to also fire in render-mode 17 so the
+    // EXR dump has fresh data.
+    bool exrCapture = false;
 
     // ========================================================================
     // Hybrid RC + Per-Pixel Correction (doc/7/hybrid_rc_pixel_correction_plan.md)

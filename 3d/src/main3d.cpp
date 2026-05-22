@@ -276,6 +276,13 @@ int main(int argc, char* argv[]) {
         } else if (arg.rfind("--screenshot=", 0) == 0) {
             screenshotPath = arg.substr(13);
             std::cout << "[MAIN] --screenshot=" << screenshotPath << ": will capture last frame.\n";
+        } else if (arg.rfind("--screenshot-exr=", 0) == 0) {
+            // 2026-05-22 HDR-EXR honest metric. Pair with --screenshot=<png>
+            // and --render-mode=17; the EXR sidecars share the PNG stem.
+            int v = std::atoi(arg.substr(17).c_str());
+            demo->setExrCapture(v != 0);
+            std::cout << "[MAIN] --screenshot-exr=" << v
+                      << " (HDR float dump for cascade_gi/pt_full/pt_direct)\n";
         } else if (arg.rfind("--render-mode=", 0) == 0) {
             int m = std::atoi(arg.substr(14).c_str());
             demo->setRenderMode(m);
@@ -763,6 +770,15 @@ int main(int argc, char* argv[]) {
 
             // codex 09 F4: clean --screenshot capture happens HERE, before UI draw.
             if (wantCleanScreenshot) {
+                // 2026-05-22 HDR-EXR honest metric: dump EXR sidecars BEFORE
+                // TakeScreenshot so the blit-to-default-FB inside dumpScreenshotEXRs
+                // populates the swap chain that TakeScreenshot then reads.
+                if (demo->getExrCapture()) {
+                    std::string stem = screenshotPath;
+                    auto dot = stem.find_last_of('.');
+                    if (dot != std::string::npos) stem = stem.substr(0, dot);
+                    demo->dumpScreenshotEXRs(stem);
+                }
                 TakeScreenshot(screenshotPath.c_str());
                 std::cout << "[MAIN] --screenshot saved (clean 3D, no UI): "
                           << screenshotPath << "\n";

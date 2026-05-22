@@ -1775,3 +1775,56 @@
 | 10:35 | Edited .wolf/cerebrum.md | +2 DNR entries (3-place toggle-search check: shader/GUI/CLI; named-hypothesis-tree exhaustion is a verdict not failure → falsify metric before expanding tree) | ~2.1k |
 | 10:36 | Edited memory/project_phase_status.md | hypothesis tree updated: ALL 4 named candidates eliminated; HDR-EXR metric pivot recommended next | ~2.0k |
 | 10:38 | (δ) probe-density sweep wrap-up: report §15 + impl doc + memory + cerebrum all updated. Verdict: DELTA_REJECT — all N ∈ {16,32,48,64} within ±10% on both cams. Zero engine work (--cascade-c0-res= already shipped during Step 12). Named-hypothesis tree (α,β,γ,δ) now exhausted. Mode-18 informational finding: cam2 direct-light Δ -11.2%/-13.2% at N=48/64 but mode-19 GI unmoved. Recommends HDR-EXR metric pivot (~4-5h, tinyexr+mode22+per-pixel ratio) as next highest priority — LDR PNG classifier may have a 20% floor by construction. Ready to commit. | doc/7/{delta_probe_density_sweep_impl.md, mbrc_v20_pre_measurement_report.md}, tools/v20_pre_measurement/{delta_probe_density_sweep.ps1, analyze_delta_probe_density.py, delta_probe_density_results.json, captures_delta/*.png}, .wolf/{cerebrum.md, memory.md}, memory/project_phase_status.md | sweep landed, hypothesis tree exhausted | ~14k |
+| 10:27 | Session end: 1 writes across 1 files (project_phase_status.md) | 3 reads | ~4527 tok |
+| 12:01 | Edited CMakeLists.txt | 3→4 lines | ~58 |
+| 12:02 | Edited CMakeLists.txt | 7→8 lines | ~85 |
+| 12:02 | Edited CMakeLists.txt | added 1 condition(s) | ~123 |
+
+## Session: 2026-05-22 12:05
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 12:06 | Edited src/demo3d.h | added 1 condition(s) | ~318 |
+| 12:06 | Edited src/demo3d.h | 1→5 lines | ~70 |
+| 12:06 | Edited src/main3d.cpp | added 1 condition(s) | ~189 |
+| 12:07 | Edited res/shaders/raymarch.frag | modified 10() | ~290 |
+| 12:07 | Edited src/demo3d.cpp | 4→7 lines | ~95 |
+| 12:08 | Edited src/demo3d.cpp | expanded (+8 lines) | ~216 |
+| 12:09 | Edited src/demo3d.cpp | expanded (+8 lines) | ~154 |
+| 12:09 | Edited src/demo3d.cpp | added 6 condition(s) | ~1277 |
+| 12:10 | Edited src/main3d.cpp | added 2 condition(s) | ~231 |
+| 12:11 | Edited src/demo3d.cpp | separately() → raylib() | ~83 |
+| 12:11 | Created include/exr_writer.h | — | ~184 |
+| 12:11 | Created src/exr_writer.cpp | — | ~338 |
+| 12:11 | Edited src/demo3d.cpp | modified for() | ~156 |
+| 12:11 | Edited CMakeLists.txt | 8→9 lines | ~111 |
+| 12:13 | Edited src/demo3d.cpp | 4→7 lines | ~145 |
+| 12:15 | Created tools/v20_pre_measurement/hdr_exr_sweep.ps1 | — | ~668 |
+| 12:15 | Created tools/v20_pre_measurement/analyze_hdr_exr.py | — | ~2119 |
+| 12:19 | Created doc/7/hdr_exr_metric_impl.md | — | ~3367 |
+
+## Session: 2026-05-22 12:20
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-05-22 HDR-EXR honest metric pivot
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| --:-- | Added tinyexr single-header + miniz + streamreader.hh + exr_reader.hh | lib/tinyexr/ | 5 new deps downloaded | ~150 |
+| --:-- | Wrote exr_writer.{h,cpp} thin wrapper isolating tinyexr.h from raylib.h (same pattern as rdoc_helper.cpp) | include/exr_writer.h, src/exr_writer.cpp | TU isolation resolves CloseWindow/ShowCursor C-linkage clash | ~200 |
+| --:-- | Wired exrCapture state + setter + dumpScreenshotEXRs decl | src/demo3d.h | Public toggle + helper | ~100 |
+| --:-- | Added --screenshot-exr=0/1 CLI + dump call before TakeScreenshot in clean-screenshot path | src/main3d.cpp | CLI wiring | ~80 |
+| --:-- | Extended 3 gates for mode 17 + exrCapture: PT-dispatch (line 1262), PT-direct sub-dispatch (line 3314), giBlurActive (line 3029); impl dumpScreenshotEXRs (reads giIndirectTex/ptAccumTexture/ptDirectAccumTexture, Y-flip, save as 32-bit float EXR via exrw::save_rgb32f_exr) | src/demo3d.cpp | Engine wiring complete | ~600 |
+| --:-- | Broadened uSeparateGI early-return gate to fire for mode 17 (so cascade indirect lands in giIndirectTex MRT); fragColor=indirectColor in mode 17 for PNG sanity | res/shaders/raymarch.frag | 1-block change | ~100 |
+| --:-- | Added exr_writer.cpp + lib/tinyexr/miniz.c to SOURCES_3D; include path + /W0 exemption for miniz.c | CMakeLists.txt | Build clean | ~80 |
+| --:-- | Wrote hdr_exr_sweep.ps1 (6-capture sweep, N in {16,32,64} x cam in {0,2}, mode 17 + --screenshot-exr=1) | tools/v20_pre_measurement/hdr_exr_sweep.ps1 | Ready to drive | ~250 |
+| --:-- | Wrote analyze_hdr_exr.py: per-pixel signed rel = (cascadeGI-ptGI)/max(ptGI,eps); ptGI=clamp(pt_full-pt_direct,0); cascade 2x2-avg downsample to PT half-res; reports p05/p50/p95 + |p50|/|p95| + mean lum + dim%/bright% | tools/v20_pre_measurement/analyze_hdr_exr.py | Analyzer ready | ~350 |
+| --:-- | First sanity capture: pt_direct.exr was 3.8 KB all-zero -> diagnosed PT-direct sub-dispatch gate at line 3314 was only gated on (18 or 19); extended to include (exrCapture and mode==17). Post-fix: pt_direct.exr 274 KB, pt_full.exr 547 KB (correctly proportional at half-res) | src/demo3d.cpp | bug fixed pre-commit | ~200 |
+| --:-- | Ran 6-capture HDR sweep (1.0 min, 7 PNG + 18 EXR ~5 MB) | tools/v20_pre_measurement/captures_hdr_exr/ | All EXRs valid | ~150 |
+| --:-- | Ran analyzer + EPS_PT sensitivity sweep {1e-4 ... 1e-1}: central tendencies stable to +/-0.02 across thresholds | tools/v20_pre_measurement/hdr_exr_results.json | EPS-robust verdicts | ~200 |
+| --:-- | KEY FINDING A (methodology): LDR DELTA_REJECT verdict is a measurement artifact. cam2 N16->N64: LDR Delta-area 19.5%->20.4% (+0.9pp, "reject"), HDR |p50| 0.88->0.72 (-19%) and meanCasc/meanPT 0.16->0.25 (+58%). LDR colormap (divisor=0.2) was saturating real radiance signal. Prior (alpha/beta/gamma) rejections must be re-litigated against HDR | doc/7/hdr_exr_metric_impl.md | Methodology calibrated | ~500 |
+| --:-- | KEY FINDING B (structural): cascade GI delivers only 15-25% of PT GI luminance across all (cam,N). 78-93% of valid-PT pixels have cascade<0.5xPT (median pixel ~80% under-bright). cam0 also has firefly tail (|p95|~7-9), cam2 uniformly dim (|p95|~1.0=histogram-clip). Not a parameter-tuning issue -- structural property of cascade-vs-PT pipeline as architected | doc/7/hdr_exr_metric_impl.md | Architectural finding | ~400 |
+| --:-- | Wrote doc/7/hdr_exr_metric_impl.md (5 sections: engine wiring, analyzer, sweep result vs LDR table, 6 self-critique items, recommended next session -- re-litigate alpha/beta/gamma against HDR, ~2h) | doc/7/hdr_exr_metric_impl.md | Doc complete | ~3000 |
+| 12:22 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified metric() | ~912 |

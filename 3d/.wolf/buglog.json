@@ -3840,6 +3840,86 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-22T02:26:02.590Z"
+    },
+    {
+      "id": "bug-239",
+      "timestamp": "2026-05-22T04:06:19.772Z",
+      "error_message": "Missing guard clause",
+      "file": "src/demo3d.h",
+      "root_cause": "No early return/throw for edge case: v == exrCapture",
+      "fix": "Added guard clause: if (v == exrCapture)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T04:06:19.772Z"
+    },
+    {
+      "id": "bug-240",
+      "timestamp": "2026-05-22T04:07:28.353Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 10→16 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T04:07:28.353Z"
+    },
+    {
+      "id": "bug-241",
+      "timestamp": "2026-05-22T04:07:38.799Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (raymarchRenderMode == 16 || raymarchRenderMode == )",
+      "fix": "Changed to: if (raymarchRenderMode == 16 || raymarchRenderMode == )",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T04:07:38.799Z"
+    },
+    {
+      "id": "bug-242",
+      "timestamp": "2026-05-22T04:11:27.380Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "11 lines replaced/restructured",
+      "fix": "Rewrote 21→11 lines (11 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T04:11:27.380Z"
+    },
+    {
+      "id": "bug-243",
+      "timestamp": "2026-05-22T04:13:03.901Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (raymarchRenderMode == 18 || raymarchRenderMode == )",
+      "fix": "Changed to: if (raymarchRenderMode == 18 || raymarchRenderMode == )",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T04:13:03.901Z"
     }
   ]
 }

@@ -978,8 +978,14 @@ void main() {
             // Step 10 (codex 06 F3): gate on uRenderMode == 0 so the new diagnostic
             // modes (9, 10) always reach the composite below; the GI-blur split path
             // is only meaningful for the default render mode.
-            if (uSeparateGI != 0 && uRenderMode == 0) {
-                fragColor = vec4(directColor,   1.0);
+            // 2026-05-22 HDR-EXR honest metric: mode 17 (GI-only) joins the split
+            // path when --screenshot-exr is on (C++ widens uSeparateGI accordingly)
+            // so fragGI receives HDR-linear cascade indirect for the EXR dump.
+            // fragColor still uses indirectColor in mode 17 to preserve the
+            // mode-17 PNG visual cross-check.
+            if (uSeparateGI != 0 && (uRenderMode == 0 || uRenderMode == 17)) {
+                vec3 outColor = (uRenderMode == 17) ? indirectColor : directColor;
+                fragColor = vec4(outColor,      1.0);
                 fragGI    = vec4(indirectColor, 1.0);
                 return;
             }

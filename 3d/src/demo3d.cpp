@@ -38,6 +38,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// 2026-05-22 HDR-EXR honest metric (doc/7/hdr_exr_metric_impl.md).
+// tinyexr lives in its own TU (exr_writer.cpp) — including its 11k-line
+// header here pulls <windows.h> which collides with raylib (CloseWindow /
+// ShowCursor linkage clash), the same reason rdoc_helper.cpp exists.
+#include "exr_writer.h"
+
 // Phase 9b: Halton low-discrepancy sequence for probe jitter.
 // Maps index → [0,1) in the given base (van der Corput sequence).
 static float halton(uint32_t idx, uint32_t base) {
@@ -1260,7 +1266,10 @@ void Demo3D::render() {
     //     checks. Fix: add 20 to the dispatch gate so PT is populated.
     // Runs BEFORE raymarchPass so the texture is up-to-date for display.
     if (raymarchRenderMode == 16 || raymarchRenderMode == 18 ||
-        raymarchRenderMode == 19 || raymarchRenderMode == 20) {
+        raymarchRenderMode == 19 || raymarchRenderMode == 20 ||
+        // 2026-05-22 HDR-EXR honest metric: mode-17 EXR capture needs
+        // pt_full + pt_direct accumulators populated for the dump.
+        (exrCapture && raymarchRenderMode == 17)) {
         ptDispatchReference();
     }
 
@@ -3023,7 +3032,15 @@ void Demo3D::raymarchPass() {
     // (v1.2 reversion of F1: hybrid noise is now denoised by hybrid_blur.comp BEFORE merging
     // with cascade. Blurring the merged result over-softens cascade. GI blur is back to being
     // a pure user-controlled toggle.)
-    const bool giBlurActive = useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6);
+    // 2026-05-22 HDR-EXR honest metric: when exrCapture is on in mode 17 we also
+    // need the MRT FBO bound so fragGI (location=2) lands in giIndirectTex for
+    // dumpScreenshotEXRs. giBlurPass() is NOT invoked in mode 17 (see render()
+    // gate at line 1308 — still gated on mode 0/3/6), so the screen ends up
+    // empty after raymarchPass returns. dumpScreenshotEXRs blits giDirectTex
+    // (which carries indirectColor in mode 17) to the default framebuffer
+    // afterwards so the PNG sanity-check is non-black.
+    const bool giBlurActive = (useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6))
+                              || (exrCapture && raymarchRenderMode == 17);
     glUniform1i(glGetUniformLocation(prog, "uSeparateGI"), giBlurActive ? 1 : 0);
 
     if (giBlurActive) {
@@ -3294,7 +3311,10 @@ void Demo3D::ptDispatchReference() {
     // Dispatch 2: DIRECT-ONLY PT (uPtMaxBounces = 1). Writes ptDirectAccumTexture.
     // Mode 19 computes PT_GI = ptAccumTexture - ptDirectAccumTexture per pixel.
     // Skips this dispatch when only mode 16 is active (mode 16 doesn't need direct-only).
-    if (raymarchRenderMode == 18 || raymarchRenderMode == 19) {
+    // 2026-05-22 HDR-EXR honest metric: mode-17 EXR capture also needs direct-only
+    // so the analyzer can compute (cascadeGI - ptGI) where ptGI = ptFull - ptDirect.
+    if (raymarchRenderMode == 18 || raymarchRenderMode == 19 ||
+        (exrCapture && raymarchRenderMode == 17)) {
         glUniform1i(maxBouncesLoc, 1);
         glBindImageTexture(0, ptDirectAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
         glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "pt_reference_direct");
@@ -6686,6 +6706,97 @@ void Demo3D::initToolsPaths() {
     analysisDir   = tools.string();
     toolsScript   = (tools / "analyze_screenshot.py").string();
     std::cout << "[6a] Tools path: " << tools << std::endl;
+}
+
+// 2026-05-22 HDR-EXR honest metric (doc/7/hdr_exr_metric_impl.md).
+// Dumps 3 EXR sidecars from existing HDR-linear float textures:
+//   <stem>_cascade_gi.exr  — giIndirectTex (RGBA16F, full viewport)
+//   <stem>_pt_full.exr     — ptAccumTexture (RGBA32F, half viewport, MEAN)
+//   <stem>_pt_direct.exr   — ptDirectAccumTexture (RGBA32F, half viewport, MEAN)
+//
+// PT textures store the running per-frame radiance MEAN (mix() in
+// pt_reference.comp), so they are already normalized. giIndirectTex is the
+// raw post-MB cascade indirect radiance (pre-tonemap).
+//
+// Caller must ensure (a) exrCapture=true, (b) raymarchRenderMode=17 so the
+// raymarch.frag early-return populated giIndirectTex, (c) PT accumulator has
+// >= a few rays/pixel for a stable mean (ptSampleCount logged).
+//
+// Also blits giDirectTex (which carries indirectColor in mode 17 via the
+// shader early-return) to the default framebuffer so the subsequent
+// TakeScreenshot(.png) PNG sanity-check is non-black.
+void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
+    if (!exrCapture) {
+        std::cerr << "[hdr-exr] dumpScreenshotEXRs called but exrCapture=false\n";
+        return;
+    }
+    if (giIndirectTex == 0 || ptAccumTexture == 0 || ptDirectAccumTexture == 0) {
+        std::cerr << "[hdr-exr] required textures not allocated (giIndirect="
+                  << giIndirectTex << " ptAccum=" << ptAccumTexture
+                  << " ptDirect=" << ptDirectAccumTexture << ")\n";
+        return;
+    }
+
+    auto saveExrRGB = [](const std::string& path, const std::vector<float>& rgb,
+                          int w, int h) -> bool {
+        // EXR convention is top-left origin; GL textures are bottom-left.
+        // Flip rows here before handing to the wrapper.
+        std::vector<float> flipped(rgb.size());
+        const size_t row = static_cast<size_t>(w) * 3;
+        for (int y = 0; y < h; ++y) {
+            std::memcpy(&flipped[y * row], &rgb[(h - 1 - y) * row], row * sizeof(float));
+        }
+        return exrw::save_rgb32f_exr(path.c_str(), flipped.data(), w, h);
+    };
+
+    auto readTexRGB = [](GLuint tex, int& w, int& h) -> std::vector<float> {
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,  &w);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+        std::vector<float> buf(static_cast<size_t>(w) * h * 3);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, buf.data());
+        GLenum e = glGetError();
+        if (e != GL_NO_ERROR) {
+            std::cerr << "[hdr-exr] glGetTexImage err=0x" << std::hex << e
+                      << std::dec << " tex=" << tex << "\n";
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return buf;
+    };
+
+    // 1. cascade GI (full viewport, RGBA16F → fp32 readback)
+    int w = 0, h = 0;
+    std::vector<float> giData = readTexRGB(giIndirectTex, w, h);
+    saveExrRGB(stem + "_cascade_gi.exr", giData, w, h);
+
+    // 2. PT full and 3. PT direct (half viewport, RGBA32F)
+    int ptW = 0, ptH = 0;
+    std::vector<float> ptFull = readTexRGB(ptAccumTexture, ptW, ptH);
+    saveExrRGB(stem + "_pt_full.exr", ptFull, ptW, ptH);
+
+    int pdW = 0, pdH = 0;
+    std::vector<float> ptDir = readTexRGB(ptDirectAccumTexture, pdW, pdH);
+    saveExrRGB(stem + "_pt_direct.exr", ptDir, pdW, pdH);
+
+    std::cout << "[hdr-exr] dumped stem=" << stem
+              << " cascadeGI=" << w << "x" << h
+              << " ptFull=" << ptW << "x" << ptH
+              << " ptDirect=" << pdW << "x" << pdH
+              << " ptSamples=" << ptSampleCount << "\n";
+
+    // Blit giDirectTex (location=0, = indirectColor in mode 17) to the default
+    // framebuffer so the subsequent --screenshot PNG is non-black. Blit reads
+    // attachment 0 of giFBO; default framebuffer is the destination.
+    if (giFBO != 0 && giDirectTex != 0) {
+        int sw = GetScreenWidth(), sh = GetScreenHeight();
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, giFBO);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK);
+        glBlitFramebuffer(0, 0, sw, sh, 0, 0, sw, sh,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
 }
 
 void Demo3D::takeScreenshot(bool launchAiAnalysis) {
