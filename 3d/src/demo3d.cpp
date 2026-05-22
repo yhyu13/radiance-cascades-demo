@@ -185,22 +185,31 @@ Demo3D::Demo3D()
     , baseRaysPerProbe(8)
     , blendFraction(0.5f)
     , dirRes(8)
-    , useDirectionalMerge(true)
+    // useDirectionalMerge / useDirBilinear default OFF: M4_iso_nearest merge.
+    // doc/7/engine_default_validation_impl.md cleared all 3 ship blockers on
+    // (alcove + plain Cornell + Sponza, mode 0 full composite); +10.7%..+51.9%
+    // mode-0 luminance lift, 0% darkened, 0pp bright-clip increase. Pair this
+    // with useMultiBounce=true below (super-additive — alpha_m4_deepdive_impl.md §4.2).
+    // Revert with --use-directional-merge=1 --use-dir-bilinear=1.
+    , useDirectionalMerge(false)
     , useColocatedCascades(false)   // non-colocated: better spatial coverage
     , useScaledDirRes(true)         // D4/D8/D16/D16: upper cascades get finer angular res
-    , useDirBilinear(true)
+    , useDirBilinear(false)
     , useSpatialTrilinear(true)
     , useWeightedSample(false)  // Phase 3 (default OFF; opt-in via GUI / CLI)
     , phase3DebugMode(0)
     , giStrength(1.0f)
     , leakHeatmapDivisor(0.5f)  // mode 14 sensitivity; sqrt-scaled in shader
-    // Phase MB (multi-bounce temporal feedback) defaults
-    , useMultiBounce(false)
+    // Phase MB (multi-bounce temporal feedback) defaults.
+    // useMultiBounce default ON: doc/7/engine_default_validation_impl.md cleared
+    // the ship blockers paired with useDirectionalMerge=false above. Super-additive
+    // stack (alpha_m4_deepdive_impl.md §4.2: cam0 +44.3 ratio vs sum-of-singletons
+    // 37.9, +16.8%). Sponza shows a warm shift caveat — physically expected,
+    // bright-clip stays at 0. Revert with --use-multi-bounce=0.
+    , useMultiBounce(true)
     // gain=1.0 is physically grounded (energy-conserving Lambertian: outgoing = albedo × irradiance).
-    // Empirical: gives ~3-4% brightness gain on cornell-orig (cascade integration losses limit
-    // the effective hemi_factor to ~0.05 vs the 0.5 theory predicted; see impl doc).
-    // Stable at gain=1.0 because the small hemi_factor keeps geometric series safe.
-    // User can boost to 1.5 for ~6% gain (passes the ≥5% v0.5 gate) or 2.0 for ~10%.
+    // Validated across (alcove + plain Cornell + Sponza) at this gain. Boost to
+    // 1.5/2.0 for more bounce (caps in mb_gain_sweep_impl.md U-curve).
     , multiBounceGain(1.0f)
     , deltaHeatmapDivisor(0.2f)   // mode 18 sensitivity for cornell-scale scenes
     // Hybrid correction (doc/7) defaults
