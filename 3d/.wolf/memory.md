@@ -1761,3 +1761,17 @@
 | 10:02 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified verdict() | ~898 |
 | 10:05 | Edited .wolf/cerebrum.md | +1 DNR entry (read shader for already-shipped toggle uniforms before estimating engine work) | ~1.0k |
 | 10:06 | (α) merge-mode sweep wrap-up: report §14 + impl doc + memory + cerebrum all updated. Verdict: MIXED + ALPHA_LEVERAGE_WRONG_DIR — (α) rejected as cure. Engine work was ~15min not the predicted 2-3h (toggles already existed; only CLI wiring missing). cam0 nearly insensitive to all OFF-arms; cam2 sensitive only to useDirectionalMerge — turning it OFF *increases* Δ-area by +14.6%/+19.6%. Net hypothesis tree: (γ),(β),(α) all eliminated as global cures; (δ) sole leading candidate; (ε) new follow-on. Ready to commit. | doc/7/{alpha_merge_sweep_impl.md, mbrc_v20_pre_measurement_report.md}, src/{demo3d.h, main3d.cpp}, tools/v20_pre_measurement/{alpha_merge_sweep.ps1, analyze_alpha_merge.py, alpha_merge_results.json}, .wolf/{cerebrum.md, memory.md}, memory/project_phase_status.md | sweep landed, hypothesis tree updated | ~12k |
+| 10:04 | Session end: 3 writes across 3 files (alpha_merge_sweep_impl.md, mbrc_v20_pre_measurement_report.md, project_phase_status.md) | 9 reads | ~27454 tok |
+| 10:16 | Created tools/v20_pre_measurement/delta_probe_density_sweep.ps1 | — | ~805 |
+| 10:17 | Created tools/v20_pre_measurement/analyze_delta_probe_density.py | — | ~2139 |
+| 10:22 | Created doc/7/delta_probe_density_sweep_impl.md | — | ~4891 |
+| 10:23 | Edited doc/7/mbrc_v20_pre_measurement_report.md | modified follow() | ~1739 |
+
+## Session: 2026-05-22 10:24
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:26 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified verdict() | ~1336 |
+| 10:35 | Edited .wolf/cerebrum.md | +2 DNR entries (3-place toggle-search check: shader/GUI/CLI; named-hypothesis-tree exhaustion is a verdict not failure → falsify metric before expanding tree) | ~2.1k |
+| 10:36 | Edited memory/project_phase_status.md | hypothesis tree updated: ALL 4 named candidates eliminated; HDR-EXR metric pivot recommended next | ~2.0k |
+| 10:38 | (δ) probe-density sweep wrap-up: report §15 + impl doc + memory + cerebrum all updated. Verdict: DELTA_REJECT — all N ∈ {16,32,48,64} within ±10% on both cams. Zero engine work (--cascade-c0-res= already shipped during Step 12). Named-hypothesis tree (α,β,γ,δ) now exhausted. Mode-18 informational finding: cam2 direct-light Δ -11.2%/-13.2% at N=48/64 but mode-19 GI unmoved. Recommends HDR-EXR metric pivot (~4-5h, tinyexr+mode22+per-pixel ratio) as next highest priority — LDR PNG classifier may have a 20% floor by construction. Ready to commit. | doc/7/{delta_probe_density_sweep_impl.md, mbrc_v20_pre_measurement_report.md}, tools/v20_pre_measurement/{delta_probe_density_sweep.ps1, analyze_delta_probe_density.py, delta_probe_density_results.json, captures_delta/*.png}, .wolf/{cerebrum.md, memory.md}, memory/project_phase_status.md | sweep landed, hypothesis tree exhausted | ~14k |

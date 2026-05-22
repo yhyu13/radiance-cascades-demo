@@ -3824,6 +3824,22 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-22T02:02:30.254Z"
+    },
+    {
+      "id": "bug-238",
+      "timestamp": "2026-05-22T02:26:02.590Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "11 lines replaced/restructured",
+      "fix": "Rewrote 16→26 lines (11 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T02:26:02.590Z"
     }
   ]
 }

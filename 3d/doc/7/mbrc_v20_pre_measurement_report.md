@@ -895,3 +895,117 @@ If (δ) also rejects as a cure, all four named hypotheses are out and the next
 session opens to "(ε) — per-direction-bin upper-cascade sampling fetch
 geometry" plus a broader review of cascade falloff between C0 and upper
 cascades. At that point bug-230 must be fixed before any further sweep.
+
+## 15. (δ) Spatial probe density sweep — 2026-05-22 afternoon
+
+**Verdict: DELTA_REJECT — all four named hypotheses are now eliminated.**
+**The residual asymmetric cascade-vs-PT Δ pattern is not the result of any
+single tunable parameter in the engine as currently architected.**
+
+Full impl notes: [delta_probe_density_sweep_impl.md](delta_probe_density_sweep_impl.md).
+
+### 15.1. Zero engine work — `--cascade-c0-res=` already shipped
+
+The (α) impl doc's cerebrum DNR ("read shader for already-shipped toggles
+before estimating engine work") paid off a second time. The §14.7 plan
+estimated "~30 min CLI wiring" for (δ); reality was zero engine work because
+the `--cascade-c0-res=N` flag was shipped during the unrelated Step 12 scaling
+experiment ([main3d.cpp:540](../../src/main3d.cpp#L540), setter at
+[demo3d.cpp:7151](../../src/demo3d.cpp#L7151)) and never re-noticed. Cerebrum
+addendum updated to grep CLI parsers + setters, not just shader uniforms.
+
+### 15.2. Pre-sweep md5 sanity check passed (bug-234 lesson absorbed)
+
+Captured cam0 m19 at N ∈ {16, 32, 64}: three distinct md5 hashes
+(`CCF284BF…`, `55B37903…`, `514A6F6A…`). Flag is live; no silent fail.
+
+### 15.3. B1 — Δ-band area (mode 19)
+
+4 N values × 2 cams. Engine default N=32. All merge toggles ON (best per
+§14). MB OFF, hybrid OFF, single seed, frames=512.
+
+| cam | N=16 | N=32 (ref) | N=48 | N=64 |
+|---|---:|---:|---:|---:|
+| cam0 | 26.54% (+0.0%) | 26.53% ref | 27.90% (+5.2%) | 27.33% (+3.0%) |
+| cam2 | 19.51% (−4.5%) | 20.43% ref | 19.66% (−3.8%) | 19.75% (−3.3%) |
+
+**All cells within ±10% of N=32 on both cams.** Verdict: **DELTA_REJECT** —
+all N within ±10% on both cams. Probe density has essentially no leverage on
+the mode-19 Δ pattern across an 8× volume range.
+
+Visual cross-check: cam2 mode-19 at N=16, N=32, N=64 looks **essentially
+identical** — same blue spill on the right wall, same red lid trim, same
+pinkish back wall. The asymmetric Δ pattern's spatial extent and saturation
+are visually indistinguishable across N. cam0 N=64 looks identical to cam0
+baseline. The classifier's small numerical deltas are invisible to the eye.
+
+### 15.4. Informational — mode 18 (cascade_total − PT_total) does respond on cam2
+
+| cam | N=16 m18 | N=32 m18 | N=48 m18 | N=64 m18 |
+|---|---:|---:|---:|---:|
+| cam0 | 25.87% (+2.4%) | 25.26% ref | 26.76% (+5.9%) | 26.80% (+6.1%) |
+| cam2 | 24.23% (−0.5%) | 24.36% ref | 21.62% (**−11.2%**) | 21.14% (**−13.2%**) |
+
+Mode 18 (includes direct lighting) at higher N reduces cam2 Δ by 11-13%.
+Mode 19 (GI-only) does not move. **Inference**: probe density improves
+direct-light edge accuracy but not the GI integration. The B1 rule is mode-19
+specific (the named-hypothesis tree is about GI accuracy), so this is
+informational, not verdict-changing — but it hints that higher-N may improve
+*perceptual* quality for hybrid+ship users (see §15.7 informational re-test).
+
+### 15.5. The named-hypothesis tree is exhausted
+
+| Hypothesis | Status | Sweep |
+|---|---|---|
+| (γ) angular under-sampling | REJECTED (≤2% vs ≥50% bar) | §12, 2026-05-21 |
+| (β) MB-gain | LEVERAGE NOT CURE (+363%, wrong sign) | §13, 2026-05-22 AM |
+| (α) merge-time directional weighting | LEVERAGE WRONG DIR (+19% cam2) | §14, 2026-05-22 PM |
+| (δ) spatial probe density | **FLAT REJECT (±5% across 8× volume range)** | §15, 2026-05-22 PM (this section) |
+
+(δ) is the only sweep to produce a *flat* reject — not "lever points the
+wrong way" but "lever has no effect at all". This is the strongest negative
+signal of the four; it eliminates a *class* of fix, not just a parameter value.
+
+### 15.6. Reading and the v2.0 ship decision
+
+**The residual asymmetric cascade-vs-PT Δ pattern is structural to the
+cascade architecture as currently implemented**, not a tuning problem. Three
+forward paths follow (impl doc §5.1 has full discussion):
+
+1. **Accept the residual; ship MBRC v2.0 at default settings.** Document the
+   ~20% LDR-Δ-band floor as the cascade's intrinsic measured ceiling on
+   cornell-orig-alcove and rely on the hybrid PT-correction (v1.3.1, already
+   shipped) to close it perceptually. Only goal-aligned if hybrid can be
+   retired despite the cascade residual (per [project_mbrc_v20_decisions](../../../C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_decisions.md)).
+2. **Investigate (ε) per-direction-bin upper-cascade fetch geometry.** The
+   §14.4 observation that bilinear is neutral but directional-bin lookup is
+   not suggests *which texel* matters more than *the blend across it*. Needs
+   instrumentation (per-bin fetch-coordinate visualization), not just an A/B.
+3. **Pivot to honest HDR metrics.** All 4 sweeps used LDR PNG + saturation
+   classification. The classifier may have a 20% floor by construction
+   (colormap divisor saturates whenever |Δ| > 0.2 in radiance space); the
+   "flat" (δ) result is consistent with both "(δ) really has no leverage" and
+   "(δ) has leverage hidden below the tonemap-saturation floor". Until HDR
+   falsifies this, the cascade-residual finding is contingent on a
+   measurement assumption.
+
+### 15.7. Recommended next action — HDR-EXR metric pivot
+
+Priority order:
+
+1. **HDR-EXR metric (impl §7.1)** — ~4-5h: tinyexr + render mode 22 (PT-GI-only)
+   + `--screenshot-exr` + new analyzer computing per-pixel radiance ratios.
+   Re-runs a subset of the (α), (β), (δ) sweeps with HDR to validate or
+   falsify the "LDR floor is real" assumption. **Without this, any further
+   cascade work is built on unverified measurement ground.**
+2. **(ε) per-direction-bin fetch geometry instrumentation (impl §7.2)** —
+   investigative, no time estimate until the diagnostic mode is designed.
+3. **(δ) + hybrid combined re-test (impl §7.4)** — 12 captures, ~3 min.
+   Informational ship-quality probe; checks whether higher-N is a perceptual
+   win for the hybrid path even though mode-19 GI residual is flat.
+4. **Hypotheses not yet on the tree (impl §7.6)** — smoothstep blend-zone
+   math toggle, `uGIStrength` sweep, cascade-count sweep. Brainstorm tier.
+
+bug-230 (single-seed concern) stays deferred — verdict was REJECT, not WEAK,
+so the gate did not trigger. Becomes mandatory if the HDR re-run or (ε) sweep
+lands in WEAK band.
