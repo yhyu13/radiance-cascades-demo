@@ -1828,3 +1828,22 @@
 | --:-- | KEY FINDING B (structural): cascade GI delivers only 15-25% of PT GI luminance across all (cam,N). 78-93% of valid-PT pixels have cascade<0.5xPT (median pixel ~80% under-bright). cam0 also has firefly tail (|p95|~7-9), cam2 uniformly dim (|p95|~1.0=histogram-clip). Not a parameter-tuning issue -- structural property of cascade-vs-PT pipeline as architected | doc/7/hdr_exr_metric_impl.md | Architectural finding | ~400 |
 | --:-- | Wrote doc/7/hdr_exr_metric_impl.md (5 sections: engine wiring, analyzer, sweep result vs LDR table, 6 self-critique items, recommended next session -- re-litigate alpha/beta/gamma against HDR, ~2h) | doc/7/hdr_exr_metric_impl.md | Doc complete | ~3000 |
 | 12:22 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified metric() | ~912 |
+| 12:24 | Session end: 1 writes across 1 files (project_phase_status.md) | 3 reads | ~4484 tok |
+| 12:29 | Created tools/v20_pre_measurement/hdr_relitigate_sweep.ps1 | — | ~1571 |
+| 12:30 | Created tools/v20_pre_measurement/analyze_hdr_relitigate.py | — | ~2694 |
+| 12:37 | Created doc/7/hdr_relitigation_impl.md | — | ~3850 |
+
+## Session: 2026-05-22 12:39 — HDR re-litigation of (alpha/beta/gamma)
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 12:29 | Wrote unified 26-capture harness (alpha 5+beta 5+gamma 3 cfgs x 2 cams) | tools/v20_pre_measurement/hdr_relitigate_sweep.ps1 | All 3 hypotheses, mode 17, --screenshot-exr=1, 512 frames, single seed | ~1571 |
+| 12:30 | Wrote per-axis baseline-compare analyzer + pre-committed verdict rule (>=20% LEVERAGE, <=10% TIE) | tools/v20_pre_measurement/analyze_hdr_relitigate.py | Bidirectional |movement| bar lands all 3 hypotheses cleanly | ~2694 |
+| 12:32 | Ran 26-capture sweep (5.7 min, 26 PNG + 78 EXR ~25 MB) | tools/v20_pre_measurement/captures_hdr_{alpha,beta,gamma}/ | Console confirms `[MB] cascade-bake feedback ACTIVE` on (beta) captures (bug-234 fix verified mode-agnostic) | ~150 |
+| 12:34 | KEY FINDING (alpha) merge-mode = LDR_VERDICT_REVERSED. M4_iso_nearest (dirMerge=0, dirBilinear=0, spatialTrilinear=1): cam0 ratio 0.201->0.309 (+53%), cam2 0.140->0.165 (+18%); M2_iso_merge +29% cam0; M3_no_spatialtri +21% cam0. LDR had called these "tie" or "leverage wrong direction" -- smart-merge features SUBTRACT cascade energy. New working hypothesis (epsilon): directional-merge weighting suppresses cascade radiance. | doc/7/hdr_relitigation_impl.md | Tree NOT exhausted; biggest single-knob brightness lever found | ~600 |
+| 12:35 | KEY FINDING (beta) MB-gain = LDR_CONFIRMED but magnitude x100 larger. g=1.0 vs MB-OFF on cam0: ratio 0.201->0.474 (+136% brightness, closes ~half cascade-vs-PT gap). LDR originally reported "+3.5% at g=1.0" -- under-reported by order of magnitude. g=2.0 = +13,770% ratio runaway. | doc/7/hdr_relitigation_impl.md | MB at g=1.0 = largest single brightness knob in engine | ~400 |
+| 12:36 | KEY FINDING (gamma) angular-bin = LDR_CONFIRMED. D=8->16 only +9.5%/+8.5% ratio (borderline TIE under 10% bar). Still REJECT. | doc/7/hdr_relitigation_impl.md | Angular resolution doubling buys substantially less than (alpha) M4 | ~200 |
+| 12:37 | Wrote doc/7/hdr_relitigation_impl.md (8 sections: harness, pre-commit rule, headline numbers, per-hypothesis verdicts, cross-hypothesis takeaway "2 of 4 LDR rejections were artifacts", recommended next session (alpha M4 deep-dive: visual A/B, MB stacking, read radiance_3d.comp:656-682, D=16xM4), 6 self-critique items) | doc/7/hdr_relitigation_impl.md | Doc complete | ~3850 |
+| 12:40 | Appended 3 cerebrum DNR entries: "LDR-saturation hypothesis 50% right (2 of 4 reverse)", "MB g=1.0 is largest brightness knob hidden by LDR", "Bidirectional |movement| baseline rule lands LEVERAGE/TIE cleanly without direction-of-expectation patch" | .wolf/cerebrum.md | Pattern captured for next session | ~800 |
+
+| 12:40 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified session() | ~896 |
