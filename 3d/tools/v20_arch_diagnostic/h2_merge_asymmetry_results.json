@@ -1,0 +1,72 @@
+{
+  "epsilon_pt_luminance": 0.001,
+  "rows": [
+    {
+      "cam": 0,
+      "merge": "M0_baseline",
+      "sum_pos": 89.47866821289062,
+      "sum_neg": 1657.2667236328125,
+      "abs_ratio": 0.053991712339911624,
+      "energy_ratio": 0.4348015891876097,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1206.083984375
+    },
+    {
+      "cam": 2,
+      "merge": "M0_baseline",
+      "sum_pos": 70.45629119873047,
+      "sum_neg": 2278.701171875,
+      "abs_ratio": 0.030919495749746076,
+      "energy_ratio": 0.28249859632628566,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 869.4422607421875
+    },
+    {
+      "cam": 0,
+      "merge": "M2_iso_merge",
+      "sum_pos": 90.00980377197266,
+      "sum_neg": 1302.218994140625,
+      "abs_ratio": 0.06912032782271997,
+      "energy_ratio": 0.5629902180820259,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1561.662841796875
+    },
+    {
+      "cam": 2,
+      "merge": "M2_iso_merge",
+      "sum_pos": 41.395179748535156,
+      "sum_neg": 2171.349609375,
+      "abs_ratio": 0.019064262875866555,
+      "energy_ratio": 0.307936622644434,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 947.7325439453125
+    },
+    {
+      "cam": 0,
+      "merge": "M4_iso_nearest",
+      "sum_pos": 138.9709014892578,
+      "sum_neg": 1058.2197265625,
+      "abs_ratio": 0.1313251851207576,
+      "energy_ratio": 0.6686044352205376,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1854.6231689453125
+    },
+    {
+      "cam": 2,
+      "merge": "M4_iso_nearest",
+      "sum_pos": 59.76940155029297,
+      "sum_neg": 2113.481689453125,
+      "abs_ratio": 0.02828006594453091,
+      "energy_ratio": 0.33270920291164524,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 1023.9747924804688
+    }
+  ],
+  "by_merge_cam2_over_cam0": {
+    "M0_baseline": 0.6497184080079159,
+    "M2_iso_merge": 0.5469662043036929,
+    "M4_iso_nearest": 0.4976174033334103
+  },
+  "verdict": "MIXED",
+  "verdict_detail": "spreads do not fit any pre-committed band: {'M0_baseline': 0.6497184080079159, 'M2_iso_merge': 0.5469662043036929, 'M4_iso_nearest': 0.4976174033334103}"
+}
