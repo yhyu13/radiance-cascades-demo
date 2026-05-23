@@ -1,0 +1,55 @@
+{
+  "epsilon_pt_luminance": 0.001,
+  "verdict_thresholds": {
+    "mb_source_band": [
+      0.9,
+      1.1
+    ],
+    "firstbounce_min": 1.2,
+    "firstbounce_delta_max": 0.1
+  },
+  "rows": [
+    {
+      "cam": 0,
+      "mb": "ON",
+      "sum_pos": 1591.796630859375,
+      "sum_neg": 502.4005126953125,
+      "abs_ratio": 3.168381780344124,
+      "energy_ratio": 1.3927348531656132,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 3863.268310546875
+    },
+    {
+      "cam": 0,
+      "mb": "OFF",
+      "sum_pos": 138.9709014892578,
+      "sum_neg": 1058.2197265625,
+      "abs_ratio": 0.1313251851207576,
+      "energy_ratio": 0.6686044352205376,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1854.6231689453125
+    },
+    {
+      "cam": 2,
+      "mb": "ON",
+      "sum_pos": 786.1710205078125,
+      "sum_neg": 1494.217041015625,
+      "abs_ratio": 0.5261424538254824,
+      "energy_ratio": 0.7699422014839358,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 2369.64111328125
+    },
+    {
+      "cam": 2,
+      "mb": "OFF",
+      "sum_pos": 59.76940155029297,
+      "sum_neg": 2113.481689453125,
+      "abs_ratio": 0.02828006594453091,
+      "energy_ratio": 0.33270920291164524,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 1023.9747924804688
+    }
+  ],
+  "verdict": "MIXED",
+  "verdict_detail": "MB-OFF cam0 ratio = 0.669; MB-ON = 1.393 -> partial credit each; neither clean attribution"
+}
