@@ -1881,3 +1881,26 @@
 |------|--------|---------|---------|--------|
 | 06:50 | Created doc/7/engine_default_validation_impl.md | — | ~2945 |
 | 06:51 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified validation() | ~590 |
+| 06:52 | Session end: 2 writes across 2 files (engine_default_validation_impl.md, project_phase_status.md) | 7 reads | ~9299 tok |
+| 07:41 | Edited src/demo3d.cpp | expanded (+6 lines) | ~196 |
+| 07:41 | Edited src/demo3d.cpp | 8→11 lines | ~204 |
+| 07:44 | Session end: 4 writes across 3 files (engine_default_validation_impl.md, project_phase_status.md, demo3d.cpp) | 8 reads | ~109658 tok |
+| 09:53 | Session end: 4 writes across 3 files (engine_default_validation_impl.md, project_phase_status.md, demo3d.cpp) | 8 reads | ~109658 tok |
+| 10:29 | Edited doc/7/mbrc_v20_pre_measurement_report.md | modified program() | ~2863 |
+| 10:29 | Edited doc/7/mbrc_v20_pre_measurement_plan.md | expanded (+20 lines) | ~355 |
+| 10:30 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | expanded (+12 lines) | ~594 |
+| 10:30 | Session end: 7 writes across 5 files (engine_default_validation_impl.md, project_phase_status.md, demo3d.cpp, mbrc_v20_pre_measurement_report.md, mbrc_v20_pre_measurement_plan.md) | 10 reads | ~135986 tok |
+| 10:39 | Created tools/v20_arch_diagnostic/asymmetry_diagnostic_sweep.ps1 | — | ~697 |
+| 10:44 | Created doc/7/v20_cam2_asymmetry_diagnostic_impl.md | — | ~3047 |
+
+## Session: 2026-05-23 10:45
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 12:40 | Created tools/v20_arch_diagnostic/absolute_residual_capture.ps1 | — | ~557 |
+| 12:41 | Created tools/v20_arch_diagnostic/analyze_absolute_residual.py | — | ~3057 |
+| 12:43 | Created doc/7/v20_absolute_residual_impl.md | — | ~3108 |
+| 12:43 | Edited doc/7/v20_absolute_residual_impl.md | expanded (+9 lines) | ~188 |
+| 12:44 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~821 |
+| 12:44 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/feedback_colormap_normalized_pitfall.md | — | ~638 |
+| 12:45 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~114 |

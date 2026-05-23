@@ -1,0 +1,48 @@
+{
+  "epsilon_pt_luminance": 0.001,
+  "verdict_thresholds": {
+    "basis_error_lo": 0.7,
+    "basis_error_hi": 1.3,
+    "net_under_lo": 0.5,
+    "net_over_hi": 2.0
+  },
+  "delta_definition": "Lc - Lpt; Lpt = lum(pt_full - pt_direct); cascade 2x2-avg downsampled to PT 640x360",
+  "rows": [
+    {
+      "cam": 0,
+      "valid_pixels": 34353,
+      "total_pixels": 230400,
+      "sum_pos": 478.4875183105469,
+      "sum_neg": 2682.2431640625,
+      "abs_ratio": 0.17839080539805877,
+      "pos_count": 8999,
+      "neg_count": 25354,
+      "mean_pos": 0.05317118763923645,
+      "mean_neg": 0.10579171776771545,
+      "mean_pt": 0.18048983812332153,
+      "mean_cascade": 0.11633951216936111,
+      "integrated_pt": 6200.3671875,
+      "integrated_cascade": 3996.611328125,
+      "verdict": "NET_UNDER_BRIGHT",
+      "verdict_detail": "|Sum+/Sum-| = 0.178 < 0.50 -> cascade loses energy"
+    },
+    {
+      "cam": 2,
+      "valid_pixels": 26194,
+      "total_pixels": 230400,
+      "sum_pos": 270.1284484863281,
+      "sum_neg": 4133.5078125,
+      "abs_ratio": 0.06535089825388546,
+      "pos_count": 5011,
+      "neg_count": 21183,
+      "mean_pos": 0.05390709266066551,
+      "mean_neg": 0.1951332539319992,
+      "mean_pt": 0.2386264204978943,
+      "mean_cascade": 0.09113539755344391,
+      "integrated_pt": 6250.58056640625,
+      "integrated_cascade": 2387.20068359375,
+      "verdict": "NET_UNDER_BRIGHT",
+      "verdict_detail": "|Sum+/Sum-| = 0.065 < 0.50 -> cascade loses energy"
+    }
+  ]
+}
