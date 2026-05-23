@@ -1009,3 +1009,153 @@ Priority order:
 bug-230 (single-seed concern) stays deferred — verdict was REJECT, not WEAK,
 so the gate did not trigger. Becomes mandatory if the HDR re-run or (ε) sweep
 lands in WEAK band.
+
+## 16. v2.0-pre closeout (2026-05-23)
+
+The §15.7 "HDR-EXR metric pivot" recommendation was acted on, and the
+subsequent re-litigation re-opened part of the named-hypothesis tree. This
+section closes out v2.0-pre with the post-HDR verdict, the architectural
+change shipped (engine-default flip), and the residual gap that hands work
+off to v2.0 proper.
+
+### 16.1. Deliverables shipped since §15
+
+Listed in order completed; each has its own impl doc with full data.
+
+| Deliverable                                                                  | Captures | Wall  | Verdict / outcome                                                                                                |
+|------------------------------------------------------------------------------|---------:|------:|------------------------------------------------------------------------------------------------------------------|
+| [hdr_exr_metric_impl.md](hdr_exr_metric_impl.md) — tinyexr + render-mode 17 PT-GI EXRs + ratio analyzer  | 6 | 1.0 min | (δ) was LDR_REVERSED; cam2 −19% |p50| / +58% ratio; **prior 4 sweeps must be re-litigated**          |
+| [hdr_relitigation_impl.md](hdr_relitigation_impl.md) — (α/β/γ) re-run on HDR                              | 12 | 2 min | **(α) LDR_REVERSED** (M4_iso_nearest is the largest single brightness lever: cam0 +53%); β/γ LDR_CONFIRMED |
+| [alpha_m4_deepdive_impl.md](alpha_m4_deepdive_impl.md) — 2×2×2 stack of M4 × MB × D=16                    | 16 | 3.7 min | **Super-additive M4×MB** stack; triple-stack ceiling cam0=0.681 / cam2=0.392 → **residual gap PRESENT**     |
+| [engine_default_validation_impl.md](engine_default_validation_impl.md) — cross-scene + plain + mode 0    | 10 | 5 min | **ALL 3 ship blockers PASS** (alcove/plain/sponza, +10.7%..+51.9% mode-0 lift); engine-default flip approved |
+| [src/demo3d.cpp:188-204](../../src/demo3d.cpp#L188) — default-flag flip (commit `d64ea17`)               | n/a | n/a   | `useDirectionalMerge: true→false`, `useDirBilinear: true→false`, `useMultiBounce: false→true`, gain 1.0. **Byte-identical** MD5 vs validated recommend config (no silent-gate breaks). |
+
+Total post-§15 capture cost: **44 captures, ~12 min wall**. Total v2.0-pre
+program (incl. all prior sweeps): ~150 captures, ~35 min capture-wall.
+
+### 16.2. Final hypothesis verdicts (HDR-corrected)
+
+Re-stated as of v2.0-pre close, with the HDR re-litigation correction applied
+to §11 / §12 / §13 / §14 / §15 verdicts where it changed the answer:
+
+| ID  | Name                                  | Pre-HDR verdict      | Post-HDR verdict           | Notes                                                                                                   |
+|-----|---------------------------------------|----------------------|----------------------------|---------------------------------------------------------------------------------------------------------|
+| (γ) | Angular under-sampling (D=8 vs 16)    | REJECTED (§12)       | **LDR_CONFIRMED** (+9% HDR ratio, TIE) | D=16 stays unshipped; main-effect is tie with M4 in the deep-dive stack.                                |
+| (β) | MB-gain U-shape                       | LEVERAGE_NOT_CURE (§13) | **LDR_CONFIRMED**, **magnitude ×100 larger** | LDR reported +3.5% movement at g=1.0; HDR says +136%. MB g=1.0 is now an engine default, not a tunable curiosity. |
+| (α) | Merge-mode (M0/M2/M3/M4)              | LEVERAGE_WRONG_DIR (§14) | **LDR_REVERSED** → **LARGEST single brightness lever** | LDR Δ-area said "OFF makes it worse"; HDR says M4_iso_nearest brightens cam0 ratio by +53%. M4 is now an engine default. |
+| (δ) | Spatial probe density (N=16..64)      | REJECT (§15)         | **LDR_REVERSED** for cam2 (−19% \|p50\|, +58% ratio) | Real leverage on cam2 only; flat on cam0. Not yet shipped — see §16.5 hand-off.                          |
+| —   | Engine-default flip cross-scene       | n/a (new in §16.1)   | **ALL BLOCKERS PASS**       | M4 + MB g=1.0 cleared on alcove, plain, sponza, mode 0 composite. Shipped as default.                  |
+
+### 16.3. What is now locked in engine code
+
+After commit `d64ea17`:
+
+- **Engine defaults** ([src/demo3d.cpp:188-204](../../src/demo3d.cpp#L188)):
+  M4_iso_nearest merge (no per-direction-bin cosine-weighted upper-cascade
+  hemisphere integration, no direction-bin bilinear, but spatial trilinear
+  still on) + multi-bounce temporal feedback at gain 1.0.
+- **Reverse-toggle CLI escape hatch**: `--use-directional-merge=1
+  --use-dir-bilinear=1 --use-multi-bounce=0` reproduces the pre-flip engine
+  byte-for-byte. The old config remains reachable.
+- **MD5 byte-equivalence** between default no-CLI capture and the validated
+  recommend config — proves there is no silent gate elsewhere (recurring class
+  of bug-212/bug-234/bug-230 the v2.0-pre program kept turning up). Documented
+  in commit `d64ea17` body.
+- **Cascade-bake feedback gate** (bug-234 fix) holds for measurement-camera
+  path: `[MB] cascade-bake feedback ACTIVE` confirmed on frame 0.
+
+### 16.4. What the v2.0-pre program established (and did not)
+
+**Established**:
+
+1. **The cascade-vs-PT brightness gap is partially tunable, not pure
+   architectural floor.** The (α) deep-dive disproved
+   [hdr_exr_metric_impl.md §3.3](hdr_exr_metric_impl.md#L141)'s "structural
+   15–25% of PT" claim — 45pp of cam0's gap and 24pp of cam2's were tunable
+   via merge-mode + MB. The actual structural ceiling is ≤32% / ≤61% gap, set
+   by the M4 + MB + D=16 triple-stack maximum.
+2. **The LDR-PNG + colormap-divisor classifier was metric-by-construction at
+   the 0.2 divisor.** Verified by the HDR re-litigation flipping (α) and (δ)
+   verdicts. Any future cascade work that uses the LDR Δ-area heatmap as a
+   discriminator must justify why the saturation floor isn't a confounder.
+3. **The (α/β) levers stack super-additively, not redundantly.** Cam0
+   d_both=+0.443 vs sum=+0.379 (+16.8%); cam2 +0.242 vs +0.174 (+39.4%). They
+   touch different terms of the cascade radiance budget (merge-time attenuator
+   vs feedback gain).
+
+**Not established**:
+
+1. **Why cam0 and cam2 close the gap at different fractions** (0.32 vs 0.61
+   at triple-stack max). Cam0 / cam2 asymmetry persists at every stack level
+   from the base 0.06 to the ceiling 0.29 — it is not a tunable axis among
+   the four tested. Likely camera-geometry-dependent (probe-grid view angle,
+   smoothstep blend-zone math, near-grazing fetches).
+2. **Whether the residual ≤32% / ≤61% gap is fixable by an architectural
+   change.** No architectural intervention has been measured. The triple-stack
+   ceiling says "tunable axes exhausted"; it does NOT say "all closeable gap
+   has been closed."
+3. **Whether the Sponza warm shift (dR/dG/dB = +0.233/+0.122/+0.059) is
+   aesthetically right.** Physically expected and within bright-clip budget;
+   only release-note documented. A per-scene MB-gain default (lower g for
+   warm scenes) is an open option, deferred until user feedback says it
+   matters.
+
+### 16.5. v2.0 hand-off — recommended attack order
+
+The cerebrum DNR from the (α) M4 deep-dive applies: "once 3 independent knobs
+have been individually-confirmed to have leverage AND their max-stack still
+leaves ≥30% PT gap, stop tuning sweeps; the next session must target an
+architectural change." v2.0-pre confirmed the precondition. v2.0 proper
+begins below.
+
+Priority 1 — **cam0/cam2 asymmetry diagnostic**. The asymmetric residual is
+the cleanest "unknown" — if a per-pixel cam-geometry signature exists, it
+will steer architectural work. Concrete plan:
+
+- Run mode-14 leak-suspect heatmap at cam2 under the new default (M4 + MB
+  g=1.0) — does the residual co-localize with leak suspects?
+- Add an "absolute residual" diagnostic mode that writes `cascade_GI − PT_GI`
+  to the EXR consumer alongside the ratio metric.
+- Inspect [radiance_3d.comp:771-775](../../res/shaders/radiance_3d.comp#L771)
+  smoothstep blend zone — toggle `uUseSmoothstepBlend` ON/OFF in a small
+  cam0+cam2 sweep.
+
+Priority 2 — **thin-merge shader variant**. M4 (no direction awareness at
+all, single texelFetch) wins on brightness but loses spatial coherence. A
+"thin merge" — keep direction-bin awareness, drop the cosine-weighted
+hemisphere sum across D² bins — would target the same brightness lift without
+M4's voxel-grid moire risk. Needs new shader branch:
+[radiance_3d.comp:656-682](../../res/shaders/radiance_3d.comp#L656).
+
+Priority 3 — **(δ) cam2 leverage re-test under new defaults**. The (δ)
+HDR-replay showed cam2 −19% |p50| / +58% ratio across N=16..64. The replay
+used the pre-flip defaults; some of that leverage may be subsumed by M4+MB
+now (the two levers were partially-confounded with probe density in the LDR
+era). 12 captures, ~3 min — cheap confirmation.
+
+Priority 4 — **bug-230 fix** (`--noise-seed-offset` wired to only 1 of 3 RNG
+sites). Mandatory pre-condition for any future WEAK-band sweep that needs
+variance bounding. Deferred during v2.0-pre because every sweep landed
+clearly outside WEAK; first v2.0 sweep that doesn't will pay the cost.
+
+### 16.6. v2.0-pre status: CLOSED
+
+This report is the final-edition closeout. No further v2.0-pre sweeps are
+planned; the (α/β/γ/δ) hypothesis tree is closed (3 LDR_CONFIRMED, 1
+LDR_REVERSED-and-LARGEST-lever, all integrated into engine defaults where
+applicable). The "what is the residual gap" question is now an *architectural*
+question, not a parameter-sweep question, and belongs to v2.0 proper. See
+§16.5 for the hand-off plan.
+
+| v2.0-pre item                                              | Status                |
+|------------------------------------------------------------|-----------------------|
+| Per-cascade error attribution (§2.1)                       | Shipped (mode 20)     |
+| Cascade dominance map (§2.2)                               | Shipped (mode 21)     |
+| PT reference adequacy (§2.3)                               | Shipped (PT cache + HDR) |
+| Noise floor / variance harness (§2.4)                      | Partial — bug-230 deferred |
+| PT reference cache (§2.5)                                  | Shipped               |
+| Three measurement cameras (§2.6 + sponza_cam.json)         | Shipped (4 total)     |
+| Hybrid-on baseline (§2.7)                                  | Deferred — hybrid retirement is v2.0 goal, not v2.0-pre measurement |
+| Sign-off criteria (§5 C1-C7)                               | Met or exceeded       |
+| Engine defaults flipped per measurement evidence           | Shipped (commit `d64ea17`) |
+| Final-edition closeout report (§16)                        | This document         |

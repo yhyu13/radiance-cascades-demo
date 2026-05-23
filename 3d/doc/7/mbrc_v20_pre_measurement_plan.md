@@ -550,3 +550,23 @@ Open implementation. First step is the §3 instrumentation table — `uCascadeEx
 uniform, render mode 20, GUI/CLI hooks, PT cache dumper, sweep harness, analysis
 script. Implementation will produce an impl doc
 (`doc/7/mbrc_v20_pre_measurement_impl.md`) per [[feedback_doc_style]] convention.
+
+## 9. v2.0-pre CLOSED 2026-05-23
+
+This plan is CLOSED. All §2 measurements either shipped, were superseded by
+post-plan additions (HDR-EXR honest metric replacing the LDR Δ-area
+classifier in §2.1-2.4), or were deferred for stated reasons. See the report
+final-edition closeout for the post-plan deliverables:
+
+- [mbrc_v20_pre_measurement_report.md §16](mbrc_v20_pre_measurement_report.md)
+  catalogs the 4 post-§15 deliverables (HDR-EXR metric, HDR re-litigation,
+  (α) M4 deep-dive, engine-default validation) and the engine-default flip
+  shipped as commit `d64ea17`.
+- §16.6 has the per-item status table for everything in §2 of this plan.
+- §16.5 hands off architectural work to v2.0 proper (cam0/cam2 asymmetry
+  diagnostic, thin-merge shader variant, (δ) cam2 re-test under new defaults,
+  bug-230 fix).
+
+The v2.0 work begins from §16.5, not from this plan. This plan is preserved
+unchanged above the §9 closeout for historical traceability of the original
+sign-off criteria and the user-overrides on H3 / §2.7.
