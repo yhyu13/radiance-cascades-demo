@@ -2012,3 +2012,19 @@
 |------|--------|---------|---------|--------|
 | 17:42 | Edited .wolf/cerebrum.md | added DNR: P2 dominant-bin direct-measurement confirms bake-side per-bin asymmetry; per-row sub-test needed alongside 2D distribution overlap | ~4100 |
 | 17:42 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~1062 |
+| 18:06 | Session end: 1 writes across 1 files (project_phase_status.md) | 3 reads | ~13587 tok |
+| 18:11 | Edited tools/v20_arch_diagnostic/analyze_p2_dombin.py | modified js_divergence() | ~919 |
+| 18:11 | Edited tools/v20_arch_diagnostic/analyze_p2_dombin.py | modified main() | ~252 |
+| 18:11 | Edited tools/v20_arch_diagnostic/analyze_p2_dombin.py | modified print() | ~269 |
+| 18:11 | Edited tools/v20_arch_diagnostic/analyze_p2_dombin.py | 4→9 lines | ~74 |
+| 18:12 | Created tools/v20_arch_diagnostic/p2_dombin_dsweep.ps1 | — | ~921 |
+| 18:14 | Edited tools/v20_arch_diagnostic/analyze_p2_dombin.py | modified infer_D() | ~420 |
+| 18:16 | Created doc/7/v20_p2b_dsweep_impl.md | — | ~2715 |
+
+## Session: 2026-05-24 18:17
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:18 | Edited .wolf/cerebrum.md | added 3 DNRs (P2-B verdict SHARPEN, infer_D FP-tight tolerance, per-row needs D≥8) | ~5100 |
+| 18:19 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~771 |
+| 18:19 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | 6→5 lines | ~345 |

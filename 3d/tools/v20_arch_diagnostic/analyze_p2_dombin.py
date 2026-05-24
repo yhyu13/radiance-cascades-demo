@@ -72,25 +72,36 @@ def load_exr_rgb(path: Path):
 
 
 def infer_D(arr: np.ndarray, dominance_min: float = 1e-4) -> int:
-    """Infer atlas direction resolution D from R/G channels."""
+    """Infer atlas direction resolution D from R/G channels.
+
+    The shader encodes R = (dx_best + 0.5) / D and G = (dy_best + 0.5) / D
+    where dx_best, dy_best in [0..D-1]. The set of allowed R values for a
+    given D is exactly {(k+0.5)/D : k=0..D-1}. The smallest D consistent
+    with the data is the answer.
+
+    Earlier version used a loose `err < 0.5/D` check; D=4 false-positived on
+    D=16 data because the threshold accepted any R value within 1/(2D) of
+    the D-quantized centers — which spans the whole unit interval for D=4.
+    Fixed by checking that the COUNT of distinct R values matches D AND
+    every observed value matches one of the D allowed centers within FP
+    tolerance.
+    """
     mask = arr[:, :, 2] > dominance_min
     if not mask.any():
-        return 8  # default fallback
+        return 8
     r = arr[mask, 0]
     g = arr[mask, 1]
-    # x in [0,1], encoded as (k+0.5)/D for k in [0..D-1]. Unique values: D distinct.
-    # Use the smallest D in {4,8,16,32} consistent with the data.
+
+    # Round R values to nearest allowed center under each candidate D and
+    # check the residual is < FP tolerance, not < bin width.
+    fp_tol = 5e-4  # comfortable margin around float32 round-trip of (k+0.5)/D
     for D in (4, 8, 16, 32):
-        recovered_dx = np.floor(r * D).astype(np.int32)
-        recovered_dy = np.floor(g * D).astype(np.int32)
-        if recovered_dx.min() >= 0 and recovered_dx.max() < D and \
-           recovered_dy.min() >= 0 and recovered_dy.max() < D:
-            # Check that the recovered values quantize back cleanly:
-            # (k+0.5)/D should match r within 1/(2D) tolerance for each pixel.
-            expected_r = (recovered_dx + 0.5) / D
-            err = np.abs(r - expected_r).mean()
-            if err < 0.5 / D:
-                return D
+        centers = (np.arange(D) + 0.5) / D
+        # nearest-center distance for each observed R
+        diff_r = np.abs(r[:, None] - centers[None, :]).min(axis=1).max()
+        diff_g = np.abs(g[:, None] - centers[None, :]).min(axis=1).max()
+        if diff_r < fp_tol and diff_g < fp_tol:
+            return D
     return 8
 
 
@@ -137,6 +148,71 @@ def js_divergence(h0: np.ndarray, h2: np.ndarray) -> float:
     return 0.5 * (kl(p, m) + kl(q, m))
 
 
+def per_row_metrics(h0: np.ndarray, h2: np.ndarray, D: int):
+    """Per-row JS divergence + per-row overlap between cam0 and cam2.
+
+    Reshapes the D*D-bin flat histograms to (D, D) where row=dy, col=dx, then
+    computes the JS / overlap between the per-dx distributions WITHIN each row.
+    Returns a list of per-row dicts and a mass-weighted average.
+
+    Rationale: the headline overlap on a 2D bin grid is inflated by shared
+    structure on either axis. cornell-orig-alcove P2 measurement: cam0 + cam2
+    both concentrate on row dy=1 (forced by surface-normal upper-hemisphere
+    geometry), so the dy-axis is shared and the headline overlap reads
+    ~MEDIUM. The dx-axis WITHIN dy=1 is the actual asymmetry. Per-row JS
+    isolates that axis. The mass-weighted average uses both cams' row mass
+    (sum then halve), so rows that one cam ignores but the other concentrates
+    on still contribute proportionally.
+    """
+    g0 = h0.reshape(D, D)
+    g2 = h2.reshape(D, D)
+    rows = []
+    total_m0 = h0.sum()
+    total_m2 = h2.sum()
+    for dy in range(D):
+        r0 = g0[dy]
+        r2 = g2[dy]
+        m0 = float(r0.sum())
+        m2 = float(r2.sum())
+        share0 = m0 / max(total_m0, 1.0)
+        share2 = m2 / max(total_m2, 1.0)
+        if m0 <= 0 and m2 <= 0:
+            rows.append({"dy": dy, "share0": 0.0, "share2": 0.0,
+                         "row_js": 0.0, "row_overlap": 1.0,
+                         "p0": [], "p2": []})
+            continue
+        if m0 <= 0 or m2 <= 0:
+            rows.append({"dy": dy, "share0": share0, "share2": share2,
+                         "row_js": 1.0, "row_overlap": 0.0,
+                         "p0": (r0 / max(m0, 1.0)).tolist(),
+                         "p2": (r2 / max(m2, 1.0)).tolist()})
+            continue
+        p0 = r0 / m0
+        p2 = r2 / m2
+        row_overlap = float(np.minimum(p0, p2).sum())
+        # JS within this row (treat row as a D-bin distribution).
+        row_js = float(js_divergence(r0, r2))
+        rows.append({
+            "dy": dy,
+            "share0": share0,
+            "share2": share2,
+            "row_js": row_js,
+            "row_overlap": row_overlap,
+            "p0": p0.tolist(),
+            "p2": p2.tolist(),
+        })
+    # Mass-weighted average using mean(share0, share2) per row, normalized.
+    weights = np.array([(r["share0"] + r["share2"]) * 0.5 for r in rows], dtype=np.float64)
+    wsum = float(weights.sum())
+    if wsum > 0:
+        weights = weights / wsum
+    js_vals = np.array([r["row_js"] for r in rows], dtype=np.float64)
+    ov_vals = np.array([r["row_overlap"] for r in rows], dtype=np.float64)
+    weighted_js = float((weights * js_vals).sum())
+    weighted_overlap = float((weights * ov_vals).sum())
+    return rows, weighted_js, weighted_overlap
+
+
 def top_bins(hist: np.ndarray, D: int, k: int = 5):
     """Return list of (dx, dy, share) for the top-k bins."""
     total = hist.sum()
@@ -181,10 +257,20 @@ def verdict_band(overlap: float) -> str:
 
 
 def main():
-    base = Path("tools/v20_arch_diagnostic/captures_p2_dombin")
-    cam0_path = base / "alcove_cam0_M0_b2_mboff_dombin_m22_dombin.exr"
-    cam2_path = base / "alcove_cam2_M0_b2_mboff_dombin_m22_dombin.exr"
-    out_json  = base / "p2_dombin_results.json"
+    # CLI form:  analyze_p2_dombin.py [<cam0_exr> <cam2_exr> <out_json>]
+    # default (no args): original D=4 default-engine capture paths.
+    if len(sys.argv) == 4:
+        cam0_path = Path(sys.argv[1])
+        cam2_path = Path(sys.argv[2])
+        out_json  = Path(sys.argv[3])
+    elif len(sys.argv) == 1:
+        base = Path("tools/v20_arch_diagnostic/captures_p2_dombin")
+        cam0_path = base / "alcove_cam0_M0_b2_mboff_dombin_m22_dombin.exr"
+        cam2_path = base / "alcove_cam2_M0_b2_mboff_dombin_m22_dombin.exr"
+        out_json  = base / "p2_dombin_results.json"
+    else:
+        print(f"usage: {sys.argv[0]} [<cam0.exr> <cam2.exr> <out.json>]", file=sys.stderr)
+        sys.exit(2)
 
     if not cam0_path.exists() or not cam2_path.exists():
         print(f"ERROR: missing EXR(s):\n  {cam0_path}\n  {cam2_path}", file=sys.stderr)
@@ -234,6 +320,17 @@ def main():
     print("[p2] cam2 bin-occupancy heatmap:")
     for line in ascii_heatmap(h2, D):
         print(f"      {line}")
+    print()
+
+    # Per-row breakdown (catches dx-axis collapse hidden by shared dy-row).
+    rows, weighted_row_js, weighted_row_overlap = per_row_metrics(h0, h2, D)
+    print(f"[p2] per-row JS (mass-weighted across rows):     {weighted_row_js:.4f}")
+    print(f"[p2] per-row overlap (mass-weighted across rows): {weighted_row_overlap:.4f}")
+    print(f"[p2] per-row details (row mass shares + within-row JS/overlap):")
+    print(f"      dy   share0    share2    row_overlap    row_js")
+    for r in rows:
+        print(f"      {r['dy']:>2d}   {r['share0']:.3f}    {r['share2']:.3f}    "
+              f"{r['row_overlap']:.4f}        {r['row_js']:.4f}")
 
     results = {
         "scene": "cornell-orig-alcove",
@@ -255,6 +352,11 @@ def main():
         },
         "overlap": overlap,
         "js_divergence": js,
+        "per_row": {
+            "weighted_js": weighted_row_js,
+            "weighted_overlap": weighted_row_overlap,
+            "rows": rows,
+        },
         "verdict": band,
         "bands": {
             "P2_OVERLAP_HIGH":   "overlap >= 0.70 (bake-side framing INCOMPLETE)",
