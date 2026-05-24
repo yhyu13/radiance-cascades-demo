@@ -118,7 +118,7 @@
   "cam2": {
     "valid_pixels": 116390,
     "total_pixels": 921600,
-    "mean_dominance": 0.11588159948587418,
+    "mean_dominance": 0.11588168889284134,
     "histogram": [
       786.0,
       95.0,

@@ -2028,3 +2028,9 @@
 | 18:18 | Edited .wolf/cerebrum.md | added 3 DNRs (P2-B verdict SHARPEN, infer_D FP-tight tolerance, per-row needs D≥8) | ~5100 |
 | 18:19 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~771 |
 | 18:19 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | 6→5 lines | ~345 |
+| 18:20 | Created tools/v20_arch_diagnostic/p2_dombin_mbon.ps1 | — | ~1065 |
+| 18:21 | Edited tools/v20_arch_diagnostic/p2_dombin_mbon.ps1 | "--mb-gain=1.0" → "--multi-bounce-gain=1.0" | ~10 |
+| 18:21 | Edited tools/v20_arch_diagnostic/p2_dombin_mbon.ps1 | "hdr-exr|screenshot saved|" → "hdr-exr|screenshot saved|" | ~32 |
+| 18:25 | Edited tools/v20_arch_diagnostic/p2_dombin_mbon.ps1 | 2→6 lines | ~90 |
+| 18:28 | Created doc/7/v20_p2d_mbon_impl.md | — | ~2935 |
+| 18:29 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~698 |
