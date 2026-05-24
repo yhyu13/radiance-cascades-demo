@@ -1,0 +1,50 @@
+{
+  "epsilon_pt_luminance": 0.001,
+  "rows": [
+    {
+      "cam": 0,
+      "st": 1,
+      "energy_ratio": 0.4348015891876097,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1206.083984375
+    },
+    {
+      "cam": 2,
+      "st": 1,
+      "energy_ratio": 0.28249859632628566,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 869.4422607421875
+    },
+    {
+      "cam": 0,
+      "st": 0,
+      "energy_ratio": 0.527121454560817,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1462.16748046875
+    },
+    {
+      "cam": 2,
+      "st": 0,
+      "energy_ratio": 0.30710318393971986,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 945.16748046875
+    }
+  ],
+  "ratios": {
+    "st1|cam0": 0.4348015891876097,
+    "st1|cam2": 0.28249859632628566,
+    "st0|cam0": 0.527121454560817,
+    "st0|cam2": 0.30710318393971986
+  },
+  "per_cam_delta_st0_minus_st1": {
+    "cam0": 0.09231986537320735,
+    "cam2": 0.024604587613434203
+  },
+  "spreads_cam2_over_cam0_by_st": {
+    "1": 0.6497184080079159,
+    "0": 0.5826042201139199
+  },
+  "delta_spread_st0_minus_st1": -0.06711418789399604,
+  "verdict": "SPATIAL_TRILINEAR_WIDENS_SPREAD",
+  "verdict_detail": "delta spread(ST=0) - spread(ST=1) = -0.0671. Nearest-parent makes cam2 WORSE \u2014 ST=1 was partially compensating an upstream issue, OR the single nearest-parent probe selected at cam2 is unusually dim. Investigate the probe selected and its direction-bin contents directly."
+}
