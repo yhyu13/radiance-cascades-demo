@@ -1955,3 +1955,13 @@
 | 13:20 | Created doc/7/v20_b_smoothstep_toggle_impl.md | — | ~2155 |
 | 13:25 | (h.b) smoothstep falsification | radiance_3d.comp, demo3d.h/cpp, main3d.cpp, h4_smoothstep_*, doc/7/v20_b_smoothstep_toggle_impl.md | uBlendMode 3-mode A/B: cam2 ratio delta=0.0015 (13x smaller than INNOCENT band) → BLEND_ZONE_NOT_THE_BUG; pivot to (c) atlas content | ~6800 |
 | 13:22 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~608 |
+| 13:23 | Created tools/v20_arch_diagnostic/h5_fract_capture.ps1 | — | ~723 |
+| 13:24 | Created tools/v20_arch_diagnostic/analyze_h5_fract.py | — | ~1615 |
+| 13:25 | Created doc/7/v20_c_fract_viz_impl.md | — | ~2299 |
+
+## Session: 2026-05-24 13:27
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 13:35 | (h.c) probe-cell fract viz cam0 vs cam2 | h5_fract_capture.ps1, analyze_h5_fract.py, captures_h5_fract/*.png, h5_fract_results.json, doc/7/v20_c_fract_viz_impl.md | mean_d delta=+0.0303 → CAM2_PROBE_COVERAGE_NEUTRAL (rejects boundary-aliasing hypothesis at 1D mean); BUT histogram [0.40,0.45) bin: cam0 19.6% vs cam2 47.7% (2.44x), cam2 mean_fract biased to corner (0.45,0.38,0.39); promotes (c)' per-direction-bin sampling correlation via fract-corner-bias → consistent trilinear weights. Next: A/B --use-spatial-trilinear=0 at cam2 to test the chain. | ~3200 |
+| 13:28 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | added error handling | ~954 |
