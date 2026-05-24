@@ -1,0 +1,133 @@
+{
+  "epsilon_pt_luminance": 0.001,
+  "rows": [
+    {
+      "cam": 0,
+      "merge": "M0_baseline",
+      "mb": "OFF",
+      "energy_ratio": 0.4348015891876097,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1206.083984375
+    },
+    {
+      "cam": 2,
+      "merge": "M0_baseline",
+      "mb": "OFF",
+      "energy_ratio": 0.28249859632628566,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 869.4422607421875
+    },
+    {
+      "cam": 0,
+      "merge": "M0_baseline",
+      "mb": "ON",
+      "energy_ratio": 1.0235389173175329,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 2839.166015625
+    },
+    {
+      "cam": 2,
+      "merge": "M0_baseline",
+      "mb": "ON",
+      "energy_ratio": 0.5816658477578425,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 1790.1854248046875
+    },
+    {
+      "cam": 0,
+      "merge": "M2_iso_merge",
+      "mb": "OFF",
+      "energy_ratio": 0.5629902180820259,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1561.662841796875
+    },
+    {
+      "cam": 2,
+      "merge": "M2_iso_merge",
+      "mb": "OFF",
+      "energy_ratio": 0.307936622644434,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 947.7325439453125
+    },
+    {
+      "cam": 0,
+      "merge": "M2_iso_merge",
+      "mb": "ON",
+      "energy_ratio": 1.1898834513606142,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 3300.58447265625
+    },
+    {
+      "cam": 2,
+      "merge": "M2_iso_merge",
+      "mb": "ON",
+      "energy_ratio": 0.7108305226806543,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 2187.7138671875
+    },
+    {
+      "cam": 0,
+      "merge": "M4_iso_nearest",
+      "mb": "OFF",
+      "energy_ratio": 0.6686044352205376,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1854.6231689453125
+    },
+    {
+      "cam": 2,
+      "merge": "M4_iso_nearest",
+      "mb": "OFF",
+      "energy_ratio": 0.33270920291164524,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 1023.9747924804688
+    },
+    {
+      "cam": 0,
+      "merge": "M4_iso_nearest",
+      "mb": "ON",
+      "energy_ratio": 1.3927348531656132,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 3863.268310546875
+    },
+    {
+      "cam": 2,
+      "merge": "M4_iso_nearest",
+      "mb": "ON",
+      "energy_ratio": 0.7699422014839358,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 2369.64111328125
+    }
+  ],
+  "by_merge_mb_cam": {
+    "M0_baseline|OFF|cam0": 0.4348015891876097,
+    "M0_baseline|OFF|cam2": 0.28249859632628566,
+    "M0_baseline|ON|cam0": 1.0235389173175329,
+    "M0_baseline|ON|cam2": 0.5816658477578425,
+    "M2_iso_merge|OFF|cam0": 0.5629902180820259,
+    "M2_iso_merge|OFF|cam2": 0.307936622644434,
+    "M2_iso_merge|ON|cam0": 1.1898834513606142,
+    "M2_iso_merge|ON|cam2": 0.7108305226806543,
+    "M4_iso_nearest|OFF|cam0": 0.6686044352205376,
+    "M4_iso_nearest|OFF|cam2": 0.33270920291164524,
+    "M4_iso_nearest|ON|cam0": 1.3927348531656132,
+    "M4_iso_nearest|ON|cam2": 0.7699422014839358
+  },
+  "mb_multipliers": {
+    "M0_baseline|cam0": 2.354036744046703,
+    "M2_iso_merge|cam0": 2.1135064396221037,
+    "M4_iso_nearest|cam0": 2.0830475835928652,
+    "M0_baseline|cam2": 2.059004382046624,
+    "M2_iso_merge|cam2": 2.3083663014042695,
+    "M4_iso_nearest|cam2": 2.3141596167040888
+  },
+  "spreads_cam2_over_cam0": {
+    "M0_baseline|OFF": 0.6497184080079159,
+    "M0_baseline|ON": 0.568288941354823,
+    "M2_iso_merge|OFF": 0.5469662043036929,
+    "M2_iso_merge|ON": 0.5973950825753817,
+    "M4_iso_nearest|OFF": 0.4976174033334103,
+    "M4_iso_nearest|ON": 0.5528275534527607
+  },
+  "verdict_mb_uniformity": "MB_MULTIPLIER_MILDLY_MERGE_DEPENDENT",
+  "verdict_detail": "MB amp varies mildly across merges (1.130). M4+MB super-additivity is partially reproducible at b=2 but weaker than the alpha_m4_deepdive measurement suggested. per-cam max/min MB-mult spread = {0: 1.130092640508208, 2: 1.1239216569339419}"
+}
