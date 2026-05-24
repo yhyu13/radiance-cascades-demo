@@ -198,6 +198,7 @@ Demo3D::Demo3D()
     , useSpatialTrilinear(true)
     , useWeightedSample(false)  // Phase 3 (default OFF; opt-in via GUI / CLI)
     , phase3DebugMode(0)
+    , blendMode(0)              // (h.b) smoothstep [default]; 1=linear, 2=step
     , giStrength(1.0f)
     , leakHeatmapDivisor(0.5f)  // mode 14 sensitivity; sqrt-scaled in shader
     // Phase MB (multi-bounce temporal feedback) defaults.
@@ -2570,6 +2571,7 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
         glUniform1f(glGetUniformLocation(prog, "uUpperBinConeSin"), sinT);
     }
     glUniform1i(glGetUniformLocation(prog, "uPhase3DebugMode"), phase3DebugMode);
+    glUniform1i(glGetUniformLocation(prog, "uBlendMode"), blendMode);
     glUniform1f(glGetUniformLocation(prog, "uGIStrength"),     giStrength);
 
     // Phase MB (multi-bounce temporal feedback) — bind C0's previous-frame atlas

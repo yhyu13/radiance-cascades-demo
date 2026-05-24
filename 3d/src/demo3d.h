@@ -655,6 +655,17 @@ public:
         historyNeedsSeed = true;
         std::cout << "[Demo3D] phase3DebugMode=" << v << "\n";
     }
+    void setBlendMode(int v) {
+        if (v == blendMode) return;
+        blendMode = v;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] blendMode=" << v
+                  << " (0=smoothstep [default], 1=linear, 2=step)\n";
+    }
+    int  getBlendMode() const { return blendMode; }
     void setGIStrength(float v) {
         if (v == giStrength) return;
         giStrength = v;
@@ -1482,6 +1493,15 @@ private:
      *  0=normal, 1=force aFactor=1, 2=visualize aFactor, 3=visualize upperDir.a,
      *  4=force upperDir.rgb=trilinear.rgb (test if WeightedSample's renormalize differs). */
     int   phase3DebugMode;
+
+    /** 2026-05-24 (h.b) smoothstep blend-zone diagnostic. Toggles the blend factor
+     *  l in radiance_3d.comp:768-784 between three modes:
+     *    0 (DEFAULT) = smoothstep S-curve (original behavior)
+     *    1 = linear ramp (isolates the curve shape effect)
+     *    2 = step (binary; hardest blend)
+     *  See doc/7/v20_h2_merge_asymmetry_impl.md §3 for the cam2 over-sampling
+     *  hypothesis this toggle tests. */
+    int   blendMode;
     /** 2026-05-18 debug: multiplier on upper contribution in the bake (default 1.0). */
     float giStrength;
 

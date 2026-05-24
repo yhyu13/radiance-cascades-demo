@@ -1,0 +1,68 @@
+{
+  "epsilon_pt_luminance": 0.001,
+  "rows": [
+    {
+      "cam": 0,
+      "mode": "smoothstep",
+      "energy_ratio": 0.4348015891876097,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1206.083984375
+    },
+    {
+      "cam": 2,
+      "mode": "smoothstep",
+      "energy_ratio": 0.28249859632628566,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 869.4422607421875
+    },
+    {
+      "cam": 0,
+      "mode": "linear",
+      "energy_ratio": 0.43303280823955403,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1201.1776123046875
+    },
+    {
+      "cam": 2,
+      "mode": "linear",
+      "energy_ratio": 0.2810463750949334,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 864.9727783203125
+    },
+    {
+      "cam": 0,
+      "mode": "step",
+      "energy_ratio": 0.43626346399947896,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1210.1390380859375
+    },
+    {
+      "cam": 2,
+      "mode": "step",
+      "energy_ratio": 0.2818433634988989,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 867.4256591796875
+    }
+  ],
+  "ratios": {
+    "smoothstep|cam0": 0.4348015891876097,
+    "smoothstep|cam2": 0.28249859632628566,
+    "linear|cam0": 0.43303280823955403,
+    "linear|cam2": 0.2810463750949334,
+    "step|cam0": 0.43626346399947896,
+    "step|cam2": 0.2818433634988989
+  },
+  "cam_abs_deltas_vs_smoothstep": {
+    "cam0|linear": 0.0017687809480556593,
+    "cam0|step": 0.0014618748118692682,
+    "cam2|linear": 0.0014522212313522465,
+    "cam2|step": 0.0006552328273867758
+  },
+  "spreads_cam2_over_cam0": {
+    "smoothstep": 0.6497184080079159,
+    "linear": 0.6490186649771312,
+    "step": 0.6460393472216951
+  },
+  "verdict_smoothstep_responsibility": "BLEND_ZONE_NOT_THE_BUG",
+  "verdict_detail": "smoothstep S-curve doesn't move cam2 ratio (max |delta| 0.0015 <= 0.02). Blend zone math is innocent; pivot to (c) atlas content / probe-cell oversampling. cam2 abs-deltas vs smoothstep: {'linear': 0.0014522212313522465, 'step': 0.0006552328273867758}"
+}

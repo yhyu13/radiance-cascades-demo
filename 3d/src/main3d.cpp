@@ -443,6 +443,11 @@ int main(int argc, char* argv[]) {
             demo->setUseSpatialTrilinearCLI(v != 0);
             std::cout << "[MAIN] --use-spatial-trilinear=" << v
                       << " (1=8-neighbor spatial blend across upper probes [default]; 0=nearest-parent)\n";
+        } else if (arg.rfind("--blend-mode=", 0) == 0) {
+            int v = std::atoi(arg.substr(13).c_str());
+            demo->setBlendMode(v);
+            std::cout << "[MAIN] --blend-mode=" << v
+                      << " (0=smoothstep [default], 1=linear ramp, 2=step at midpoint)\n";
         } else if (arg.rfind("--pt-cascade-match=", 0) == 0) {
             int v = std::atoi(arg.substr(19).c_str());
             demo->setPtCascadeMatch(v);

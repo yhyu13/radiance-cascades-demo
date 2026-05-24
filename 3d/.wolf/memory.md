@@ -1904,3 +1904,54 @@
 | 12:44 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~821 |
 | 12:44 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/feedback_colormap_normalized_pitfall.md | — | ~638 |
 | 12:45 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~114 |
+| 12:47 | Session end: 7 writes across 6 files (absolute_residual_capture.ps1, analyze_absolute_residual.py, v20_absolute_residual_impl.md, project_phase_status.md, feedback_colormap_normalized_pitfall.md) | 8 reads | ~18437 tok |
+| 17:12 | Created tools/v20_arch_diagnostic/pt_bounce_ladder_capture.ps1 | — | ~651 |
+| 17:15 | Created doc/7/v20_pt_bounce_ladder_impl.md | — | ~3147 |
+
+## Session: 2026-05-23 17:16
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:17 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | added 1 condition(s) | ~919 |
+
+| 17:18 | bounce-ladder commit a169672 | doc/7/v20_pt_bounce_ladder_impl.md, captures (24), pt_bounce_ladder_capture.ps1, project_phase_status.md, cerebrum.md | (f) FALSIFIED, (g)/(h) new P1/P2; checkpoint before (h)-source disambig | ~6500 |
+| 23:00 | Created tools/v20_arch_diagnostic/h_source_disambig_capture.ps1 | — | ~762 |
+| 23:01 | Created tools/v20_arch_diagnostic/analyze_h_source_disambig.py | — | ~2218 |
+| 23:03 | Created doc/7/v20_h_source_disambig_impl.md | — | ~2747 |
+| 23:03 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~701 |
+
+| 23:04 | (h) disambig commit 54b2196 | doc/7/v20_h_source_disambig_impl.md, captures_h_disambig/8, analyze_h_source_disambig.py, project_phase_status.md, cerebrum.md | MB×merge stacked; cam0=0.67/cam2=0.33 single-bounce spread isolated | ~5500 |
+| 23:04 | Session end: 5 writes across 4 files (project_phase_status.md, h_source_disambig_capture.ps1, analyze_h_source_disambig.py, v20_h_source_disambig_impl.md) | 4 reads | ~18605 tok |
+| 23:29 | Created tools/v20_arch_diagnostic/h2_merge_asymmetry_capture.ps1 | — | ~987 |
+| 23:30 | Created tools/v20_arch_diagnostic/analyze_h2_merge_asymmetry.py | — | ~2127 |
+| 23:31 | Created doc/7/v20_h2_merge_asymmetry_impl.md | — | ~2453 |
+
+## Session: 2026-05-23 23:33
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 23:34 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | added 1 condition(s) | ~772 |
+| 23:55 | (h.2) merge-asymmetry commit eba082b | doc/7/v20_h2_merge_asymmetry_impl.md, tools/v20_arch_diagnostic/h2_merge_asymmetry_*, captures_h2_merge/ | cam2 stuck ~0.33 across M0/M2/M4 → asymmetry is UPSTREAM of merge; (b)/(c) promoted to P1 | ~5800 |
+| 12:54 | Created tools/v20_arch_diagnostic/h3_mb_factorial_capture.ps1 | — | ~970 |
+| 12:55 | Created tools/v20_arch_diagnostic/analyze_h3_mb_factorial.py | — | ~2528 |
+| 12:58 | Created doc/7/v20_h3_mb_factorial_impl.md | — | ~3101 |
+| 12:58 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~926 |
+| 00:35 | (h.3) MB-factorial commit d5674dd | doc/7/v20_h3_mb_factorial_impl.md, tools/v20_arch_diagnostic/h3_mb_factorial_*, captures_h3_mb_factorial/ | MB amp ~2.1x approx merge-invariant; M4xMB super-additivity was b=8 artifact; cam0 MB-ON over-shoots PT at b=2 | ~5500 |
+| 13:09 | Session end: 5 writes across 4 files (project_phase_status.md, h3_mb_factorial_capture.ps1, analyze_h3_mb_factorial.py, v20_h3_mb_factorial_impl.md) | 2 reads | ~16924 tok |
+| 13:13 | Edited res/shaders/radiance_3d.comp | expanded (+8 lines) | ~147 |
+| 13:14 | Edited res/shaders/radiance_3d.comp | added 3 condition(s) | ~202 |
+| 13:14 | Edited src/demo3d.h | expanded (+9 lines) | ~196 |
+| 13:14 | Edited src/demo3d.h | added 1 condition(s) | ~187 |
+| 13:14 | Edited src/demo3d.cpp | 2→3 lines | ~49 |
+| 13:14 | Edited src/demo3d.cpp | 1→2 lines | ~41 |
+| 13:15 | Edited src/main3d.cpp | added 1 condition(s) | ~171 |
+
+## Session: 2026-05-24 13:16
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 13:17 | Created tools/v20_arch_diagnostic/h4_smoothstep_capture.ps1 | — | ~973 |
+| 13:19 | Created tools/v20_arch_diagnostic/analyze_h4_smoothstep.py | — | ~2014 |
+| 13:20 | Created doc/7/v20_b_smoothstep_toggle_impl.md | — | ~2155 |
+| 13:25 | (h.b) smoothstep falsification | radiance_3d.comp, demo3d.h/cpp, main3d.cpp, h4_smoothstep_*, doc/7/v20_b_smoothstep_toggle_impl.md | uBlendMode 3-mode A/B: cam2 ratio delta=0.0015 (13x smaller than INNOCENT band) → BLEND_ZONE_NOT_THE_BUG; pivot to (c) atlas content | ~6800 |
+| 13:22 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~608 |

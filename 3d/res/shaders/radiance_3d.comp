@@ -69,6 +69,14 @@ uniform int   uDiagAlphaMode;
 //                       require per-bin LUT (v2 fallback).
 uniform int   uUseWeightedSample;
 uniform float uUpperBinConeSin;
+// 2026-05-24 (h.b) smoothstep blend-zone diagnostic:
+//   0 = smoothstep S-curve (default, original)
+//   1 = linear ramp (no S-curve; isolates whether the curve is the cause)
+//   2 = step (binary at midpoint; hardest blend, no transition zone)
+// Hypothesis (b) per [doc/7/v20_h2_merge_asymmetry_impl.md §3]: cam2 may
+// over-sample probe-cell boundaries where the smoothstep S-curve under-
+// weights the upper cascade contribution asymmetrically vs cam0.
+uniform int   uBlendMode;
 
 // 2026-05-18 Phase MB (multi-bounce temporal feedback) — see doc/7/multi_bounce_temporal_plan.md
 //   uUseMultiBounce: 0 (default) = single-bounce; 1 = add previous-frame C0-atlas
@@ -768,10 +776,19 @@ void main() {
             if (hit.a < 0.0) {
                 rad = hit.rgb;
             } else if (hit.a > 0.0) {
-                float l = (uHasUpperCascade != 0 && blendWidth > 0.0)
-                    ? 1.0 - smoothstep(0.0, 1.0,
-                          clamp((hit.a - (tMax - blendWidth)) / blendWidth, 0.0, 1.0))
-                    : 1.0;
+                float l;
+                if (uHasUpperCascade != 0 && blendWidth > 0.0) {
+                    float t = clamp((hit.a - (tMax - blendWidth)) / blendWidth, 0.0, 1.0);
+                    if (uBlendMode == 2) {
+                        l = 1.0 - step(0.5, t);          // hard step at midpoint
+                    } else if (uBlendMode == 1) {
+                        l = 1.0 - t;                     // linear ramp
+                    } else {
+                        l = 1.0 - smoothstep(0.0, 1.0, t); // default smoothstep
+                    }
+                } else {
+                    l = 1.0;
+                }
                 rad = hit.rgb * l + upperDir.rgb * (1.0 - l) * aFactor * uGIStrength;
             } else {
                 // Miss bin: no wall in ray's path within [tMin, tMax]; full upper is
