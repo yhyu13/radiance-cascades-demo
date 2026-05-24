@@ -3920,6 +3920,166 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-22T04:13:03.901Z"
+    },
+    {
+      "id": "bug-244",
+      "timestamp": "2026-05-22T15:37:29.335Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 12→17 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T15:37:29.335Z"
+    },
+    {
+      "id": "bug-245",
+      "timestamp": "2026-05-22T23:41:26.303Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 5→11 lines (2 removed) | Also: // Phase MB (multi-bounce temporal feedback) defau; , useMultiBounce(false)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-22T23:41:39.415Z"
+    },
+    {
+      "id": "bug-246",
+      "timestamp": "2026-05-23T04:43:52.975Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/v20_absolute_residual_impl.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 7→16 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-23T04:43:52.975Z"
+    },
+    {
+      "id": "bug-247",
+      "timestamp": "2026-05-23T09:17:36.126Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 13→18 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-23T09:17:36.126Z"
+    },
+    {
+      "id": "bug-248",
+      "timestamp": "2026-05-23T15:03:47.751Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→23 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-23T15:03:47.751Z"
+    },
+    {
+      "id": "bug-249",
+      "timestamp": "2026-05-24T05:14:01.545Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/radiance_3d.comp",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 6→15 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "comp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-24T05:14:01.545Z"
+    },
+    {
+      "id": "bug-250",
+      "timestamp": "2026-05-24T05:28:39.270Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-24T05:28:39.270Z"
+    },
+    {
+      "id": "bug-251",
+      "timestamp": "2026-05-24T06:15:39.139Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→23 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-24T06:15:39.139Z"
+    },
+    {
+      "id": "bug-252",
+      "timestamp": "2026-05-24T09:33:57.918Z",
+      "error_message": "Wrong condition in logic",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "Condition was: if (uRenderMode == 18)",
+      "fix": "Changed to: if (uRenderMode == 22)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-24T09:33:57.918Z"
+    },
+    {
+      "id": "bug-253",
+      "timestamp": "2026-05-24T09:37:30.915Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 6→12 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-24T09:37:30.915Z"
     }
   ]
 }

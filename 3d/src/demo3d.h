@@ -502,9 +502,9 @@ public:
     // Range now covers modes 0-16 (14 LeakSuspect, 15 TemporalOscillation, 16 PT-Reference).
     // No clamp; preserves existing shader fallthrough on out-of-range.
     void setRenderMode(int m) {
-        if (m < 0 || m > 19) {
+        if (m < 0 || m > 22) {
             std::cerr << "[Demo3D] WARN: render mode " << m
-                      << " out of range [0,19]; rendering as default\n";
+                      << " out of range [0,22]; rendering as default\n";
         }
         raymarchRenderMode = m;
     }

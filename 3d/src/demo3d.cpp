@@ -195,7 +195,14 @@ Demo3D::Demo3D()
     , useColocatedCascades(false)   // non-colocated: better spatial coverage
     , useScaledDirRes(true)         // D4/D8/D16/D16: upper cascades get finer angular res
     , useDirBilinear(false)
-    , useSpatialTrilinear(true)
+    // useSpatialTrilinear default OFF (flipped 1->0 2026-05-24): (h.c)' alcove A/B
+    // showed ST=1 dilutes both cam ratios by averaging dim neighbor probes (cam0 +21%,
+    // cam2 +9% under ST=0 on alcove); (h.c)''' cross-scene A/B (cornell, cornell-orig)
+    // confirms +14% relative ratio improvement on both, both with RMSE-vs-PT lower
+    // under ST=0. ST=1 acts as a cross-cam symmetrizer; on simpler scenes this trade
+    // costs net quality. Doc: doc/7/v20_cprime_spatial_trilinear_impl.md,
+    // doc/7/v20_cprime3_st0_mitigation_impl.md. Revert with --use-spatial-trilinear=1.
+    , useSpatialTrilinear(false)
     , useWeightedSample(false)  // Phase 3 (default OFF; opt-in via GUI / CLI)
     , phase3DebugMode(0)
     , blendMode(0)              // (h.b) smoothstep [default]; 1=linear, 2=step
@@ -3050,8 +3057,13 @@ void Demo3D::raymarchPass() {
     // empty after raymarchPass returns. dumpScreenshotEXRs blits giDirectTex
     // (which carries indirectColor in mode 17) to the default framebuffer
     // afterwards so the PNG sanity-check is non-black.
+    // 2026-05-24 Mode 22 (P2 dominant-bin viz): under exrCapture, bind MRT so
+    // shader's fragGI write lands in giIndirectTex for dumpScreenshotEXRs +
+    // subsequent blit-to-default-FB (same plumbing as mode 17 EXR capture).
+    // Interactive mode 22 renders straight to the default FB via fragColor and
+    // does not need MRT; the fragGI write is then a no-op (no attachment).
     const bool giBlurActive = (useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6))
-                              || (exrCapture && raymarchRenderMode == 17);
+                              || (exrCapture && (raymarchRenderMode == 17 || raymarchRenderMode == 22));
     glUniform1i(glGetUniformLocation(prog, "uSeparateGI"), giBlurActive ? 1 : 0);
 
     if (giBlurActive) {
@@ -4844,9 +4856,10 @@ void Demo3D::renderSettingsPanel() {
         "19 Cascade_GI-vs-PT_GI Delta (indirect only)",
         "20 ErrorDecomp (v2.0-pre; pick sub-mode below)",
         "21 CascadeDominance (which cascade owns each pixel)",
+        "22 DominantDirBin (v2.0 P2 bake-side diag)",
     };
     constexpr int kModeCount = int(sizeof(kRenderModeLabels) / sizeof(kRenderModeLabels[0]));
-    static_assert(kModeCount == 22, "renderModeLabels must enumerate all 22 raymarch modes");
+    static_assert(kModeCount == 23, "renderModeLabels must enumerate all 23 raymarch modes");
     // Defensive clamp: setRenderMode warns on out-of-range values but assigns them
     // anyway (preserves shader fallthrough behaviour). The picker is the only thing
     // standing between an out-of-range raymarchRenderMode and an OOB array read.
@@ -6741,9 +6754,15 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
         std::cerr << "[hdr-exr] dumpScreenshotEXRs called but exrCapture=false\n";
         return;
     }
-    if (giIndirectTex == 0 || ptAccumTexture == 0 || ptDirectAccumTexture == 0) {
-        std::cerr << "[hdr-exr] required textures not allocated (giIndirect="
-                  << giIndirectTex << " ptAccum=" << ptAccumTexture
+    // 2026-05-24 Mode 22 path needs only giIndirectTex (no PT); other modes (17)
+    // need all three. Split the gate so mode 22 captures don't fail on PT==0.
+    if (giIndirectTex == 0) {
+        std::cerr << "[hdr-exr] giIndirectTex not allocated; cannot dump\n";
+        return;
+    }
+    if (raymarchRenderMode != 22 && (ptAccumTexture == 0 || ptDirectAccumTexture == 0)) {
+        std::cerr << "[hdr-exr] PT textures not allocated for mode "
+                  << raymarchRenderMode << " (ptAccum=" << ptAccumTexture
                   << " ptDirect=" << ptDirectAccumTexture << ")\n";
         return;
     }
@@ -6775,25 +6794,36 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
         return buf;
     };
 
-    // 1. cascade GI (full viewport, RGBA16F → fp32 readback)
+    // 2026-05-24 Mode 22 (P2 dominant-bin viz): the shader wrote dominant-bin
+    // (dx, dy, dominance) into giIndirectTex via fragGI. PT was not dispatched
+    // for mode 22 (intentional — it doesn't need PT truth). Dump only the
+    // dombin sidecar, skip the PT sidecars (which would contain stale/zero data).
     int w = 0, h = 0;
-    std::vector<float> giData = readTexRGB(giIndirectTex, w, h);
-    saveExrRGB(stem + "_cascade_gi.exr", giData, w, h);
+    if (raymarchRenderMode == 22) {
+        std::vector<float> dombinData = readTexRGB(giIndirectTex, w, h);
+        saveExrRGB(stem + "_dombin.exr", dombinData, w, h);
+        std::cout << "[hdr-exr] dumped stem=" << stem
+                  << " dombin=" << w << "x" << h << " (mode 22, no PT)\n";
+    } else {
+        // 1. cascade GI (full viewport, RGBA16F → fp32 readback)
+        std::vector<float> giData = readTexRGB(giIndirectTex, w, h);
+        saveExrRGB(stem + "_cascade_gi.exr", giData, w, h);
 
-    // 2. PT full and 3. PT direct (half viewport, RGBA32F)
-    int ptW = 0, ptH = 0;
-    std::vector<float> ptFull = readTexRGB(ptAccumTexture, ptW, ptH);
-    saveExrRGB(stem + "_pt_full.exr", ptFull, ptW, ptH);
+        // 2. PT full and 3. PT direct (half viewport, RGBA32F)
+        int ptW = 0, ptH = 0;
+        std::vector<float> ptFull = readTexRGB(ptAccumTexture, ptW, ptH);
+        saveExrRGB(stem + "_pt_full.exr", ptFull, ptW, ptH);
 
-    int pdW = 0, pdH = 0;
-    std::vector<float> ptDir = readTexRGB(ptDirectAccumTexture, pdW, pdH);
-    saveExrRGB(stem + "_pt_direct.exr", ptDir, pdW, pdH);
+        int pdW = 0, pdH = 0;
+        std::vector<float> ptDir = readTexRGB(ptDirectAccumTexture, pdW, pdH);
+        saveExrRGB(stem + "_pt_direct.exr", ptDir, pdW, pdH);
 
-    std::cout << "[hdr-exr] dumped stem=" << stem
-              << " cascadeGI=" << w << "x" << h
-              << " ptFull=" << ptW << "x" << ptH
-              << " ptDirect=" << pdW << "x" << pdH
-              << " ptSamples=" << ptSampleCount << "\n";
+        std::cout << "[hdr-exr] dumped stem=" << stem
+                  << " cascadeGI=" << w << "x" << h
+                  << " ptFull=" << ptW << "x" << ptH
+                  << " ptDirect=" << pdW << "x" << pdH
+                  << " ptSamples=" << ptSampleCount << "\n";
+    }
 
     // Blit giDirectTex (location=0, = indirectColor in mode 17) to the default
     // framebuffer so the subsequent --screenshot PNG is non-black. Blit reads

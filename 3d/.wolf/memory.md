@@ -1987,3 +1987,28 @@
 | 17:06 | (h.c)''' ST=0 mitigation across 2 scenes | h8_st0_mitigation_capture.ps1, analyze_h8_st0_mitigation.py, captures_h8_st0_mitigation/, h8_st0_mitigation_results.json, doc/7/v20_cprime3_st0_mitigation_impl.md | Composite MIXED_HOLD_DEFAULT_ST1 per pre-committed band, but BOTH signals (ratio + RMSE) move ST=0 direction on BOTH scenes: cornell_default Δratio=+0.041 Δrmse=-0.005, cornell_orig Δratio=+0.039 Δrmse=-0.002. Soft generalization: ratio relative-improvement +14% on both, just under pre-committed +5pt absolute threshold. Recommend opt-in ST=0 flag, hold ST=1 default. DNR: pre-committed thresholds on ratio metrics should be RELATIVE-magnitude not absolute-pt when baseline is small. | ~3200 |
 | 17:07 | Edited .wolf/cerebrum.md | added 2 DNRs: relative-magnitude thresholds + downstream path locked-in innocent (cumulative 4-A/B chain) | ~3800 |
 | 16:57 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~956 |
+| 17:00 | Session end: 2 writes across 2 files (v20_cprime3_st0_mitigation_impl.md, project_phase_status.md) | 4 reads | ~15362 tok |
+| 17:27 | Edited src/demo3d.cpp | modified OFF() | ~175 |
+| 17:29 | Created doc/7/v20_downstream_symmetrizer_architecture.md | — | ~4128 |
+
+## Session: 2026-05-24 17:30
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:33 | Edited res/shaders/raymarch.frag | added 3 condition(s) | ~997 |
+| 17:34 | Edited src/demo3d.h | modified setRenderMode() | ~65 |
+| 17:34 | Edited src/demo3d.cpp | 4→5 lines | ~83 |
+| 17:34 | Edited src/demo3d.cpp | modified 22() | ~175 |
+| 17:34 | Edited src/demo3d.cpp | modified 22() | ~165 |
+| 17:35 | Edited src/demo3d.cpp | added 1 condition(s) | ~408 |
+| 17:36 | Created tools/v20_arch_diagnostic/p2_dombin_capture.ps1 | — | ~877 |
+| 17:37 | Created tools/v20_arch_diagnostic/analyze_p2_dombin.py | — | ~2652 |
+| 17:37 | Edited src/demo3d.cpp | added 1 condition(s) | ~164 |
+| 17:39 | Created doc/7/v20_p2_dombin_impl.md | — | ~2984 |
+
+## Session: 2026-05-24 17:40
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:42 | Edited .wolf/cerebrum.md | added DNR: P2 dominant-bin direct-measurement confirms bake-side per-bin asymmetry; per-row sub-test needed alongside 2D distribution overlap | ~4100 |
+| 17:42 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~1062 |

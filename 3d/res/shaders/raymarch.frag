@@ -915,6 +915,63 @@ void main() {
                 return;
             }
 
+            // 2026-05-24 Mode 22: Per-Pixel Dominant Direction Bin Viz (v2.0 P2 bake-side diag).
+            // For each surface pixel, finds the (dx,dy) atlas direction-bin index that
+            // contributes most to the luminance at this pixel under the nearest-parent
+            // probe sampling path (matches the ST=0 default flipped 2026-05-24). The
+            // contribution per bin = luminance(a.rgb) * wcos(normal,bdir) * a.a — i.e.
+            // the same integrand sampleProbeDir averages, isolated to per-bin terms.
+            //
+            // Output encoding (HDR EXR-compatible for round-tripping):
+            //   R = (dx_best + 0.5) / D     analyzer recovers dx = floor(R * D)
+            //   G = (dy_best + 0.5) / D     analyzer recovers dy = floor(G * D)
+            //   B = top_contrib / total_contrib  (dominance fraction in [0,1]; 0 if no GI)
+            //
+            // Purpose: converts the inferential "bake-side per-direction-bin atlas
+            // content asymmetry" framing (downstream path locked-in INNOCENT by
+            // h.b/h.c/h.c'/h.c'' 4-A/B chain — see
+            // doc/7/v20_downstream_symmetrizer_architecture.md) into DIRECT
+            // measurement. If cam0 and cam2 sample dominant bins from systematically
+            // different (dx,dy) regions, the asymmetry is in atlas content.
+            //
+            // Uses nearest-parent probe (no spatial interpolation) so the readout
+            // directly reflects atlas content at the probe the pixel sees, not a
+            // neighborhood average (which would itself be a symmetrizer).
+            if (uRenderMode == 22) {
+                vec3 dombinRGB = vec3(0.0);
+                vec3 uvw22 = (pos - uAtlasGridOrigin) / uAtlasGridSize;
+                bool inVol = !(any(lessThan(uvw22, vec3(0.0))) || any(greaterThan(uvw22, vec3(1.0))));
+                if (inVol) {
+                    vec3  pg22 = clamp(uvw22 * vec3(uAtlasVolumeSize) - 0.5,
+                                       vec3(0.0), vec3(uAtlasVolumeSize - ivec3(1)));
+                    ivec3 hi22 = uAtlasVolumeSize - ivec3(1);
+                    ivec3 pc22 = clamp(ivec3(floor(pg22 + 0.5)), ivec3(0), hi22);
+                    int   D22  = uAtlasDirRes;
+                    float topContrib = 0.0;
+                    float sumContrib = 0.0;
+                    ivec2 best = ivec2(0, 0);
+                    for (int dy = 0; dy < D22; ++dy) {
+                        for (int dx = 0; dx < D22; ++dx) {
+                            vec3  bdir = binToDir(ivec2(dx, dy), D22);
+                            float wcos = max(0.0, dot(bdir, normal));
+                            vec4  a    = texelFetch(uDirectionalAtlas,
+                                                    ivec3(pc22.x * D22 + dx, pc22.y * D22 + dy, pc22.z), 0);
+                            float lum  = dot(a.rgb, vec3(0.2126, 0.7152, 0.0722));
+                            float c    = lum * wcos * a.a;
+                            sumContrib += c;
+                            if (c > topContrib) { topContrib = c; best = ivec2(dx, dy); }
+                        }
+                    }
+                    float frac = (sumContrib > 1e-6) ? (topContrib / sumContrib) : 0.0;
+                    dombinRGB = vec3((float(best.x) + 0.5) / float(D22),
+                                     (float(best.y) + 0.5) / float(D22),
+                                     frac);
+                }
+                fragColor = vec4(dombinRGB, 1.0);
+                fragGI    = vec4(dombinRGB, 1.0);  // EXR capture path (mirrors mode 17 MRT)
+                return;
+            }
+
             // On cornell-orig, we expect BLUE dominates (cascade is 42% darker per PT).
             if (uRenderMode == 18) {
                 vec3 cascadeOutput = directColor + indirectColor;
