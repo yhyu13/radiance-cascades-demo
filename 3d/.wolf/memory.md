@@ -2034,3 +2034,17 @@
 | 18:25 | Edited tools/v20_arch_diagnostic/p2_dombin_mbon.ps1 | 2→6 lines | ~90 |
 | 18:28 | Created doc/7/v20_p2d_mbon_impl.md | — | ~2935 |
 | 18:29 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~698 |
+
+## Session: 2026-05-24 18:38
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:39 | Created tools/v20_arch_diagnostic/p2_dombin_control.ps1 | — | ~1170 |
+| 18:41 | Created doc/7/v20_p2e_control_impl.md | — | ~3541 |
+| 18:42 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~1058 |
+| HH:MM | P2-E control: cornell-orig symmetric cam0+cam2 mode 22 D=8 MB-OFF, per-row JS=0.1465 vs alcove 0.1534 → P2_FRAMEWORK_BIASED verdict, invalidates Option A motivation | tools/v20_arch_diagnostic/p2_dombin_control.ps1, captures_p2_dombin_control/, doc/7/v20_p2e_control_impl.md, .wolf/cerebrum.md, user memory project_phase_status.md | success | ~12k |
+
+## Session: 2026-05-24 18:47
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
