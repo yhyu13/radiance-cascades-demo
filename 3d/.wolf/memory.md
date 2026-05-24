@@ -1971,3 +1971,19 @@
 | 14:14 | Created doc/7/v20_cprime_spatial_trilinear_impl.md | — | ~2849 |
 | 14:15 | (h.c)' spatial-trilinear A/B cam0+cam2 | h6_spatial_trilinear_capture.ps1, analyze_h6_spatial_trilinear.py, captures_h6_spatial_trilinear/, h6_spatial_trilinear_results.json, doc/7/v20_cprime_spatial_trilinear_impl.md | SPATIAL_TRILINEAR_WIDENS_SPREAD (delta spread=-0.0671). Predicted direction inverted — ST=1 was symmetrizer not contributor. BOTH cams brighten under ST=0 (cam0 +21%, cam2 +9%); ST=1 was diluting both cams by averaging dim neighbor probes. Spatial trilinear is a NET QUALITY LOSER on this scene. Asymmetry source upstream: bake-side per-direction-bin atlas content at cam2-visible probes. Whole downstream consumption path now ruled out across (h.b)+(h.c)+(h.c)'. | ~3400 |
 | 14:15 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~935 |
+| 14:16 | Session end: 5 writes across 4 files (project_phase_status.md, h6_spatial_trilinear_capture.ps1, analyze_h6_spatial_trilinear.py, v20_cprime_spatial_trilinear_impl.md) | 5 reads | ~21777 tok |
+| 16:48 | Created tools/v20_arch_diagnostic/h7_downstream_knobs_capture.ps1 | — | ~1032 |
+| 16:49 | Created tools/v20_arch_diagnostic/analyze_h7_downstream_knobs.py | — | ~2206 |
+| 16:51 | Created doc/7/v20_cprime2_downstream_knobs_impl.md | — | ~2240 |
+| 16:51 | Created tools/v20_arch_diagnostic/h8_st0_mitigation_capture.ps1 | — | ~851 |
+| 16:53 | Created tools/v20_arch_diagnostic/analyze_h8_st0_mitigation.py | — | ~1926 |
+
+## Session: 2026-05-24 16:54
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:55 | Created doc/7/v20_cprime3_st0_mitigation_impl.md | — | ~2512 |
+| 17:05 | (h.c)'' downstream-knobs final rule-out cam0+cam2 | h7_downstream_knobs_capture.ps1, analyze_h7_downstream_knobs.py, captures_h7_downstream/, h7_downstream_knobs_results.json, doc/7/v20_cprime2_downstream_knobs_impl.md | dm0 delta_spread=-0.1028 INNOCENT; dm1db0 delta=-0.0206 INNOCENT. COMPOSITE: DOWNSTREAM_PATH_LOCKED_IN_INNOCENT. Every downstream knob is a symmetrizer (cam0 moves 2-7x more than cam2). Asymmetry source confirmed bake-side per-direction-bin atlas content. | ~3400 |
+| 17:06 | (h.c)''' ST=0 mitigation across 2 scenes | h8_st0_mitigation_capture.ps1, analyze_h8_st0_mitigation.py, captures_h8_st0_mitigation/, h8_st0_mitigation_results.json, doc/7/v20_cprime3_st0_mitigation_impl.md | Composite MIXED_HOLD_DEFAULT_ST1 per pre-committed band, but BOTH signals (ratio + RMSE) move ST=0 direction on BOTH scenes: cornell_default Δratio=+0.041 Δrmse=-0.005, cornell_orig Δratio=+0.039 Δrmse=-0.002. Soft generalization: ratio relative-improvement +14% on both, just under pre-committed +5pt absolute threshold. Recommend opt-in ST=0 flag, hold ST=1 default. DNR: pre-committed thresholds on ratio metrics should be RELATIVE-magnitude not absolute-pt when baseline is small. | ~3200 |
+| 17:07 | Edited .wolf/cerebrum.md | added 2 DNRs: relative-magnitude thresholds + downstream path locked-in innocent (cumulative 4-A/B chain) | ~3800 |
+| 16:57 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | modified measurement() | ~956 |

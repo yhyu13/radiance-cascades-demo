@@ -1,0 +1,81 @@
+{
+  "epsilon_pt_luminance": 0.001,
+  "rows": [
+    {
+      "cfg": "dm1db1",
+      "cam": 0,
+      "energy_ratio": 0.4348015891876097,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1206.083984375
+    },
+    {
+      "cfg": "dm1db1",
+      "cam": 2,
+      "energy_ratio": 0.28249859632628566,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 869.4422607421875
+    },
+    {
+      "cfg": "dm0",
+      "cam": 0,
+      "energy_ratio": 0.5629902180820259,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1561.662841796875
+    },
+    {
+      "cfg": "dm0",
+      "cam": 2,
+      "energy_ratio": 0.307936622644434,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 947.7325439453125
+    },
+    {
+      "cfg": "dm1db0",
+      "cam": 0,
+      "energy_ratio": 0.4519771109808498,
+      "integrated_pt": 2773.8720703125,
+      "integrated_cascade": 1253.7266845703125
+    },
+    {
+      "cfg": "dm1db0",
+      "cam": 2,
+      "energy_ratio": 0.2843420930928782,
+      "integrated_pt": 3077.68701171875,
+      "integrated_cascade": 875.115966796875
+    }
+  ],
+  "ratios": {
+    "dm1db1|cam0": 0.4348015891876097,
+    "dm1db1|cam2": 0.28249859632628566,
+    "dm0|cam0": 0.5629902180820259,
+    "dm0|cam2": 0.307936622644434,
+    "dm1db0|cam0": 0.4519771109808498,
+    "dm1db0|cam2": 0.2843420930928782
+  },
+  "spreads_cam2_over_cam0": {
+    "dm1db1": 0.6497184080079159,
+    "dm0": 0.5469662043036929,
+    "dm1db0": 0.6291072848264782
+  },
+  "per_config_verdicts": {
+    "dm0": {
+      "delta_spread": -0.102752203704223,
+      "verdict": "DOWNSTREAM_KNOB_INNOCENT"
+    },
+    "dm1db0": {
+      "delta_spread": -0.020611123181437763,
+      "verdict": "DOWNSTREAM_KNOB_INNOCENT"
+    }
+  },
+  "composite_verdict": "DOWNSTREAM_PATH_LOCKED_IN_INNOCENT",
+  "per_cfg_per_cam_delta": {
+    "dm0": {
+      "cam0": 0.12818862889441618,
+      "cam2": 0.025438026318148343
+    },
+    "dm1db0": {
+      "cam0": 0.01717552179324011,
+      "cam2": 0.0018434967665925672
+    }
+  }
+}

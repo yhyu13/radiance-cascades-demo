@@ -1,0 +1,62 @@
+{
+  "epsilon_pt_luminance": 0.001,
+  "rows": [
+    {
+      "scene": "cornell_default",
+      "st": 1,
+      "energy_ratio": 0.3007305715448291,
+      "integrated_pt": 22151.962890625,
+      "integrated_cascade": 6661.7724609375,
+      "rmse_lum": 0.12622076272964478,
+      "n_valid": 162336
+    },
+    {
+      "scene": "cornell_default",
+      "st": 0,
+      "energy_ratio": 0.3421341664752656,
+      "integrated_pt": 22151.962890625,
+      "integrated_cascade": 7578.943359375,
+      "rmse_lum": 0.12111500650644302,
+      "n_valid": 162336
+    },
+    {
+      "scene": "cornell_orig",
+      "st": 1,
+      "energy_ratio": 0.275345840308243,
+      "integrated_pt": 13731.556640625,
+      "integrated_cascade": 3780.927001953125,
+      "rmse_lum": 0.08454864472150803,
+      "n_valid": 163566
+    },
+    {
+      "scene": "cornell_orig",
+      "st": 0,
+      "energy_ratio": 0.3145534557219293,
+      "integrated_pt": 13731.556640625,
+      "integrated_cascade": 4319.30859375,
+      "rmse_lum": 0.08214583247900009,
+      "n_valid": 163566
+    }
+  ],
+  "per_scene": {
+    "cornell_default": {
+      "ratio_st1": 0.3007305715448291,
+      "ratio_st0": 0.3421341664752656,
+      "delta_ratio": 0.04140359493043655,
+      "rmse_st1": 0.12622076272964478,
+      "rmse_st0": 0.12111500650644302,
+      "delta_rmse": -0.005105756223201752,
+      "verdict": "ST_MIXED"
+    },
+    "cornell_orig": {
+      "ratio_st1": 0.275345840308243,
+      "ratio_st0": 0.3145534557219293,
+      "delta_ratio": 0.03920761541368628,
+      "rmse_st1": 0.08454864472150803,
+      "rmse_st0": 0.08214583247900009,
+      "delta_rmse": -0.0024028122425079346,
+      "verdict": "ST_MIXED"
+    }
+  },
+  "composite_recommendation": "MIXED_HOLD_DEFAULT_ST1"
+}
