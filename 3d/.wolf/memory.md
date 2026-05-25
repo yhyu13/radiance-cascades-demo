@@ -2048,3 +2048,12 @@
 
 | Time | Action | File(s) | Outcome | ~Tokens |
 |------|--------|---------|---------|--------|
+| 09:30 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | 1→3 lines | ~307 |
+| 09:30 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | 4→5 lines | ~260 |
+| 09:33 | Created tools/v20_convergence/cv1_capture.ps1 | — | ~1250 |
+| 09:34 | Created tools/v20_convergence/analyze_cv1.py | — | ~2677 |
+| 09:47 | Created doc/7/v20_cv1_convergence_impl.md | — | ~3284 |
+| 09:48 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | 1→3 lines | ~309 |
+| 09:48 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | 5→10 lines | ~340 |
+
+| 09:48 | CV1 absolute cascade-vs-PT convergence on cornell cam0 MB-ON g=1.0 hybrid OFF; ratio_B=0.65 DIM_MILD, asymptotes by N=1024; PT flat by N=128 | tools/v20_convergence/cv1_capture.ps1 + analyze_cv1.py, doc/7/v20_cv1_convergence_impl.md | DIM_MILD + SLOW_CONVERGENCE + PT_WELL_CONVERGED | ~6k |
