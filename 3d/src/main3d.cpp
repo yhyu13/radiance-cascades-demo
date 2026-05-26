@@ -475,6 +475,16 @@ int main(int argc, char* argv[]) {
             demo->setHybridBlendWeight(v);
             std::cout << "[MAIN] --hybrid-weight=" << v
                       << " (1.0=pure correction, 0.0=pure cascade; default 1.0)\n";
+        } else if (arg.rfind("--indirect-clamp-k=", 0) == 0) {
+            float v = static_cast<float>(std::atof(arg.substr(19).c_str()));
+            demo->setIndirectClampK(v);
+            std::cout << "[MAIN] --indirect-clamp-k=" << v
+                      << " (v2.4.b: cap lum(indirect) <= K*lum(direct); 0=off)\n";
+        } else if (arg.rfind("--max-cascade-level=", 0) == 0) {
+            int v = std::atoi(arg.substr(20).c_str());
+            demo->setMaxCascadeLevel(v);
+            std::cout << "[MAIN] --max-cascade-level=" << v
+                      << " (v2.5/A: cap bake to levels 0..N; -1=all)\n";
         } else if (arg.rfind("--hybrid-ema=", 0) == 0) {
             float v = static_cast<float>(std::atof(arg.substr(13).c_str()));
             demo->setHybridEMAAlpha(v);

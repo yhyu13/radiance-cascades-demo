@@ -170,6 +170,12 @@ uniform float     uHybridCascadeVariance;  // RELATIVE prior for cascade (CoV^2,
 uniform int       uHybridSampleCount;      // current accumulator sample count (confidence gate)
 uniform int       uHybridConfidenceSamples;// samples required for full correction trust (default 8)
 
+// 2026-05-26 v2.4.b — Per-pixel indirect symptom clamp (doc/7/v24b_indirect_clamp_impl.md).
+// When K > 0, the cascade's luminance(indirectColor) is capped at K * luminance(directColor)
+// AFTER the hybrid blend. Default K=0 disables the clamp. Symptom treatment only — never
+// ships as Default; opt-in preset if STRONG verdict at the v2.4.b gate.
+uniform float     uIndirectClampK;
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
@@ -376,21 +382,26 @@ vec3 binToDir(ivec2 bin, int D) {
 // Cosine-weighted irradiance integral from one probe's D×D atlas tile.
 // Excludes back-facing bins (dot < 0) — they cannot illuminate the surface.
 //
-// Phase 2 (interval atlas): the bake stores α as per-bin transparency (0 =
-// opaque, 1 = transparent). The numerator α-gates bin radiance; the
-// denominator uses the same cos*α weighting (mode-1/2/3/4-style "renormalize
-// over visible directions"). Empirically this matched Phase 1 Mode 4 quality
-// closer than the alternative (cos-only denominator) — the renormalization
-// preserves the over-bright bias that the pre-Phase-2 bake encoded, which
-// happens to compensate for the lost far-field multi-bounce in scenes where
-// most C0 bins hit something (Sponza). See Phase 2 impl doc for the v3-vs-v4
-// experiment that picked this normalization over the geometrically-purer
-// cos-only divisor.
+// v2.0 (2026-05-25, doc/7/v20_shadertoy_diff_impl.md Deltas #1+#2 paired fix):
+// the consumer no longer α-gates bin radiance (Delta #1) and now computes the
+// proper hemispheric Riemann sum (Delta #2). The pre-v2.0 Phase 2 contract was
+// `irrad = Σ(L·cos·a) / Σ(cos·a)` — a normalized weighted-mean that dropped
+// surface-hit bins entirely (a=0 on hit) and replaced the proper ΔΩ constant
+// (4π/D² for full-sphere octahedral bins) with `1/N_visible_bins`. That
+// contract was rooted in pre-Phase-2 Mode 3/4 experiments where the
+// renormalization compensated for missing far-field multi-bounce. v2.0's bake
+// already encodes the merged near+far field via the smoothstep interval
+// composition (`hit.rgb*l + upperDir.rgb*(1-l)`), so the consumer must read
+// the merged answer, not re-gate it. See feedback_cascade_merge_is_bake_time.
 //
-// Pre-Phase-2 this sampler ignored α entirely (Mode 0 had no visibility check;
-// Modes 1/2 used outer probeVisibility(); Mode 3/4 had their own samplers).
-// After Phase 2, bake handles visibility natively via α; this single sampler
-// is the only correct path. Modes 1/2/3/4 are deprecated — see 2C cleanup.
+// New contract: `irrad = (4/D²) × Σ(L · cos⁺)` — proper Lambertian irradiance
+// pre-divided by π so caller multiplies by albedo. cos⁺ masks lower hemisphere.
+// The `* a.a` factor has been removed from the integrand.
+//
+// MB feedback path (sampleC0AtlasOneBin in radiance_3d.comp) was already
+// reading a.rgb without `* a.a` — v2.0 brings the display consumer into
+// alignment with that already-ungated contract.
+//
 // 2026-05-18 (critic-16 W1 refactor + mode-15 extension): unified function returning
 // irradiance + diagnostic metrics in a single D² loop. Cheap extra ALU per bin;
 // mode-0/6 callers ignore the diagnostics, mode-14/15 callers consume them.
@@ -418,10 +429,27 @@ struct ProbeSample {
     float oscillation;
 };
 
+// v2.0 MBRC ShaderToy-diff fix (Deltas #1 + #2, paired):
+//   - Delta #1: irradiance no longer drops a.rgb on α=0 bins. The bake's
+//     smoothstep interval composition (`hit.rgb*l + upperDir.rgb*(1-l)`)
+//     already encodes "visible near-field + far-field"; the consumer must
+//     read the merged answer, not re-gate it. Removing `* a.a` from the
+//     irradiance integrand restores the contract that cascade merging is
+//     bake-time work (see feedback_cascade_merge_is_bake_time).
+//   - Delta #2: irradiance now computes the proper hemispheric Riemann sum.
+//     Our binToDir covers the full sphere S² with D² bins ⇒ ΔΩ = 4π/D² per
+//     bin. cos⁺ = max(0, n·ω) gates the lower hemisphere. The Lambertian
+//     L_out = (albedo/π) × ∫ L cos⁺ dω reduces to albedo × (4/D²) × Σ L cos⁺.
+//     We return E_irrad / π = (4/D²) × Σ L cos⁺ here so the caller multiplies
+//     by albedo (matching the convention at line ~720 indirectColor = albedo *
+//     sampleDirectionalGI(...).irrad).
+//
+// Diagnostic fields (leak / oscillation) still consume a.a but in additive,
+// not multiplicative-on-the-integrand, form — they describe the bake state,
+// not the radiance the display reads.
 ProbeSample sampleProbeDir(ivec3 pc, vec3 normal, int D) {
-    vec3  irrad   = vec3(0.0);
-    float wsum    = 0.0;        // sum(wcos * a.a) — for irrad normalization
-    float wcosSum = 0.0;        // sum(wcos)        — for oscillation normalization
+    vec3  irrad   = vec3(0.0);  // (4/D²) × Σ L cos⁺
+    float wcosSum = 0.0;        // sum(wcos) — for oscillation normalization
     vec3  leakRgb = vec3(0.0);
     float oscSum  = 0.0;        // sum(wcos * 4*a.a*(1-a.a))
     for (int dy = 0; dy < D; ++dy) {
@@ -430,24 +458,25 @@ ProbeSample sampleProbeDir(ivec3 pc, vec3 normal, int D) {
             float wcos = max(0.0, dot(bdir, normal));
             vec4  a    = texelFetch(uDirectionalAtlas,
                                     ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
-            float w    = wcos * a.a;
-            irrad   += a.rgb * w;
-            wsum    += w;
+            irrad   += a.rgb * wcos;
             wcosSum += wcos;
             leakRgb += a.rgb * wcos * (1.0 - a.a);
             oscSum  += wcos * 4.0 * a.a * (1.0 - a.a);
         }
     }
     ProbeSample r;
-    r.irrad       = irrad / max(wsum, 1e-4);
+    r.irrad       = irrad * (4.0 / float(D * D));
     r.leak        = dot(leakRgb, vec3(0.2126, 0.7152, 0.0722));
     r.oscillation = oscSum / max(wcosSum, 1e-4);
     return r;
 }
 
 // (sampleProbeDirPerBinOccluded and sampleProbeDirDepthAware removed in Phase 2
-// 2C cleanup. The bake-side α-gate inside sampleProbeDir is now the single
-// visibility path. See Phase 2 impl doc for the rationale.)
+// 2C cleanup. Post-v2.0: the consumer no longer α-gates the irradiance
+// integrand — see the v20_shadertoy_diff_impl.md Deltas #1+#2 note above the
+// function. Visibility now lives ENTIRELY in the bake-side smoothstep merge
+// (cascade_merge_is_bake_time). a.a survives in the leak/oscillation
+// diagnostics but no longer multiplies radiance for display.)
 
 // Trilinear spatial blend over the 8 surrounding C0 probes, each cosine-weighted.
 // -0.5 center-aligned offset: same convention as Phase 5d trilinear and Phase 5f bilinear.
@@ -766,6 +795,18 @@ void main() {
                 }
             }
 
+            // v2.4.b: per-pixel luminance clamp on cascade indirect (doc/7/v24b_indirect_clamp_impl.md).
+            // Caps indirect luminance at K * direct luminance, preserving chromaticity.
+            // K=0 disables. Affects all downstream consumers (modes 0/11-13/17-20).
+            if (uIndirectClampK > 0.0) {
+                float lumDirect   = dot(directColor,   vec3(0.2126, 0.7152, 0.0722));
+                float lumIndirect = dot(indirectColor, vec3(0.2126, 0.7152, 0.0722));
+                float lumCap      = uIndirectClampK * lumDirect;
+                if (lumIndirect > lumCap && lumIndirect > 1e-4) {
+                    indirectColor *= lumCap / lumIndirect;
+                }
+            }
+
             // Step 11 (codex 07 F3): GI heatmaps. Inserted AFTER the main-path
             // lighting computation (line 535-544) so they CONSUME directColor /
             // indirectColor / indirect -- unlike modes 4/6 which compute their
@@ -969,6 +1010,16 @@ void main() {
                 }
                 fragColor = vec4(dombinRGB, 1.0);
                 fragGI    = vec4(dombinRGB, 1.0);  // EXR capture path (mirrors mode 17 MRT)
+                return;
+            }
+
+            // Mode 23: First-hit world-position dump for v2.3 leak-source probe
+            // attribution. fragGI receives raw world-space hit point; Python
+            // analyzer bins each pixel by floor((pos - uAtlasGridOrigin) / cellSize)
+            // to build per-probe contribution Lorenz curve over the v2.2 bright mask.
+            if (uRenderMode == 23) {
+                fragColor = vec4(fract(pos * 0.1), 1.0);   // PNG sanity (wrapped for display)
+                fragGI    = vec4(pos, 1.0);                // EXR sidecar: raw world position
                 return;
             }
 

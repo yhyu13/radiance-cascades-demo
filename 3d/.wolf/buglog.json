@@ -4080,6 +4080,422 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-24T09:37:30.915Z"
+    },
+    {
+      "id": "bug-254",
+      "timestamp": "2026-05-24T10:11:36.210Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "tools/v20_arch_diagnostic/analyze_p2_dombin.py",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-24T10:11:36.210Z"
+    },
+    {
+      "id": "bug-255",
+      "timestamp": "2026-05-24T10:14:48.706Z",
+      "error_message": "Significant refactor of ",
+      "file": "tools/v20_arch_diagnostic/analyze_p2_dombin.py",
+      "root_cause": "13 lines replaced/restructured",
+      "fix": "Rewrote 21→32 lines (13 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-24T10:14:48.706Z"
+    },
+    {
+      "id": "bug-256",
+      "timestamp": "2026-05-24T10:19:24.732Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→15 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-24T10:19:24.732Z"
+    },
+    {
+      "id": "bug-257",
+      "timestamp": "2026-05-24T10:21:01.285Z",
+      "error_message": "Incorrect value in code",
+      "file": "tools/v20_arch_diagnostic/p2_dombin_mbon.ps1",
+      "root_cause": "Had \"--mb-gain=1.0\"",
+      "fix": "Changed to \"--multi-bounce-gain=1.0\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ps1"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-24T10:21:09.047Z"
+    },
+    {
+      "id": "bug-258",
+      "timestamp": "2026-05-25T01:30:16.286Z",
+      "error_message": "Incorrect value in code",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "Had \"the P2 asymmetry\"",
+      "fix": "Changed to \"how far is cascade from PT\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T01:30:16.286Z"
+    },
+    {
+      "id": "bug-259",
+      "timestamp": "2026-05-25T01:48:15.963Z",
+      "error_message": "Incorrect value in code",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "Had `P2_FRAMEWORK_BIASED`",
+      "fix": "Changed to `CV1_CASCADE_DIM_MILD`",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T01:48:15.963Z"
+    },
+    {
+      "id": "bug-260",
+      "timestamp": "2026-05-25T01:48:30.463Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 5→10 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T01:48:30.463Z"
+    },
+    {
+      "id": "bug-261",
+      "timestamp": "2026-05-25T02:10:11.048Z",
+      "error_message": "Significant refactor of ",
+      "file": "doc/7/v20_shadertoy_diff_impl.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 12→21 lines (5 removed) | Also: `r.irrad = irrad / wsum` with `r.irrad = irrad * (; i.e., compute the proper Riemann sum. Combined wit | Also: MB feedback reads `a.rgb` from C0 atlas — which af; will be the proper merged radiance (good). If Delt | Also: **Predicted CV1 outcome after fix** (probabilistic; - BAND 1 ratio: **0.65 → likely 0.85-1.05** (close | Also: Finding 5's pre-fix experiment is the recommended ; \"fix landed at ratio 1.5\" outcome that re-opens th",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 5,
+      "last_seen": "2026-05-25T02:11:46.227Z"
+    },
+    {
+      "id": "bug-262",
+      "timestamp": "2026-05-25T03:08:53.039Z",
+      "error_message": "Significant refactor of ",
+      "file": "res/shaders/raymarch.frag",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 26→41 lines (7 removed) | Also: // 2C cleanup. The bake-side α-gate inside sampleP; // visibility path. See Phase 2 impl doc for the r",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "frag"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-25T03:09:54.009Z"
+    },
+    {
+      "id": "bug-263",
+      "timestamp": "2026-05-25T04:17:45.538Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "16 lines replaced/restructured",
+      "fix": "Rewrote 36→49 lines (16 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T04:17:45.538Z"
+    },
+    {
+      "id": "bug-264",
+      "timestamp": "2026-05-25T04:19:29.235Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 6→9 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T04:19:29.235Z"
+    },
+    {
+      "id": "bug-265",
+      "timestamp": "2026-05-25T05:34:37.547Z",
+      "error_message": "Significant refactor of ",
+      "file": "src/demo3d.cpp",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 4→6 lines (2 removed) | Also: \"  Leak-suppressed: MB g=1.0 + ST + WS  Phase 3 le; \"ST = useSpatialTrilinear (8-neighbor merge). WS =",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-25T05:34:53.039Z"
+    },
+    {
+      "id": "bug-266",
+      "timestamp": "2026-05-25T05:35:08.689Z",
+      "error_message": "Significant refactor of ",
+      "file": "tools/v20_convergence/cv1_capture_leaksupp.ps1",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 7→12 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ps1"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T05:35:08.689Z"
+    },
+    {
+      "id": "bug-267",
+      "timestamp": "2026-05-25T05:38:45.011Z",
+      "error_message": "Incorrect value in code",
+      "file": "tools/v20_convergence/analyze_cv1_ws.py",
+      "root_cause": "Had '=== POST-fix +WS (captures_cv1_postfix_ws) ==='",
+      "fix": "Changed to '=== POST-fix +LeakSupp DM+ST+WS (captures_cv1_pos",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-25T05:39:03.926Z"
+    },
+    {
+      "id": "bug-268",
+      "timestamp": "2026-05-25T05:41:28.009Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_gi_presets_postfix_rebuild.md",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 8→8 lines (7 removed) | Also: - Post-fix CV1 numbers (cornell) for verification:; - Default: ratio 0.846, |p95| 2.27, dim% 16.7, bri",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-25T05:41:36.789Z"
+    },
+    {
+      "id": "bug-269",
+      "timestamp": "2026-05-25T05:42:01.068Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 9→20 lines (9 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T05:42:01.068Z"
+    },
+    {
+      "id": "bug-270",
+      "timestamp": "2026-05-25T07:20:54.703Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "doc/7/v22_aFactor_reshape_impl.md",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T07:20:54.703Z"
+    },
+    {
+      "id": "bug-271",
+      "timestamp": "2026-05-25T07:21:48.778Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 6→22 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T07:21:48.778Z"
+    },
+    {
+      "id": "bug-272",
+      "timestamp": "2026-05-25T10:55:09.828Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (raymarchRenderMode != 22 && (ptAccumTexture == 0 |)",
+      "fix": "Changed to: if (raymarchRenderMode != 22 && raymarchRenderMode != )",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T10:55:09.828Z"
+    },
+    {
+      "id": "bug-273",
+      "timestamp": "2026-05-25T10:58:05.120Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.h",
+      "root_cause": "Condition was: if (m < 0 || m > 22)",
+      "fix": "Changed to: if (m < 0 || m > 23)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "h"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T10:58:05.120Z"
+    },
+    {
+      "id": "bug-274",
+      "timestamp": "2026-05-25T10:59:34.423Z",
+      "error_message": "Significant refactor of ",
+      "file": "tools/v23_attribution/precondition.py",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 16→27 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T10:59:34.423Z"
+    },
+    {
+      "id": "bug-275",
+      "timestamp": "2026-05-25T10:59:41.002Z",
+      "error_message": "Incorrect value in code",
+      "file": "tools/v23_attribution/precondition.py",
+      "root_cause": "Had 'top5_of_all_cells'",
+      "fix": "Changed to 'top5_of_touched_cells'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T10:59:41.002Z"
+    },
+    {
+      "id": "bug-276",
+      "timestamp": "2026-05-25T11:01:20.184Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 6→14 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T11:01:20.184Z"
+    },
+    {
+      "id": "bug-277",
+      "timestamp": "2026-05-25T12:08:18.165Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 4→17 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T12:08:18.165Z"
+    },
+    {
+      "id": "bug-278",
+      "timestamp": "2026-05-25T23:46:34.554Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 5→17 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T23:46:34.554Z"
+    },
+    {
+      "id": "bug-279",
+      "timestamp": "2026-05-25T23:52:11.014Z",
+      "error_message": "Wrong condition in logic",
+      "file": "src/demo3d.cpp",
+      "root_cause": "Condition was: if (!disableCascadeMerging &&\n        upperIdx < casca)",
+      "fix": "Changed to: if (!v25IsTopCapped && !disableCascadeMerging &&\n     )",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "cpp"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T23:52:11.014Z"
     }
   ]
 }

@@ -2474,7 +2474,11 @@ void Demo3D::updateRadianceCascades() {
     //   cascadeExclude == cascadeCount-1: highest cascade; cascade i-1 has no
     //     i+1 to fall back to; treated as "no upper" (hasUpper=0, tMax extended
     //     to the original i+1 tMax).
-    for (int i = cascadeCount - 1; i >= 0; --i) {
+    // v2.5/A: effective top level = min(maxCascadeLevel, cascadeCount-1); -1 = no cap
+    int v25TopLevel = (maxCascadeLevel >= 0)
+                        ? std::min(maxCascadeLevel, cascadeCount - 1)
+                        : (cascadeCount - 1);
+    for (int i = v25TopLevel; i >= 0; --i) {
         if (!cascades[i].active) continue;
         if (cascadeExclude >= 0 && i == cascadeExclude) continue;  // skip excluded cascade bake
         int interval = std::min(1 << i, staggerMaxInterval);
@@ -2687,7 +2691,11 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     // so the binding follows the skip-in-merge dispatch chain. When the immediate
     // upper was excluded, this binds two-levels-up's atlas instead.
     int upperIdx = upperIdx5d;
-    if (!disableCascadeMerging &&
+    // v2.5/A: when bake is capped, force the top baked level to have no upper cascade
+    // so stale higher-level atlases (never re-baked under the cap) don't leak in.
+    bool v25IsTopCapped = (maxCascadeLevel >= 0 &&
+                           cascadeIndex == std::min(maxCascadeLevel, cascadeCount - 1));
+    if (!v25IsTopCapped && !disableCascadeMerging &&
         upperIdx < cascadeCount && cascades[upperIdx].active && cascades[upperIdx].probeAtlasTexture != 0) {
         // Phase 10: when fused EMA is active, probeAtlasHistory holds the accumulated (fresh) atlas
         // after the handle swap from the upper cascade's last update. Read it as the canonical atlas.
@@ -3043,6 +3051,7 @@ void Demo3D::raymarchPass() {
     glUniform1f(glGetUniformLocation(prog, "uHybridCascadeVariance"), hybridCascadeVariance);
     glUniform1i(glGetUniformLocation(prog, "uHybridSampleCount"), hybridSampleCount);
     glUniform1i(glGetUniformLocation(prog, "uHybridConfidenceSamples"), hybridConfidenceSamples);
+    glUniform1f(glGetUniformLocation(prog, "uIndirectClampK"), indirectClampK);
 
     // GI blur: redirect mode-0/3/6 render to 3-attachment FBO (direct / gbuffer / indirect).
     // Modes 3 and 6 are pure-indirect views so direct=black and blur applies to full output.
@@ -3063,7 +3072,7 @@ void Demo3D::raymarchPass() {
     // Interactive mode 22 renders straight to the default FB via fragColor and
     // does not need MRT; the fragGI write is then a no-op (no attachment).
     const bool giBlurActive = (useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6))
-                              || (exrCapture && (raymarchRenderMode == 17 || raymarchRenderMode == 22));
+                              || (exrCapture && (raymarchRenderMode == 17 || raymarchRenderMode == 22 || raymarchRenderMode == 23));
     glUniform1i(glGetUniformLocation(prog, "uSeparateGI"), giBlurActive ? 1 : 0);
 
     if (giBlurActive) {
@@ -5381,9 +5390,11 @@ void Demo3D::renderCascadePanel() {
     }
 
     // Phase 3: WeightedSample bake-side leak fix.
-    // Only active on the trilinear path (non-co-located + uUseSpatialTrilinear).
+    // Only active on the trilinear path (non-co-located + uUseSpatialTrilinear + uUseDirectionalMerge).
+    // 2026-05-25: added !useDirectionalMerge to disabled predicate — without DM the bake
+    // takes the isotropic-nearest branch (radiance_3d.comp:667) and WS is silently dropped.
     {
-        bool disabled = useColocatedCascades || !useSpatialTrilinear;
+        bool disabled = useColocatedCascades || !useSpatialTrilinear || !useDirectionalMerge;
         if (disabled) ImGui::BeginDisabled();
         ImGui::Checkbox("WeightedSample bake-side visibility (Phase 3)", &useWeightedSample);
         imHelpMarker(
@@ -5407,47 +5418,63 @@ void Demo3D::renderCascadePanel() {
         if (disabled) ImGui::EndDisabled();
         ImGui::SameLine();
         if (disabled)
-            ImGui::TextDisabled("(needs non-colocated + trilinear)");
+            ImGui::TextDisabled("(needs DM + trilinear + non-colocated)");
         else
             ImGui::TextDisabled(useWeightedSample ? "(per-corner gating)" : "(Phase 2 unconditional)");
     }
 
-    // 2026-05-19 GI Quality Presets — quick-set bundles of (MB, gain, Phase 3) found
-    // via parameter sweep on cornell-orig + directional light. See doc/7/gi_presets.md.
+    // GI Quality Presets — rebuilt 2026-05-25 around MBRC v2.0 post-fix architecture
+    // (Deltas #1+#2: irrad = (4/D²) × Σ(L·cos⁺), consumer α-gate retired).
+    // Reference: doc/7/gi_presets.md (post-fix CV1 numbers, ST gate explanation).
+    //
+    // Phase 3 activation requires ALL of: useDirectionalMerge=1, useSpatialTrilinear=1,
+    // useWeightedSample=1, useColocatedCascades=0 (see radiance_3d.comp:667). All three
+    // default OFF; presets that promise Phase 3 leak suppression must flip ST+WS+DM.
+    // (DM gate was missed in 2026-05-24 sweep; both Leak-suppressed and the p3effective
+    // indicator now enumerate the full 4-flag requirement.)
     ImGui::SeparatorText("GI Quality Presets");
-    if (ImGui::Button("Cheap (single-bounce)##preset")) {
+    if (ImGui::Button("Cheap##preset")) {
         setUseMultiBounce(false);
+        setUseSpatialTrilinearCLI(false);
         setUseWeightedSample(false);
-        std::cout << "[Preset] Cheap: MB OFF, Phase 3 OFF\n";
+        std::cout << "[Preset] Cheap: MB OFF, ST OFF, WS OFF (single-bounce only)\n";
     }
     ImGui::SameLine();
-    if (ImGui::Button("Balanced##preset")) {
+    if (ImGui::Button("Default##preset")) {
         setUseMultiBounce(true);
         setMultiBounceGain(1.0f);
-        setUseWeightedSample(true);
-        std::cout << "[Preset] Balanced: MB g=1.0 + Phase 3 ON\n";
+        setUseSpatialTrilinearCLI(false);
+        setUseWeightedSample(false);
+        std::cout << "[Preset] Default: MB g=1.0, ST OFF, WS OFF (post-fix CV1 cornell)\n";
     }
     ImGui::SameLine();
     if (ImGui::Button("Color-bleed##preset")) {
         setUseMultiBounce(true);
         setMultiBounceGain(1.5f);
+        setUseSpatialTrilinearCLI(false);
         setUseWeightedSample(false);
-        std::cout << "[Preset] Color-bleed: MB g=1.5, Phase 3 OFF\n";
+        std::cout << "[Preset] Color-bleed: MB g=1.5, ST OFF, WS OFF (gain bump)\n";
     }
     ImGui::SameLine();
-    if (ImGui::Button("Max GI##preset")) {
+    if (ImGui::Button("Leak-suppressed##preset")) {
         setUseMultiBounce(true);
-        setMultiBounceGain(2.0f);
+        setMultiBounceGain(1.0f);
+        setUseDirectionalMergeCLI(true);
+        setUseSpatialTrilinearCLI(true);
         setUseWeightedSample(true);
-        std::cout << "[Preset] Max GI: MB g=2.0 + Phase 3 ON\n";
+        std::cout << "[Preset] Leak-suppressed: MB g=1.0, DM ON, ST ON, WS ON (Phase 3 active)\n";
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Sweep on cornell-orig + directional light:\n"
-                          "  Cheap:    Cascade_GI 1.0x PT_GI avg, no over-bright, ~0 ms extra\n"
-                          "  Balanced: 1.35x avg, modest bleed visible, ~1 ms extra\n"
-                          "  ColorB:   2.0x avg, strong visible bleed, ~1 ms extra\n"
-                          "  Max GI:   1.8x avg w/ Phase 3 leak fix, strongest bleed + reduced leak\n"
-                          "All four are temporally stable; default still OFF (Cheap).");
+        ImGui::SetTooltip(
+            "Post-fix v2.0 (paired Deltas #1+#2, 2026-05-25). CV1 cornell/cam0:\n"
+            "  Cheap:           MB OFF              single-bounce only, fastest\n"
+            "  Default:         MB g=1.0            ratio 0.846, |p95| 2.27 (CV1 post-fix)\n"
+            "  Color-bleed:     MB g=1.5            stronger color transport, no Phase 3\n"
+            "  Leak-suppressed: MB g=1.0 + DM+ST+WS  Phase 3 leak-gated; trades mean ratio\n"
+            "                                       for cleaner tail (ST=1 dims, WS gates)\n"
+            "DM = useDirectionalMerge. ST = useSpatialTrilinear. WS = useWeightedSample.\n"
+            "Phase 3 needs ALL three (radiance_3d.comp:667) — DM was the silent gate fixed 2026-05-25.\n"
+            "Doc: doc/7/gi_presets.md  CV1: doc/7/v20_postfix_cv1_impl.md");
 
     // Phase MB (multi-bounce temporal feedback) — see doc/7/multi_bounce_temporal_plan.md.
     {
@@ -6554,16 +6581,18 @@ void Demo3D::renderTutorialPanel() {
         ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
             "  [Phase 2] Render-side α-gate  ON (always; raymarch.frag: w = wcos × a.a)");
 
-        // Phase 3 v3 — bake-side WeightedSample; binds to useWeightedSample toggle
+        // Phase 3 v3 — bake-side WeightedSample; gated by 4 flags (radiance_3d.comp:667)
+        // 2026-05-25: added useDirectionalMerge to the effective check — without DM the
+        // bake takes the isotropic-nearest branch and WS is silently dropped.
         {
-            bool p3effective = useWeightedSample && !useColocatedCascades && useSpatialTrilinear;
+            bool p3effective = useWeightedSample && useDirectionalMerge && useSpatialTrilinear && !useColocatedCascades;
             ImVec4 c = p3effective
                 ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f)
                 : (useWeightedSample
                     ? ImVec4(1.0f, 0.6f, 0.2f, 1.0f)
                     : ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
             const char* state = p3effective ? "ON (active)" :
-                (useWeightedSample ? "ON (inactive — needs non-colocated + trilinear)" : "OFF (Phase 2 unconditional-trust)");
+                (useWeightedSample ? "ON (inactive — needs DM + trilinear + non-colocated)" : "OFF (Phase 2 unconditional-trust)");
             ImGui::TextColored(c, "  [Phase 3 v3] Bake-side WeightedSample  %s", state);
         }
 
@@ -6760,7 +6789,7 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
         std::cerr << "[hdr-exr] giIndirectTex not allocated; cannot dump\n";
         return;
     }
-    if (raymarchRenderMode != 22 && (ptAccumTexture == 0 || ptDirectAccumTexture == 0)) {
+    if (raymarchRenderMode != 22 && raymarchRenderMode != 23 && (ptAccumTexture == 0 || ptDirectAccumTexture == 0)) {
         std::cerr << "[hdr-exr] PT textures not allocated for mode "
                   << raymarchRenderMode << " (ptAccum=" << ptAccumTexture
                   << " ptDirect=" << ptDirectAccumTexture << ")\n";
@@ -6804,6 +6833,13 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
         saveExrRGB(stem + "_dombin.exr", dombinData, w, h);
         std::cout << "[hdr-exr] dumped stem=" << stem
                   << " dombin=" << w << "x" << h << " (mode 22, no PT)\n";
+    } else if (raymarchRenderMode == 23) {
+        // 2026-05-25 Mode 23 (v2.3 Step 0 precondition): shader wrote first-hit
+        // world position into giIndirectTex via fragGI. No PT needed.
+        std::vector<float> wpData = readTexRGB(giIndirectTex, w, h);
+        saveExrRGB(stem + "_worldpos.exr", wpData, w, h);
+        std::cout << "[hdr-exr] dumped stem=" << stem
+                  << " worldpos=" << w << "x" << h << " (mode 23, no PT)\n";
     } else {
         // 1. cascade GI (full viewport, RGBA16F → fp32 readback)
         std::vector<float> giData = readTexRGB(giIndirectTex, w, h);

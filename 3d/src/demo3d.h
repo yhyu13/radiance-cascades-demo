@@ -502,9 +502,9 @@ public:
     // Range now covers modes 0-16 (14 LeakSuspect, 15 TemporalOscillation, 16 PT-Reference).
     // No clamp; preserves existing shader fallthrough on out-of-range.
     void setRenderMode(int m) {
-        if (m < 0 || m > 22) {
+        if (m < 0 || m > 23) {
             std::cerr << "[Demo3D] WARN: render mode " << m
-                      << " out of range [0,22]; rendering as default\n";
+                      << " out of range [0,23]; rendering as default\n";
         }
         raymarchRenderMode = m;
     }
@@ -744,6 +744,23 @@ public:
         if (v == hybridBlendWeight) return;
         hybridBlendWeight = v;
         resetHybridAccumulator();
+    }
+    // v2.4.b symptom clamp: cap luminance(cascade_indirect) at K * luminance(direct).
+    // K=0 disables. See doc/7/v24b_indirect_clamp_impl.md.
+    void setIndirectClampK(float v) {
+        indirectClampK = (v < 0.0f) ? 0.0f : v;
+        std::cout << "[v2.4.b] uIndirectClampK = " << indirectClampK
+                  << (indirectClampK > 0.0f ? " (ENABLED)" : " (OFF)") << "\n";
+    }
+    // v2.5 Axis A: cap which cascade levels participate in the bake.
+    // -1 (default) = all active levels; N>=0 = bake only levels 0..min(N, cascadeCount-1)
+    // and force uHasUpperCascade=0 at the top baked level so stale upper atlases don't leak in.
+    // See doc/7/v25_architectural_scope.md.
+    void setMaxCascadeLevel(int v) {
+        maxCascadeLevel = (v < 0) ? -1 : v;
+        std::cout << "[v2.5/A] maxCascadeLevel = " << maxCascadeLevel
+                  << (maxCascadeLevel >= 0 ? " (CAPPED)" : " (ALL)") << "\n";
+        cascadeReady = false;  // force re-bake under new level cap
     }
     void setHybridEMAAlpha(float v) {
         if (v == hybridEMAAlpha) return;
@@ -1574,6 +1591,8 @@ private:
     int      hybridSampleCount;        // total rays-per-pixel accumulated
     bool     useHybrid;                // false default (opt-in)
     float    hybridBlendWeight;        // 1.0 = pure correction (default per critic-05 H1)
+    float    indirectClampK = 0.0f;    // v2.4.b: cap lum(indirect) <= K*lum(direct); 0=off
+    int      maxCascadeLevel = -1;     // v2.5/A: cap bake to levels 0..N; -1 = all levels
     bool     hybridUseMaxComp;         // legacy: per-pixel max(correction, cascade)
     int      hybridRaysPerFrame;       // default 1 (stochastic, EMA averages)
     float    hybridEMAAlpha;           // default 0.1 (~10 frames to converge)

@@ -2057,3 +2057,174 @@
 | 09:48 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_phase_status.md | 5→10 lines | ~340 |
 
 | 09:48 | CV1 absolute cascade-vs-PT convergence on cornell cam0 MB-ON g=1.0 hybrid OFF; ratio_B=0.65 DIM_MILD, asymptotes by N=1024; PT flat by N=128 | tools/v20_convergence/cv1_capture.ps1 + analyze_cv1.py, doc/7/v20_cv1_convergence_impl.md | DIM_MILD + SLOW_CONVERGENCE + PT_WELL_CONVERGED | ~6k |
+| 09:52 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/feedback_theoretical_fix_over_measurement.md | — | ~655 |
+| 09:52 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~120 |
+
+## Session: 2026-05-25 09:54
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:58 | Created doc/7/v20_shadertoy_diff_impl.md | — | ~5499 |
+
+## Session: 2026-05-25 10:09
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:10 | Edited doc/7/v20_shadertoy_diff_impl.md | expanded (+9 lines) | ~282 |
+| 10:10 | Edited doc/7/v20_shadertoy_diff_impl.md | modified fix() | ~113 |
+| 10:10 | Edited doc/7/v20_shadertoy_diff_impl.md | modified concern() | ~238 |
+| 10:10 | Edited doc/7/v20_shadertoy_diff_impl.md | 3→3 lines | ~48 |
+| 10:10 | Edited doc/7/v20_shadertoy_diff_impl.md | expanded (+8 lines) | ~352 |
+| 10:11 | Edited doc/7/v20_shadertoy_diff_impl.md | added 1 condition(s) | ~974 |
+| 10:11 | Edited doc/7/v20_shadertoy_diff_impl.md | 8 → 7 | ~14 |
+| 10:11 | Edited doc/7/v20_shadertoy_diff_impl.md | 7 → 8 | ~6 |
+| 10:11 | Edited doc/7/v20_shadertoy_diff_impl.md | 3→3 lines | ~41 |
+| 10:11 | Edited doc/7/v20_shadertoy_diff_impl.md | expanded (+8 lines) | ~220 |
+|  | folded critic findings into v20_shadertoy_diff_impl.md | doc/7/v20_shadertoy_diff_impl.md | added §7 critic pass; corrected 2/D² → 4/D²; widened CV1 band; documented MB bypass | ~2k |
+| 10:11 | folded critic findings into v20_shadertoy_diff_impl.md | doc/7/v20_shadertoy_diff_impl.md | added §7 critic pass; corrected 2/D² → 4/D²; widened CV1 band; documented MB bypass | ~2k |
+| 11:08 | Edited res/shaders/raymarch.frag | modified fix() | ~583 |
+| 11:09 | Edited res/shaders/raymarch.frag | modified returning() | ~444 |
+| 11:09 | Edited res/shaders/raymarch.frag | 3→6 lines | ~118 |
+| 11:14 | Created doc/7/v20_postfix_cv1_impl.md | — | ~1703 |
+| 11:15 | Deltas #1+#2 paired fix applied + CV1 captured | raymarch.frag, doc/7/v20_postfix_cv1_impl.md | ratio 0.65→0.85 (in-band), dim% 28.6→16.7 (in-band), |p95| 1.28→2.27 (predicted leak-tail exposed) | ~4k |
+| 11:15 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md | — | ~823 |
+| 11:15 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~115 |
+
+## Session: 2026-05-25 11:33
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:34 | Created tools/v20_convergence/analyze_cv1_ws.py | — | ~1361 |
+| 12:17 | Edited src/demo3d.cpp | expanded (+13 lines) | ~697 |
+| 12:18 | Created doc/7/gi_presets.md | — | ~1465 |
+| 12:18 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_st_gates_phase3.md | — | ~531 |
+| 12:19 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_gi_presets_postfix_rebuild.md | — | ~591 |
+| 12:19 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | tail() → suppressed() | ~140 |
+| 12:19 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md | 6→9 lines | ~163 |
+
+| 11:50 | WS-only sweep is no-op: byte-identical EXRs vs no-WS; ST gate finding | tools/v20_convergence/captures_cv1_postfix_ws/ | confirmed via MD5 across all 5 N | ~1k |
+| 12:05 | Rebuilt GI Quality Presets around post-fix architecture | src/demo3d.cpp:5417-5460 | 4 presets: Cheap/Default/Color-bleed/Leak-suppressed; only LS activates Phase 3 | ~2k |
+| 12:10 | Built RadianceCascades3D.exe (warnings only) | build/RadianceCascades3D.exe | OK | ~500 |
+| 12:15 | Documented presets + ST gate finding | doc/7/gi_presets.md (new) | impl doc with TBD column for LS preset measurement | ~1k |
+| 12:20 | Session end: 7 writes across 7 files (analyze_cv1_ws.py, demo3d.cpp, gi_presets.md, project_st_gates_phase3.md, project_gi_presets_postfix_rebuild.md) | 6 reads | ~132374 tok |
+| 12:22 | Created doc/7/v20_shadertoy_diff_diagrams.md | — | ~2811 |
+| 12:30 | Drew 3 mermaid comparison diagrams (workflow / tech stack / mental model) | doc/7/v20_shadertoy_diff_diagrams.md (new) | shader-toy vs ours; complements §2 of diff doc | ~3k |
+| 12:22 | Session end: 8 writes across 8 files (analyze_cv1_ws.py, demo3d.cpp, gi_presets.md, project_st_gates_phase3.md, project_gi_presets_postfix_rebuild.md) | 7 reads | ~142026 tok |
+| 13:28 | Created tools/v20_convergence/cv1_capture_leaksupp.ps1 | — | ~577 |
+
+## Session: 2026-05-25 13:33
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 13:33 | Edited src/demo3d.cpp | 8→9 lines | ~178 |
+| 13:33 | Edited src/demo3d.cpp | 7→8 lines | ~91 |
+| 13:34 | Edited src/demo3d.cpp | modified ImVec4() | ~243 |
+| 13:34 | Edited src/demo3d.cpp | 4→6 lines | ~117 |
+| 13:34 | Edited src/demo3d.cpp | 7→7 lines | ~78 |
+| 13:34 | Edited src/demo3d.cpp | useSpatialTrilinear() → three() | ~103 |
+| 13:35 | Edited tools/v20_convergence/cv1_capture_leaksupp.ps1 | activates() → script() | ~164 |
+| 13:35 | Edited tools/v20_convergence/cv1_capture_leaksupp.ps1 | 10→11 lines | ~104 |
+| 13:38 | Edited tools/v20_convergence/analyze_cv1_ws.py | 1→5 lines | ~88 |
+| 13:38 | Edited tools/v20_convergence/analyze_cv1_ws.py | 2→2 lines | ~38 |
+| 13:38 | Edited tools/v20_convergence/analyze_cv1_ws.py | "| N    | pre ratio | post" → "| N    | pre ratio | post" | ~46 |
+| 13:38 | Edited tools/v20_convergence/analyze_cv1_ws.py | inline fix | ~18 |
+| 13:39 | Edited tools/v20_convergence/analyze_cv1_ws.py | 3→3 lines | ~65 |
+| 13:40 | Created doc/7/v20_postfix_leaksupp_cv1_impl.md | — | ~2029 |
+| 13:40 | Edited doc/7/gi_presets.md | modified step() | ~578 |
+| 13:40 | Edited doc/7/gi_presets.md | 1→2 lines | ~46 |
+| 13:41 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_st_gates_phase3.md | — | ~881 |
+| 13:41 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_gi_presets_postfix_rebuild.md | modified matrix() | ~106 |
+| 13:41 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_gi_presets_postfix_rebuild.md | 4→7 lines | ~113 |
+| 13:42 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md | modified decision() | ~306 |
+| 13:42 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 3→3 lines | ~139 |
+| 13:50 | LS sweep verdict: FAIL (ratio 0.977→0.574, |p95| worsens). v2.1 ships Default; v2.2 = aFactor reshape. DM was silent third gate (caught by MD5 #2). | doc/7/v20_postfix_leaksupp_cv1_impl.md | branch=v2.2 | ~80 |
+| 13:43 | Session end: 21 writes across 9 files (demo3d.cpp, cv1_capture_leaksupp.ps1, analyze_cv1_ws.py, v20_postfix_leaksupp_cv1_impl.md, gi_presets.md) | 9 reads | ~147121 tok |
+| 13:45 | Session end: 21 writes across 9 files (demo3d.cpp, cv1_capture_leaksupp.ps1, analyze_cv1_ws.py, v20_postfix_leaksupp_cv1_impl.md, gi_presets.md) | 9 reads | ~147121 tok |
+| 14:31 | Session end: 21 writes across 9 files (demo3d.cpp, cv1_capture_leaksupp.ps1, analyze_cv1_ws.py, v20_postfix_leaksupp_cv1_impl.md, gi_presets.md) | 9 reads | ~147121 tok |
+| 14:35 | Session end: 21 writes across 9 files (demo3d.cpp, cv1_capture_leaksupp.ps1, analyze_cv1_ws.py, v20_postfix_leaksupp_cv1_impl.md, gi_presets.md) | 9 reads | ~147121 tok |
+| 15:19 | Created doc/7/v22_aFactor_reshape_impl.md | — | ~1742 |
+| 15:19 | Created tools/v22_aFactor/precondition.py | — | ~1761 |
+| 15:20 | Edited doc/7/v22_aFactor_reshape_impl.md | expanded (+6 lines) | ~110 |
+| 15:20 | Edited doc/7/v22_aFactor_reshape_impl.md | added error handling | ~808 |
+| 15:21 | Created doc/7/v23_leak_attribution_impl.md | — | ~1656 |
+| 15:21 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md | expanded (+16 lines) | ~334 |
+| 15:21 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | inline fix | ~48 |
+| 15:22 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_v22_killed_at_step0.md | — | ~878 |
+| 15:22 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~99 |
+| 14:10 | v2.2 Step 0 precondition: DEAD (r_attenuation=1.023). Bright tail uncorrelated with upper-cascade lum. Pivot to v2.3 attribution. Saved ~3.5h. | doc/7/v22_aFactor_reshape_impl.md, doc/7/v23_leak_attribution_impl.md | branch=v2.3 | ~90 |
+| 15:22 | Session end: 30 writes across 13 files (demo3d.cpp, cv1_capture_leaksupp.ps1, analyze_cv1_ws.py, v20_postfix_leaksupp_cv1_impl.md, gi_presets.md) | 9 reads | ~154962 tok |
+| 16:16 | Session end: 30 writes across 13 files (demo3d.cpp, cv1_capture_leaksupp.ps1, analyze_cv1_ws.py, v20_postfix_leaksupp_cv1_impl.md, gi_presets.md) | 9 reads | ~154962 tok |
+
+## Session: 2026-05-25 18:33
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-05-25 18:54
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:54 | Edited res/shaders/raymarch.frag | added 1 condition(s) | ~242 |
+| 18:55 | Edited src/demo3d.cpp | inline fix | ~36 |
+| 18:55 | Edited src/demo3d.cpp | inline fix | ~32 |
+| 18:55 | Edited src/demo3d.cpp | added 1 condition(s) | ~204 |
+| 18:56 | Created tools/v23_attribution/capture_worldpos.ps1 | — | ~590 |
+| 18:58 | Edited src/demo3d.h | modified if() | ~47 |
+| 18:59 | Created tools/v23_attribution/precondition.py | — | ~2757 |
+| 18:59 | Edited tools/v23_attribution/precondition.py | modified print() | ~405 |
+| 18:59 | Edited tools/v23_attribution/precondition.py | 2→3 lines | ~54 |
+| 19:00 | Edited doc/7/v23_leak_attribution_impl.md | expanded (+98 lines) | ~1329 |
+| 19:00 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_v23_step0_marginal.md | — | ~951 |
+| 19:00 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~102 |
+| 19:01 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md | modified status() | ~220 |
+| 19:01 | v2.3 Step 0 verdict | tools/v23_attribution/ + doc/7/v23_leak_attribution_impl.md | MARGINAL (top5_touched=26.1%); mode 23 ships diagnostic-only | ~1500 |
+| 19:02 | Session end: 13 writes across 9 files (raymarch.frag, demo3d.cpp, capture_worldpos.ps1, demo3d.h, precondition.py) | 9 reads | ~150016 tok |
+| 20:01 | Created tools/v23_attribution/inspect_clusters.py | — | ~2274 |
+| 20:03 | Created doc/7/v24_c0_dirres_bump_impl.md | — | ~1494 |
+| 20:04 | Created tools/v24_c0_hd/capture_variant.ps1 | — | ~542 |
+| 20:06 | Created tools/v24_c0_hd/analyze_v24.py | — | ~1707 |
+| 20:07 | Edited doc/7/v24_c0_dirres_bump_impl.md | expanded (+54 lines) | ~762 |
+| 20:07 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_v24_dead_c0_dirres.md | — | ~954 |
+| 20:08 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~102 |
+| 20:08 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md | modified status() | ~256 |
+
+## Session: 2026-05-25 20:09
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 07:40 | Created doc/7/v24b_indirect_clamp_impl.md | — | ~1714 |
+| 07:41 | Edited res/shaders/raymarch.frag | expanded (+6 lines) | ~157 |
+| 07:41 | Edited res/shaders/raymarch.frag | added 2 condition(s) | ~261 |
+| 07:41 | Edited src/demo3d.h | modified setHybridBlendWeight() | ~145 |
+| 07:41 | Edited src/demo3d.h | 1→2 lines | ~49 |
+| 07:41 | Edited src/demo3d.cpp | 1→2 lines | ~48 |
+| 07:41 | Edited src/main3d.cpp | added 1 condition(s) | ~171 |
+| 07:42 | Created tools/v24b_clamp/capture_variant.ps1 | — | ~518 |
+| 07:42 | Created tools/v24b_clamp/analyze_v24b.py | — | ~1684 |
+
+## Session: 2026-05-25 07:43
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 07:45 | Edited doc/7/v24b_indirect_clamp_impl.md | expanded (+28 lines) | ~606 |
+| 07:46 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_v24b_dead_indirect_clamp.md | — | ~592 |
+| 07:46 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~95 |
+| 07:46 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_mbrc_v20_postfix_landed.md | modified status() | ~290 |
+| 07:46 | v2.4.b K=2 sweep DEAD; output luminance clamp is global dimmer not firefly leash | doc/7/v24b_indirect_clamp_impl.md, tools/v24b_clamp/v24b_results.json | gate failed 3/4 bars; pivot to v2.5 architectural | ~6k |
+| 07:48 | Created doc/7/v25_architectural_scope.md | — | ~1732 |
+| 07:48 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_v25_architectural_scoped.md | — | ~607 |
+| 07:48 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~95 |
+| 07:48 | v2.5 architectural scoped (3 axes: per-cascade isolation / bake audit / basis jitter); recommend A first | doc/7/v25_architectural_scope.md | scope locked with pre-committed bands; awaiting user axis pick | ~4k |
+| 07:49 | Session end: 7 writes across 6 files (v24b_indirect_clamp_impl.md, project_v24b_dead_indirect_clamp.md, MEMORY.md, project_mbrc_v20_postfix_landed.md, v25_architectural_scope.md) | 4 reads | ~23131 tok |
+| 07:51 | Edited src/demo3d.h | modified setIndirectClampK() | ~226 |
+| 07:51 | Edited src/demo3d.h | 1→2 lines | ~49 |
+| 07:52 | Edited src/demo3d.cpp | modified min() | ~158 |
+| 07:52 | Edited src/demo3d.cpp | modified if() | ~134 |
+| 07:52 | Edited src/main3d.cpp | added 1 condition(s) | ~164 |
+| 07:53 | Created tools/v25_axisA/capture_per_level.ps1 | — | ~536 |
+| 07:53 | Created tools/v25_axisA/analyze_per_level.py | — | ~1803 |
+| 07:57 | Edited doc/7/v25_architectural_scope.md | modified C2() | ~1118 |
+| 07:58 | Created C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/project_v25_axisA_c2_attribution.md | — | ~771 |
+| 07:58 | Edited C:/Users/XINDONG/.claude/projects/d--GitRepo-My-radiance-cascades-demo/memory/MEMORY.md | 1→2 lines | ~101 |
+| 07:58 | v2.5 Axis A run: CLEAR_ATTRIBUTION at C1->C2 merge (+89.3% of bright% growth, +7.80pp) | doc/7/v25_architectural_scope.md, tools/v25_axisA/v25A_results.json | leak localized to single transition; recommend A.1 MB-OFF diagnostic before any fix | ~12k |
+| 07:58 | Session end: 17 writes across 12 files (v24b_indirect_clamp_impl.md, project_v24b_dead_indirect_clamp.md, MEMORY.md, project_mbrc_v20_postfix_landed.md, v25_architectural_scope.md) | 7 reads | ~166527 tok |
