@@ -2472,20 +2472,13 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     //     D=4 → 0.484, D=8 → 0.248, D=16 → 0.124. Critic 7 H2: octahedral non-uniformity
     //     means actual per-bin half-angle varies; v2 fallback (per-bin LUT) addresses if v1 fails.
     glUniform1i(glGetUniformLocation(prog, "uUseWeightedSample"), useWeightedSample ? 1 : 0);
-    glUniform1i(glGetUniformLocation(prog, "uM1Delta3GatedTrilinear"), m1Delta3GatedTrilinear ? 1 : 0);
-    glUniform1i(glGetUniformLocation(prog, "uM1Delta6GeometricCone"), m1Delta6GeometricCone ? 1 : 0);
+    // v4 Phase 2B: stale M1 delta flags removed (m1Delta3GatedTrilinear,
+    // m1Delta6GeometricCone were DEAD per 2×2 matrix). Cone computation uses
+    // the standard bin-derived formula (cosT = 1 - 2/D²).
     {
-        const float Du = static_cast<float>(upperCascDirRes);
-        float sinT = 0.0f;
-        if (m1Delta6GeometricCone) {
-            // ShaderToy probeSize=4 candidate: sin(((2-0.5)/2) * pi/2).
-            // Kept behind an M1 A/B flag; not a new default.
-            constexpr float kPi = 3.14159265358979323846f;
-            sinT = std::sin(0.75f * 0.5f * kPi);
-        } else {
-            const float cosT = 1.0f - 2.0f / (Du * Du);
-            sinT = std::sqrt(std::max(0.0f, 1.0f - cosT * cosT));
-        }
+        const float Du  = static_cast<float>(upperCascDirRes);
+        const float cosT = 1.0f - 2.0f / (Du * Du);
+        const float sinT = std::sqrt(std::max(0.0f, 1.0f - cosT * cosT));
         glUniform1f(glGetUniformLocation(prog, "uUpperBinConeSin"), sinT);
     }
     glUniform1i(glGetUniformLocation(prog, "uPhase3DebugMode"), phase3DebugMode);
@@ -4994,6 +4987,11 @@ void Demo3D::renderSettingsPanel() {
         }
         ImGui::Separator();
         ImGui::Text("  Frame     %.2f ms", frameTimeMs);
+        // v4 Phase 1A: per-scene MB-gain indicator
+        if (usePerSceneMbGain) {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f),
+                "  MB-gain   %.2f (per-scene auto)", multiBounceGain);
+        }
         ImGui::Unindent();
     }
     ImGui::Checkbox("Show Debug Windows", &showDebugWindows);
@@ -5259,15 +5257,27 @@ void Demo3D::renderCascadePanel() {
             "~10 is technically stable — but quality saturates by gain~2. Default 1.0 = physical.\n\n"
             "Pair with render mode 16 (PT reference) for visual A/B and quality measurement.");
         if (useMultiBounce) {
-            float gain = multiBounceGain;
-            if (ImGui::SliderFloat("MB Gain", &gain, 0.0f, 3.0f, "%.2f")) setMultiBounceGain(gain);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-                ImGui::SetTooltip("Multiplier on multi-bounce feedback term.\n"
-                                  "0.0 = no feedback (same as OFF).\n"
-                                  "1.0 (default) = energy-conserving Lambertian.\n"
-                                  "1.5-2.0 = boost for stronger multi-bounce effect.\n"
-                                  ">3.0 = risk of amplification on bright closed scenes.\n"
-                                  "Changes trigger cascade rebake.");
+            // v4 Phase 1A: if per-scene preset is active, gray out manual slider
+            if (usePerSceneMbGain) {
+                ImGui::BeginDisabled();
+                float g = multiBounceGain;
+                ImGui::SliderFloat("MB Gain (per-scene auto)", &g, 0.0f, 3.0f, "%.2f");
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                    ImGui::SetTooltip("Controlled by --mb-gain-per-scene CLI flag.\n"
+                                      "Sponza=0.10, Cornell=1.0, other=1.0.\n"
+                                      "Disable the flag to manually tune.");
+            } else {
+                float gain = multiBounceGain;
+                if (ImGui::SliderFloat("MB Gain", &gain, 0.0f, 3.0f, "%.2f")) setMultiBounceGain(gain);
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                    ImGui::SetTooltip("Multiplier on multi-bounce feedback term.\n"
+                                      "0.0 = no feedback (same as OFF).\n"
+                                      "1.0 (default) = energy-conserving Lambertian.\n"
+                                      "1.5-2.0 = boost for stronger multi-bounce effect.\n"
+                                      ">3.0 = risk of amplification on bright closed scenes.\n"
+                                      "Changes trigger cascade rebake.");
+            }
             ImGui::SameLine();
             ImGui::TextDisabled("(shared C0 history; ~5-30 ms bake overhead)");
         }

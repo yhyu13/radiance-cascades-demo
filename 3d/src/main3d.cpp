@@ -105,6 +105,17 @@ bool g_cacheHitTest = false;
 // codex 04 F2 verify: toggle GPU SDF off after load to exercise the
 // CPU-mirror-preserved transition.
 bool g_toggleGpuSdfOffAfterLoad = false;
+// 2026-05-28 Stage 11c: remember CLI --light-direction= so it can be
+// re-applied after loadOBJMesh clobbers useDirectionalLight from the scene kind.
+bool g_cliLightDirSet = false;
+glm::vec3 g_cliLightDir{0.0f, -1.0f, 0.0f};
+// 2026-05-28 Stage 11d: same pattern for --light-position=x,y,z so it survives
+// loadOBJMesh's auto-fit camera/light preset (applyOBJViewPreset sets lightPosition).
+bool g_cliLightPosSet = false;
+glm::vec3 g_cliLightPos{0.0f, 0.8f, 0.0f};
+// v4 Phase 1A: per-scene MB-gain preset (ShaderToy adoption closeout).
+// Sponza-class scenes get gain=0.10; Cornell-class gets 1.0 (default).
+bool g_usePerSceneMbGain = false;
 
 static int loadMeasurementCamerasJson(Demo3D* demo, const std::string& path) {
     std::ifstream f(path);
@@ -362,15 +373,35 @@ int main(int argc, char* argv[]) {
             float v = static_cast<float>(std::atof(arg.substr(18).c_str()));
             demo->setLightIntensity(v);
             std::cout << "[MAIN] --light-intensity=" << v << "\n";
+        } else if (arg.rfind("--light-position=", 0) == 0) {
+            // 2026-05-28 Stage 11d: point-light position override (cornell baseline
+            // is (0, 0.8, 0)). Forces useDirectionalLight=false so the value applies.
+            float x = 0.0f, y = 0.8f, z = 0.0f;
+            if (std::sscanf(arg.substr(17).c_str(), "%f,%f,%f", &x, &y, &z) == 3) {
+                demo->setUseDirectionalLight(false);
+                demo->setLightPosition(glm::vec3(x, y, z));
+                std::cout << "[MAIN] --light-position=" << x << "," << y << "," << z
+                          << " (forces useDirectionalLight=false)\n";
+                extern bool g_cliLightPosSet; extern glm::vec3 g_cliLightPos;
+                g_cliLightPosSet = true; g_cliLightPos = glm::vec3(x, y, z);
+            } else {
+                std::cerr << "[MAIN] --light-position: expected x,y,z (got: '"
+                          << arg.substr(17) << "')\n";
+            }
         } else if (arg.rfind("--light-direction=", 0) == 0) {
             // Lighting controls follow-up: directional light (Sponza sun).
             // Implies --use-directional-light=true. Vector is normalized in setter.
+            // 2026-05-28 Stage 11c: ALSO remember the value so we can re-apply it
+            // after loadOBJMesh, which unconditionally writes useDirectionalLight
+            // from the scene kind (demo3d.cpp:7137) and otherwise clobbers it.
             float x = 0.0f, y = -1.0f, z = 0.0f;
             if (std::sscanf(arg.substr(18).c_str(), "%f,%f,%f", &x, &y, &z) == 3) {
                 demo->setUseDirectionalLight(true);
                 demo->setLightDirection(glm::vec3(x, y, z));
                 std::cout << "[MAIN] --light-direction=" << x << "," << y << "," << z
                           << " (implies useDirectionalLight=true)\n";
+                extern bool g_cliLightDirSet; extern glm::vec3 g_cliLightDir;
+                g_cliLightDirSet = true; g_cliLightDir = glm::vec3(x, y, z);
             } else {
                 std::cerr << "[MAIN] --light-direction: expected x,y,z (got: '"
                           << arg.substr(18) << "')\n";
@@ -485,6 +516,11 @@ int main(int argc, char* argv[]) {
             float v = static_cast<float>(std::atof(arg.substr(20).c_str()));
             demo->setMultiBounceGain(v);
             std::cout << "[MAIN] --multi-bounce-gain=" << v << "\n";
+        } else if (arg == "--mb-gain-per-scene") {
+            g_usePerSceneMbGain = true;
+            std::cout << "[MAIN] --mb-gain-per-scene: per-scene auto MB-gain "
+                      << "(Sponza->0.10, Cornell->1.0, other->1.0). Overrides "
+                      << "--multi-bounce-gain for OBJ-loaded scenes.\n";
         } else if (arg.rfind("--pt-cascade-match=", 0) == 0) {
             int v = std::atoi(arg.substr(19).c_str());
             demo->setPtCascadeMatch(v);
@@ -577,18 +613,6 @@ int main(int argc, char* argv[]) {
             demo->setUseWeightedSample(v != 0);
             std::cout << "[MAIN] --use-weighted-sample=" << v
                       << " (1=ON Phase 3 per-corner gating; 0=OFF Phase 2 unconditional)\n";
-        } else if (arg.rfind("--m1-delta3-gated-trilinear=", 0) == 0) {
-            static constexpr const char* kPrefix = "--m1-delta3-gated-trilinear=";
-            int v = std::atoi(arg.substr(std::strlen(kPrefix)).c_str());
-            demo->setM1Delta3GatedTrilinear(v != 0);
-            std::cout << "[MAIN] --m1-delta3-gated-trilinear=" << v
-                      << " (uses WeightedSample.rgb instead of scalar attenuation)\n";
-        } else if (arg.rfind("--m1-delta6-geometric-cone=", 0) == 0) {
-            static constexpr const char* kPrefix = "--m1-delta6-geometric-cone=";
-            int v = std::atoi(arg.substr(std::strlen(kPrefix)).c_str());
-            demo->setM1Delta6GeometricCone(v != 0);
-            std::cout << "[MAIN] --m1-delta6-geometric-cone=" << v
-                      << " (ShaderToy-like cone candidate for WeightedSample)\n";
         } else if (arg.rfind("--visibility-mode=", 0) == 0) {
             // Phase 2.5c (revised per critic 11 M3): Phase 2 already shipped to
             // users with this flag deprecated-but-functional. Silent slip-through
@@ -723,6 +747,48 @@ int main(int argc, char* argv[]) {
     }
     if (measurementCameraToApply != -999) {
         demo->setMeasurementCamera(measurementCameraToApply);
+    }
+
+    // 2026-05-28 Stage 11c: re-apply CLI light direction AFTER loadOBJMesh so the
+    // mesh-load auto-override (`useDirectionalLight = isSponza` at demo3d.cpp:7137)
+    // doesn't silently clobber the user's --light-direction= choice on Cornell.
+    {
+        extern bool g_cliLightDirSet; extern glm::vec3 g_cliLightDir;
+        if (g_cliLightDirSet) {
+            demo->setUseDirectionalLight(true);
+            demo->setLightDirection(g_cliLightDir);
+            std::cout << "[MAIN] post-load: re-applied --light-direction=("
+                      << g_cliLightDir.x << "," << g_cliLightDir.y << ","
+                      << g_cliLightDir.z << "), useDirectionalLight=true\n";
+        }
+    }
+    {
+        extern bool g_cliLightPosSet; extern glm::vec3 g_cliLightPos;
+        if (g_cliLightPosSet) {
+            demo->setUseDirectionalLight(false);
+            demo->setLightPosition(g_cliLightPos);
+            std::cout << "[MAIN] post-load: re-applied --light-position=("
+                      << g_cliLightPos.x << "," << g_cliLightPos.y << ","
+                      << g_cliLightPos.z << "), useDirectionalLight=false\n";
+        }
+    }
+    // v4 Phase 1A: per-scene MB-gain preset (ShaderToy adoption closeout).
+    // Apply AFTER loadOBJMesh so we know the scene type. Sponza-class scenes
+    // (sponza, sponza_master) get gain=0.10; everything else keeps default 1.0.
+    {
+        extern bool g_usePerSceneMbGain;
+        if (g_usePerSceneMbGain) {
+            demo->setUsePerSceneMbGain(true);
+            const std::string& scene = demo->getCurrentOBJPath();
+            if (scene == "sponza" || scene == "sponza_master") {
+                demo->setMultiBounceGain(0.10f);
+                std::cout << "[MAIN] post-load: per-scene MB-gain: sponza -> 0.10\n";
+            } else {
+                demo->setMultiBounceGain(1.0f);
+                std::cout << "[MAIN] post-load: per-scene MB-gain: " << scene
+                          << " -> 1.00 (default)\n";
+            }
+        }
     }
     // Step 10 (codex 06 F7): camera CLI overrides apply LAST so they win
     // over loadOBJMesh's auto-fit, --switch-to-scene's resetCamera, AND

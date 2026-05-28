@@ -69,12 +69,6 @@ uniform int   uDiagAlphaMode;
 //                       require per-bin LUT (v2 fallback).
 uniform int   uUseWeightedSample;
 uniform float uUpperBinConeSin;
-// M1 Path A A/B flags. Defaults are 0 and preserve the v2.0-postfix baseline.
-// uM1Delta3GatedTrilinear=1 consumes sampleUpperDirWeighted().rgb directly:
-// rejected corners contribute 0 to numerator and denominator, ShaderToy-style.
-// uM1Delta6GeometricCone=1 is expressed CPU-side by changing uUpperBinConeSin.
-uniform int   uM1Delta3GatedTrilinear;
-uniform int   uM1Delta6GeometricCone;
 
 // 2026-05-18 Phase MB (multi-bounce temporal feedback) — see doc/7/multi_bounce_temporal_plan.md
 //   uUseMultiBounce: 0 (default) = single-bounce; 1 = add previous-frame C0-atlas
@@ -668,11 +662,11 @@ void main() {
                         if (uUseWeightedSample != 0) {
                             // v3: take .a (visibility fraction) from WeightedSample,
                             // .rgb from trilinear (unbiased spatial average).
+                            // v4 Phase 2B: stale m1Delta3GatedTrilinear branch removed
+                            // (DEAD per 2×2 matrix). Always use the scalar-aFactor form.
                             vec4 ws = sampleUpperDirWeighted(triP000, triF, rayDir,
                                                               uUpperDirRes, worldPos);
-                            upperDir = (uM1Delta3GatedTrilinear != 0)
-                                ? ws
-                                : vec4(upperDirTrilinear.rgb, ws.a);
+                            upperDir = vec4(upperDirTrilinear.rgb, ws.a);
                         } else {
                             upperDir = upperDirTrilinear;
                         }
@@ -765,7 +759,8 @@ void main() {
             // via the far field. Cerebrum 2026-05-17 has the full physics.
             //
             // **DO NOT remove the `aFactor` gating** for "simpler code".
-            float aFactor = (uUseWeightedSample != 0 && uM1Delta3GatedTrilinear == 0) ? upperDir.a : 1.0;
+            // v4 Phase 2B: stale m1Delta3GatedTrilinear condition removed.
+            float aFactor = (uUseWeightedSample != 0) ? upperDir.a : 1.0;
             // 2026-05-18 DEBUG mode 1: force aFactor=1 to bypass WeightedSample's
             // attenuation. If image returns to OFF brightness, confirms aFactor is the
             // dimming cause; if NOT, the dimming comes from sampleUpperDirWeighted's

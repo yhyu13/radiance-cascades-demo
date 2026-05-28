@@ -564,6 +564,16 @@ public:
         std::cout << "[Demo3D] lightDirection=(" << lightDirection.x << ","
                   << lightDirection.y << "," << lightDirection.z << ")\n";
     }
+    // 2026-05-28 Stage 11d: point-light position setter (was member-only before).
+    void setLightPosition(const glm::vec3& p) {
+        lightPosition       = p;
+        cascadeReady        = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex    = 0;
+        historyNeedsSeed    = true;
+        std::cout << "[Demo3D] lightPosition=(" << lightPosition.x << ","
+                  << lightPosition.y << "," << lightPosition.z << ") (cascade rebake)\n";
+    }
     void setLightIntensity(float v) {
         lightIntensity = v;
         cascadeReady        = false;
@@ -641,30 +651,6 @@ public:
     }
     bool getUseWeightedSample() const { return useWeightedSample; }
 
-    void setM1Delta3GatedTrilinear(bool v) {
-        if (v == m1Delta3GatedTrilinear) return;
-        m1Delta3GatedTrilinear = v;
-        if (v) useWeightedSample = true;
-        cascadeReady = false;
-        forceCascadeRebuild = true;
-        renderFrameIndex = 0;
-        historyNeedsSeed = true;
-        std::cout << "[Demo3D] m1Delta3GatedTrilinear=" << (v ? "ON" : "OFF")
-                  << " (uses WeightedSample.rgb renormalized over visible corners)\n";
-    }
-
-    void setM1Delta6GeometricCone(bool v) {
-        if (v == m1Delta6GeometricCone) return;
-        m1Delta6GeometricCone = v;
-        if (v) useWeightedSample = true;
-        cascadeReady = false;
-        forceCascadeRebuild = true;
-        renderFrameIndex = 0;
-        historyNeedsSeed = true;
-        std::cout << "[Demo3D] m1Delta6GeometricCone=" << (v ? "ON" : "OFF")
-                  << " (ShaderToy-like permissive WeightedSample cone candidate)\n";
-    }
-
     void setPhase3DebugMode(int v) {
         if (v == phase3DebugMode) return;
         phase3DebugMode = v;
@@ -704,6 +690,11 @@ public:
         historyNeedsSeed = true;
         std::cout << "[Demo3D] multiBounceGain=" << v << "\n";
     }
+    // v4 Phase 1A: per-scene MB-gain preset. When true, the manual gain slider
+    // is overridden by the scene-class lookup (Sponza→0.10, Cornell→1.0).
+    // The setter does NOT trigger a cascade rebuild — the gain is set by
+    // setMultiBounceGain in the same post-load hook.
+    void setUsePerSceneMbGain(bool v) { usePerSceneMbGain = v; }
 
     // Hybrid correction setters + invalidation (doc/7)
     void resetHybridAccumulator() { hybridDirty = true; hybridSampleCount = 0; }
@@ -1416,9 +1407,6 @@ private:
      *  uUseSpatialTrilinear). See doc/6/claude_plan/visibility_phase3_plan.md and
      *  res/shaders/radiance_3d.comp for the algorithm. */
     bool useWeightedSample;
-    bool m1Delta3GatedTrilinear = false;
-    bool m1Delta6GeometricCone = false;
-
     /** 2026-05-18 debug: instrument Phase 3 v2 to find WHY GI is still dimmed.
      *  0=normal, 1=force aFactor=1, 2=visualize aFactor, 3=visualize upperDir.a,
      *  4=force upperDir.rgb=trilinear.rgb (test if WeightedSample's renormalize differs). */
@@ -1439,6 +1427,10 @@ private:
     /** Multiplier on multi-bounce feedback term. Default 0.7 for stability margin.
      *  gain × albedo × hemi_factor < 1 required for stable geometric series. */
     float multiBounceGain;
+    /** v4 Phase 1A: when true, MB gain is controlled by per-scene preset
+     *  (Sponza→0.10, else→1.0) rather than the manual slider. Set by
+     *  --mb-gain-per-scene CLI flag. */
+    bool  usePerSceneMbGain = false;
 
     /** 2026-05-19 Mode 18 (cascade-vs-PT delta heatmap) sensitivity divisor.
      *  Signed bipolar colormap: |delta| >= divisor saturates. Default 0.2 picked for

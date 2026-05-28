@@ -403,14 +403,14 @@ struct ProbeSample {
 };
 
 struct ProbeDirDetail {
-    ProbeSample sample;
+    ProbeSample ps;
     float wsum;
     float topBinLum;
     ivec2 topBin;
 };
 
 struct DirectionalDetail {
-    ProbeSample sample;
+    ProbeSample ps;
     float rawLum;
     float topProbeLum;
     ivec3 topProbe;
@@ -487,7 +487,7 @@ ProbeDirDetail sampleProbeDirDetail(ivec3 pc, vec3 normal, int D) {
     s.oscillation = oscSum / max(wcosSum, 1e-4);
 
     ProbeDirDetail d;
-    d.sample = s;
+    d.ps = s;
     d.wsum = wsum;
     d.topBin = bestBin;
     d.topBinLum = max(bestUnnormLum * invW, 0.0);
@@ -545,7 +545,7 @@ ProbeSample sampleDirectionalGI(vec3 pos, vec3 normal) {
 
 DirectionalDetail sampleDirectionalGIDetail(vec3 pos, vec3 normal) {
     DirectionalDetail outD;
-    outD.sample.irrad = vec3(0.0); outD.sample.leak = 0.0; outD.sample.oscillation = 0.0;
+    outD.ps.irrad = vec3(0.0); outD.ps.leak = 0.0; outD.ps.oscillation = 0.0;
     outD.rawLum = 0.0; outD.topProbeLum = 0.0; outD.topProbe = ivec3(0);
     outD.topBinLum = 0.0; outD.topBin = ivec2(0);
 
@@ -578,11 +578,11 @@ DirectionalDetail sampleDirectionalGIDetail(vec3 pos, vec3 normal) {
         bool inBounds = !(any(lessThan(pc, ivec3(0))) || any(greaterThan(pc, hi)));
         if (!inBounds) continue;
         ProbeDirDetail d = sampleProbeDirDetail(pc, normal, D);
-        outD.sample.irrad       += d.sample.irrad       * w[i];
-        outD.sample.leak        += d.sample.leak        * w[i];
-        outD.sample.oscillation += d.sample.oscillation * w[i];
+        outD.ps.irrad       += d.ps.irrad       * w[i];
+        outD.ps.leak        += d.ps.leak        * w[i];
+        outD.ps.oscillation += d.ps.oscillation * w[i];
 
-        float probeLum = dot(d.sample.irrad * w[i], vec3(0.2126, 0.7152, 0.0722));
+        float probeLum = dot(d.ps.irrad * w[i], vec3(0.2126, 0.7152, 0.0722));
         float binLum = d.topBinLum * w[i];
         if (probeLum > outD.topProbeLum) {
             outD.topProbeLum = probeLum;
@@ -593,7 +593,7 @@ DirectionalDetail sampleDirectionalGIDetail(vec3 pos, vec3 normal) {
             outD.topBin = d.topBin;
         }
     }
-    outD.rawLum = dot(outD.sample.irrad, vec3(0.2126, 0.7152, 0.0722));
+    outD.rawLum = dot(outD.ps.irrad, vec3(0.2126, 0.7152, 0.0722));
     return outD;
 }
 
