@@ -1,0 +1,37 @@
+{
+  "N": 2048,
+  "K": 2,
+  "scene": "cornell/cam0",
+  "baseline": {
+    "label": "Default_K0",
+    "mask_px": 37901,
+    "mean_lum_cascade": 0.36294087767601013,
+    "mean_lum_pt_indirect": 0.4074028432369232,
+    "mean_ratio": 0.9771348237991333,
+    "median_abs_rel_err": 0.2549630403518677,
+    "p95_abs_rel_err": 0.8832823634147644,
+    "dim_pct": 5.105406189810295,
+    "bright_pct": 11.092055618585261
+  },
+  "variant": {
+    "label": "Clamp_K2",
+    "mask_px": 37901,
+    "mean_lum_cascade": 0.3119575083255768,
+    "mean_lum_pt_indirect": 0.4074028432369232,
+    "mean_ratio": 0.7694836258888245,
+    "median_abs_rel_err": 0.3150743544101715,
+    "p95_abs_rel_err": 0.8784658908843994,
+    "dim_pct": 24.323896467111688,
+    "bright_pct": 7.184507005092214
+  },
+  "delta": {
+    "d_ratio": -0.20765119791030884,
+    "d_p50": 0.06011131405830383,
+    "d_p95": -0.00481647253036499,
+    "d_dim_pct": 19.21849027730139,
+    "d_bright_pct": -3.9075486134930477,
+    "p95_pct_change": -0.5452925055295496
+  },
+  "verdict": "DEAD",
+  "action": "Revert (CLI flag stays for debug only); pivot to v2.5 architectural."
+}

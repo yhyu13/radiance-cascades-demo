@@ -1,0 +1,36 @@
+{
+  "N": 2048,
+  "scene": "cornell/cam0",
+  "baseline": {
+    "label": "Default_D8",
+    "mask_px": 37901,
+    "mean_lum_cascade": 0.36294087767601013,
+    "mean_lum_pt_indirect": 0.4074028432369232,
+    "mean_ratio": 0.9771348237991333,
+    "median_abs_rel_err": 0.2549630403518677,
+    "p95_abs_rel_err": 0.8832823634147644,
+    "dim_pct": 5.105406189810295,
+    "bright_pct": 11.092055618585261
+  },
+  "variant": {
+    "label": "C0HD_D16",
+    "mask_px": 37901,
+    "mean_lum_cascade": 0.3651507794857025,
+    "mean_lum_pt_indirect": 0.4074028432369232,
+    "mean_ratio": 0.979557454586029,
+    "median_abs_rel_err": 0.2340640276670456,
+    "p95_abs_rel_err": 0.8821066617965698,
+    "dim_pct": 5.015698794227065,
+    "bright_pct": 10.231920002110764
+  },
+  "delta": {
+    "d_ratio": 0.002422630786895752,
+    "d_p50": -0.020899012684822083,
+    "d_p95": -0.00117570161819458,
+    "d_dim_pct": -0.08970739558322993,
+    "d_bright_pct": -0.8601356164744978,
+    "p95_pct_change": -0.13310597685312367
+  },
+  "verdict": "DEAD",
+  "action": "Revert (CLI flag not promoted); pivot to v2.5 architectural."
+}

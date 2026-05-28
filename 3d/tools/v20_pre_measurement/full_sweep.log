@@ -1,0 +1,649 @@
+----- [1/72] -----
+[capture] cam0_s0_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s0_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s0_h0_m00.png
+----- [2/72] -----
+[capture] cam0_s0_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s0_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s0_h0_m16.png
+----- [3/72] -----
+[capture] cam0_s0_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s0_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s0_h0_m18.png
+----- [4/72] -----
+[capture] cam0_s0_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s0_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s0_h0_m19.png
+----- [5/72] -----
+[capture] cam0_s0_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s0_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s0_h1_m00.png
+----- [6/72] -----
+[capture] cam0_s0_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s0_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s0_h1_m16.png
+----- [7/72] -----
+[capture] cam0_s0_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s0_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s0_h1_m18.png
+----- [8/72] -----
+[capture] cam0_s0_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s0_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s0_h1_m19.png
+----- [9/72] -----
+[capture] cam0_s1_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s1_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s1_h0_m00.png
+----- [10/72] -----
+[capture] cam0_s1_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s1_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s1_h0_m16.png
+----- [11/72] -----
+[capture] cam0_s1_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s1_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s1_h0_m18.png
+----- [12/72] -----
+[capture] cam0_s1_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s1_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s1_h0_m19.png
+----- [13/72] -----
+[capture] cam0_s1_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s1_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s1_h1_m00.png
+----- [14/72] -----
+[capture] cam0_s1_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s1_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s1_h1_m16.png
+----- [15/72] -----
+[capture] cam0_s1_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s1_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s1_h1_m18.png
+----- [16/72] -----
+[capture] cam0_s1_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s1_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s1_h1_m19.png
+----- [17/72] -----
+[capture] cam0_s2_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s2_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s2_h0_m00.png
+----- [18/72] -----
+[capture] cam0_s2_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s2_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s2_h0_m16.png
+----- [19/72] -----
+[capture] cam0_s2_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s2_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s2_h0_m18.png
+----- [20/72] -----
+[capture] cam0_s2_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s2_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s2_h0_m19.png
+----- [21/72] -----
+[capture] cam0_s2_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s2_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s2_h1_m00.png
+----- [22/72] -----
+[capture] cam0_s2_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s2_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s2_h1_m16.png
+----- [23/72] -----
+[capture] cam0_s2_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s2_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s2_h1_m18.png
+----- [24/72] -----
+[capture] cam0_s2_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_s2_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam0_s2_h1_m19.png
+----- [25/72] -----
+[capture] cam1_s0_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s0_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s0_h0_m00.png
+----- [26/72] -----
+[capture] cam1_s0_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s0_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s0_h0_m16.png
+----- [27/72] -----
+[capture] cam1_s0_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s0_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s0_h0_m18.png
+----- [28/72] -----
+[capture] cam1_s0_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s0_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s0_h0_m19.png
+----- [29/72] -----
+[capture] cam1_s0_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s0_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s0_h1_m00.png
+----- [30/72] -----
+[capture] cam1_s0_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s0_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s0_h1_m16.png
+----- [31/72] -----
+[capture] cam1_s0_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s0_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s0_h1_m18.png
+----- [32/72] -----
+[capture] cam1_s0_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s0_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s0_h1_m19.png
+----- [33/72] -----
+[capture] cam1_s1_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s1_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s1_h0_m00.png
+----- [34/72] -----
+[capture] cam1_s1_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s1_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s1_h0_m16.png
+----- [35/72] -----
+[capture] cam1_s1_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s1_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s1_h0_m18.png
+----- [36/72] -----
+[capture] cam1_s1_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s1_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s1_h0_m19.png
+----- [37/72] -----
+[capture] cam1_s1_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s1_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s1_h1_m00.png
+----- [38/72] -----
+[capture] cam1_s1_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s1_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s1_h1_m16.png
+----- [39/72] -----
+[capture] cam1_s1_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s1_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s1_h1_m18.png
+----- [40/72] -----
+[capture] cam1_s1_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s1_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s1_h1_m19.png
+----- [41/72] -----
+[capture] cam1_s2_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s2_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s2_h0_m00.png
+----- [42/72] -----
+[capture] cam1_s2_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s2_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s2_h0_m16.png
+----- [43/72] -----
+[capture] cam1_s2_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s2_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s2_h0_m18.png
+----- [44/72] -----
+[capture] cam1_s2_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s2_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s2_h0_m19.png
+----- [45/72] -----
+[capture] cam1_s2_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s2_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s2_h1_m00.png
+----- [46/72] -----
+[capture] cam1_s2_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s2_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s2_h1_m16.png
+----- [47/72] -----
+[capture] cam1_s2_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s2_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s2_h1_m18.png
+----- [48/72] -----
+[capture] cam1_s2_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=1
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam1_s2_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam1_s2_h1_m19.png
+----- [49/72] -----
+[capture] cam2_s0_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s0_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s0_h0_m00.png
+----- [50/72] -----
+[capture] cam2_s0_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s0_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s0_h0_m16.png
+----- [51/72] -----
+[capture] cam2_s0_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s0_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s0_h0_m18.png
+----- [52/72] -----
+[capture] cam2_s0_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s0_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s0_h0_m19.png
+----- [53/72] -----
+[capture] cam2_s0_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s0_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s0_h1_m00.png
+----- [54/72] -----
+[capture] cam2_s0_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s0_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s0_h1_m16.png
+----- [55/72] -----
+[capture] cam2_s0_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s0_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s0_h1_m18.png
+----- [56/72] -----
+[capture] cam2_s0_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=0
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s0_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s0_h1_m19.png
+----- [57/72] -----
+[capture] cam2_s1_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s1_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s1_h0_m00.png
+----- [58/72] -----
+[capture] cam2_s1_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s1_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s1_h0_m16.png
+----- [59/72] -----
+[capture] cam2_s1_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s1_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s1_h0_m18.png
+----- [60/72] -----
+[capture] cam2_s1_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s1_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s1_h0_m19.png
+----- [61/72] -----
+[capture] cam2_s1_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s1_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s1_h1_m00.png
+----- [62/72] -----
+[capture] cam2_s1_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s1_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s1_h1_m16.png
+----- [63/72] -----
+[capture] cam2_s1_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s1_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s1_h1_m18.png
+----- [64/72] -----
+[capture] cam2_s1_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s1_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s1_h1_m19.png
+----- [65/72] -----
+[capture] cam2_s2_h0_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s2_h0_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s2_h0_m00.png
+----- [66/72] -----
+[capture] cam2_s2_h0_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s2_h0_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s2_h0_m16.png
+----- [67/72] -----
+[capture] cam2_s2_h0_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s2_h0_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s2_h0_m18.png
+----- [68/72] -----
+[capture] cam2_s2_h0_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s2_h0_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s2_h0_m19.png
+----- [69/72] -----
+[capture] cam2_s2_h1_m00
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=0
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s2_h1_m00.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s2_h1_m00.png
+----- [70/72] -----
+[capture] cam2_s2_h1_m16
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=16
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s2_h1_m16.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s2_h1_m16.png
+----- [71/72] -----
+[capture] cam2_s2_h1_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s2_h1_m18.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s2_h1_m18.png
+----- [72/72] -----
+[capture] cam2_s2_h1_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --noise-seed-offset=2
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_s2_h1_m19.png
+  saved: tools/v20_pre_measurement/captures_full/cam2_s2_h1_m19.png
+[done] full sweep complete in 11.8 min

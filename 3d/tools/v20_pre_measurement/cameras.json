@@ -1,0 +1,23 @@
+{
+  "_note": "v2.0-pre measurement cameras for cornell-orig-alcove (locked decision 2026-05-20). Coordinates are STARTERS based on the existing --cam-preset=alcove anchor and the scene's auto-fit defaults; capture once via --measurement-camera=N + --screenshot=cam_check and refine in-place if framing is off. Order is significant — main3d.cpp loads array indices 0..2 into Demo3D::measurementCamera slots 0..2 in the same order. The first '\"position\"' / '\"target\"' pair per object is enforced (position before target).",
+  "cameras": [
+    {
+      "name": "cam0_default",
+      "_purpose": "Hybrid v1.3.1 / current default framing — outside the box looking toward the open face. Mirrors the auto-fit preset for cornell-orig-alcove so the v2.0-pre RMSE numbers are directly comparable to historical screenshots.",
+      "position": [0.0, 1.0, 3.4],
+      "target":   [0.0, 1.0, 0.0]
+    },
+    {
+      "name": "cam1_closeup_front",
+      "_purpose": "Front-on, ~30% closer than cam0. Same axis so red wall stays on screen LEFT, green wall stays on screen RIGHT — but tighter framing emphasizes the back-wall alcove slits and the central indirect-lit floor. Stresses NEAR-FIELD GI: shorter primary-ray length, cascade C0 contribution dominates more pixels.",
+      "position": [0.0, 1.0, 2.2],
+      "target":   [0.0, 1.0, 0.0]
+    },
+    {
+      "name": "cam2_front_left_elevated",
+      "_purpose": "Front-LEFT corner, raised slightly above eye level, looking at box interior. Captures green wall + back wall + floor diagonally — DIFFERENT screen-space layout of red/green walls than cam0/cam1. Lets the asymmetry test discriminate: scene-anchored asymmetry follows the red wall regardless of where on screen it lands; screen-space artifact would flip with the camera.",
+      "position": [-1.6, 1.5, 2.6],
+      "target":   [0.5, 0.7, 0.0]
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+----- [1/12] -----
+[capture] cam0_d04_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --cascade-dir-res=4 (D*D=16 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_d04_m18.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam0_d04_m18.png
+----- [2/12] -----
+[capture] cam0_d04_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --cascade-dir-res=4 (D*D=16 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_d04_m19.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam0_d04_m19.png
+----- [3/12] -----
+[capture] cam2_d04_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --cascade-dir-res=4 (D*D=16 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=18
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_d04_m18.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam2_d04_m18.png
+----- [4/12] -----
+[capture] cam2_d04_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --cascade-dir-res=4 (D*D=16 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=19
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_d04_m19.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam2_d04_m19.png
+----- [5/12] -----
+[capture] cam0_d08_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --cascade-dir-res=8 (D*D=64 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=18
+  [Phase 8] dirRes: 8  D^2=64 bins/probe
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_d08_m18.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam0_d08_m18.png
+----- [6/12] -----
+[capture] cam0_d08_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --cascade-dir-res=8 (D*D=64 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=19
+  [Phase 8] dirRes: 8  D^2=64 bins/probe
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_d08_m19.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam0_d08_m19.png
+----- [7/12] -----
+[capture] cam2_d08_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --cascade-dir-res=8 (D*D=64 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=18
+  [Phase 8] dirRes: 8  D^2=64 bins/probe
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_d08_m18.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam2_d08_m18.png
+----- [8/12] -----
+[capture] cam2_d08_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --cascade-dir-res=8 (D*D=64 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=19
+  [Phase 8] dirRes: 8  D^2=64 bins/probe
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_d08_m19.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam2_d08_m19.png
+----- [9/12] -----
+[capture] cam0_d16_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --cascade-dir-res=16 (D*D=256 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=18
+  [Phase 8] dirRes: 16  D^2=256 bins/probe
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_d16_m18.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam0_d16_m18.png
+----- [10/12] -----
+[capture] cam0_d16_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0
+  [MAIN] --cascade-dir-res=16 (D*D=256 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=19
+  [Phase 8] dirRes: 16  D^2=256 bins/probe
+  [MAIN] --screenshot saved (clean 3D, no UI): cam0_d16_m19.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam0_d16_m19.png
+----- [11/12] -----
+[capture] cam2_d16_m18
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --cascade-dir-res=16 (D*D=256 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=18
+  [Phase 8] dirRes: 16  D^2=256 bins/probe
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_d16_m18.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam2_d16_m18.png
+----- [12/12] -----
+[capture] cam2_d16_m19
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=2
+  [MAIN] --cascade-dir-res=16 (D*D=256 rays/probe)
+  [MAIN] --cascade-scaled-dir-res=0
+  [MAIN] --render-mode=19
+  [Phase 8] dirRes: 16  D^2=256 bins/probe
+  [MAIN] --screenshot saved (clean 3D, no UI): cam2_d16_m19.png
+  saved: tools/v20_pre_measurement/captures_cfg/cam2_d16_m19.png
+[done] cascade-config sweep complete in 2.3 min

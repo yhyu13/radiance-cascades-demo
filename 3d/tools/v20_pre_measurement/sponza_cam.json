@@ -1,0 +1,11 @@
+{
+  "_note": "Sponza measurement camera derived from doc/5/claude_plan/cam.md (yhyu13's saved viewpoint). Single camera; the v2.0-pre cross-scene engine-default validation uses this for Sponza coverage (cam0 slot). The other two slots are unused.",
+  "cameras": [
+    {
+      "name": "sponza_cam_md",
+      "_purpose": "yhyu13 saved Sponza viewpoint from cam.md — atrium interior facing down-axis. Large flat marble surfaces will surface M4's voxel-grid moire if present.",
+      "position": [1.0710, -0.0723, -0.3393],
+      "target":   [0.1212, -0.0812, -0.6520]
+    }
+  ]
+}

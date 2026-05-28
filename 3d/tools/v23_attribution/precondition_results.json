@@ -1,0 +1,37 @@
+{
+  "N": 2048,
+  "scene": "cornell/cam0",
+  "volume_origin": [
+    -2.0,
+    -2.0,
+    -2.0
+  ],
+  "volume_size": [
+    4.0,
+    4.0,
+    4.0
+  ],
+  "c0_res": 32,
+  "c0_cell_size": 0.125,
+  "mask_px": 37901,
+  "bright_px": 4204,
+  "bright_px_with_valid_worldpos": 4196,
+  "cells_total": 32768,
+  "cells_touched_by_bright": 235,
+  "top_pct_of_touched_cells": {
+    "top1": 0.06863679694947569,
+    "top5": 0.2612011439466158,
+    "top10": 0.43875119161105813
+  },
+  "top_pct_of_all_cells": {
+    "top1": 1.0,
+    "top5": 1.0,
+    "top10": 1.0
+  },
+  "gini_touched": 0.5695758878770056,
+  "gate_metric_name": "top5_of_touched_cells",
+  "gate_metric_value": 0.2612011439466158,
+  "gate_metric_note": "top-5%-of-ALL-cells degenerate (only 0.7% touched); using TOUCHED denominator",
+  "verdict": "MARGINAL",
+  "action": "Mode 23 ships as diagnostic-only; no v2.4 auto-fix from this signal alone"
+}

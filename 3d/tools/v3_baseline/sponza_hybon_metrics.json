@@ -1,0 +1,23 @@
+{
+  "scene": "sponza",
+  "hybrid": 1,
+  "directory": "tools\\v3_baseline\\captures_sponza_hybon",
+  "verdict": "N/A",
+  "pt_mean_deltas": {},
+  "rows": {
+    "2048": {
+      "stem": "v3base_sponza_cam0_mbon_g100_hyb1_N2048_m17",
+      "status": "ok",
+      "cascade_mean": 0.04879431053996086,
+      "pt_indirect_mean": 0.05887740105390549,
+      "ratio_self": 0.8315186500549316,
+      "p05_rel": -0.30903446674346924,
+      "p50_rel": -0.17169100046157837,
+      "p95_rel": -0.03129344806075096,
+      "abs_p95": 0.30903446674346924,
+      "dim_pct": 6.637806637806638,
+      "bright_pct": 0.0,
+      "valid": 693
+    }
+  }
+}

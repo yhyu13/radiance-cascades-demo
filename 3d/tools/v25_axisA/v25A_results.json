@@ -1,0 +1,74 @@
+{
+  "N": 2048,
+  "levels": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "scene": "cornell/cam0",
+  "per_level": [
+    {
+      "label": "maxL0",
+      "mask_px": 37901,
+      "mean_ratio": 0.2550382614135742,
+      "median_abs_rel_err": 0.8267655372619629,
+      "p95_abs_rel_err": 0.9332863688468933,
+      "dim_pct": 92.38806363948181,
+      "bright_pct": 2.361415266087966
+    },
+    {
+      "label": "maxL1",
+      "mask_px": 37901,
+      "mean_ratio": 0.7446157336235046,
+      "median_abs_rel_err": 0.37095069885253906,
+      "p95_abs_rel_err": 0.8284798264503479,
+      "dim_pct": 19.965172422891218,
+      "bright_pct": 5.696419619535105
+    },
+    {
+      "label": "maxL2",
+      "mask_px": 37901,
+      "mean_ratio": 0.9939213395118713,
+      "median_abs_rel_err": 0.2615565061569214,
+      "p95_abs_rel_err": 0.8981419801712036,
+      "dim_pct": 5.559220073348988,
+      "bright_pct": 13.493047676842298
+    },
+    {
+      "label": "maxL3",
+      "mask_px": 37901,
+      "mean_ratio": 0.9771348237991333,
+      "median_abs_rel_err": 0.2549630403518677,
+      "p95_abs_rel_err": 0.8832823634147644,
+      "dim_pct": 5.105406189810295,
+      "bright_pct": 11.092055618585261
+    }
+  ],
+  "transitions": [
+    {
+      "transition": "maxL0->maxL1",
+      "d_ratio": 0.4895774722099304,
+      "d_p95": -0.10480654239654541,
+      "d_dim_pct": -72.4228912165906,
+      "d_bright_pct": 3.3350043534471387
+    },
+    {
+      "transition": "maxL1->maxL2",
+      "d_ratio": 0.2493056058883667,
+      "d_p95": 0.06966215372085571,
+      "d_dim_pct": -14.405952349542229,
+      "d_bright_pct": 7.796628057307194
+    },
+    {
+      "transition": "maxL2->maxL3",
+      "d_ratio": -0.016786515712738037,
+      "d_p95": -0.014859616756439209,
+      "d_dim_pct": -0.4538138835386931,
+      "d_bright_pct": -2.400992058257037
+    }
+  ],
+  "total_bright_pct_growth": 8.730640352497296,
+  "verdict": "CLEAR_ATTRIBUTION",
+  "action": "Transition maxL1->maxL2 accounts for +89.3% of bright% growth \u2014 that cascade-merge step is the v2.5 fix target."
+}
