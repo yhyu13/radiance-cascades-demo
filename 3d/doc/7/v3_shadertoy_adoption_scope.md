@@ -1,5 +1,10 @@
 # v3 — ShaderToy RC adoption: scope, milestones, gates
 
+> ⚠️ **SUPERSEDED by [v4 ShaderToy Adoption Scope](../8_shadertoy/v4_shadertoy_adoption_scope.md)**
+> **Date superseded:** 2026-05-28
+> **Why:** The v3 M1 plan (port Deltas #3/#6/#4) was abandoned after the 2×2 matrix returned DEAD on 2026-05-27. The subsequent 11-stage diagnostic chain (Stages 2–11d) found the real constraints: Sponza MB-gain=0.10 clears the retirement gate, Cornell point-light under-emit is a volumetric topology limit. The v4 plan documents the actual findings and the new scope.
+> **This document is preserved for historical reference only.** Read v4 for the current plan.
+
 **Date:** 2026-05-26.
 **Predecessor:** [v25_z_mbrc_correction_failure_learnings.md](v25_z_mbrc_correction_failure_learnings.md) — closes the v2.x correction line; locks the pivot direction.
 **Goal:** fully adopt the in-tree ShaderToy 3D RC reference ([shader_toy/](../../shader_toy/)) as the production radiance pipeline. Retire the current `radiance_3d.comp` bake chain and the hybrid per-pixel correction safety net.
