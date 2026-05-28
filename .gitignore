@@ -27,16 +27,16 @@ tools/frame_*.md
 !v4_phase3_sponza_pscene_probe_diag.exr
 
 # Phase 6: remaining diagnostic noise
-tools/*.log
-tools/*.err
-tools/phase*.json
-tools/probe_stats_*.json
-tools/temporal_*.log
-tools/rdoc_*.log
-tools/captures/
-tools/hybrid_validation/
-tools/__pycache__/
-tools/.env
+**/tools/*.log
+**/tools/*.err
+**/tools/phase*.json
+**/tools/probe_stats_*.json
+**/tools/temporal_*.log
+**/tools/rdoc_*.log
+**/tools/captures/
+**/tools/hybrid_validation/
+**/tools/__pycache__/
+**/tools/.env
 
 # IDE and agent config
 .agent/
