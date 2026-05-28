@@ -14,6 +14,7 @@
  */
 
 #include "demo3d.h"
+#include "exr_writer.h"
 // Note: <windows.h> is intentionally NOT included here — it conflicts with raylib.h
 // via winuser.h (CloseWindow / ShowCursor overload clash). Windows API calls for
 // RenderDoc DLL loading are isolated in rdoc_helper.cpp.
@@ -22,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -349,6 +351,9 @@ Demo3D::Demo3D()
     , giDirectTex(0)
     , giGBufferTex(0)
     , giIndirectTex(0)
+    , giProbeDiagTex(0)
+    , giProbeContribTex(0)
+    , giProbeBinTex(0)
     , giLastW(0)
     , giLastH(0)
     , useGIBlur(true)
@@ -943,7 +948,17 @@ void Demo3D::render() {
         if (!useProbeJitter) { currentProbeJitter = glm::vec3(0.0f); probeJitterIndex = 0; }
         cascadeReady = false;
     }
-    if (useProbeJitter) {
+    if (measurementCamera >= 0) {
+        if (measurementCameraValid[measurementCamera]) {
+            camera.position = measurementCameraPositions[measurementCamera];
+            camera.target   = measurementCameraTargets[measurementCamera];
+            syncCameraYawPitchFromTarget();
+        }
+        currentProbeJitter = glm::vec3(0.0f);
+        if (useMultiBounce) {
+            cascadeReady = false;
+        }
+    } else if (useProbeJitter) {
         // Sample at current index first, then check whether to advance.
         currentProbeJitter = glm::vec3(
             (halton(probeJitterIndex, 2) - 0.5f) * probeJitterScale,
@@ -1223,7 +1238,8 @@ void Demo3D::render() {
     //   Mode 19 (2026-05-19) compares cascade_GI-vs-PT_GI per-pixel (requires
     //     two PT dispatches: full + direct-only, subtract to isolate GI)
     // Runs BEFORE raymarchPass so the texture is up-to-date for display.
-    if (raymarchRenderMode == 16 || raymarchRenderMode == 18 || raymarchRenderMode == 19) {
+    if (raymarchRenderMode == 16 || raymarchRenderMode == 18 || raymarchRenderMode == 19 ||
+            (exrCapture && raymarchRenderMode == 17)) {
         ptDispatchReference();
     }
 
@@ -2456,10 +2472,20 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     //     D=4 → 0.484, D=8 → 0.248, D=16 → 0.124. Critic 7 H2: octahedral non-uniformity
     //     means actual per-bin half-angle varies; v2 fallback (per-bin LUT) addresses if v1 fails.
     glUniform1i(glGetUniformLocation(prog, "uUseWeightedSample"), useWeightedSample ? 1 : 0);
+    glUniform1i(glGetUniformLocation(prog, "uM1Delta3GatedTrilinear"), m1Delta3GatedTrilinear ? 1 : 0);
+    glUniform1i(glGetUniformLocation(prog, "uM1Delta6GeometricCone"), m1Delta6GeometricCone ? 1 : 0);
     {
         const float Du = static_cast<float>(upperCascDirRes);
-        const float cosT = 1.0f - 2.0f / (Du * Du);
-        const float sinT = std::sqrt(std::max(0.0f, 1.0f - cosT * cosT));
+        float sinT = 0.0f;
+        if (m1Delta6GeometricCone) {
+            // ShaderToy probeSize=4 candidate: sin(((2-0.5)/2) * pi/2).
+            // Kept behind an M1 A/B flag; not a new default.
+            constexpr float kPi = 3.14159265358979323846f;
+            sinT = std::sin(0.75f * 0.5f * kPi);
+        } else {
+            const float cosT = 1.0f - 2.0f / (Du * Du);
+            sinT = std::sqrt(std::max(0.0f, 1.0f - cosT * cosT));
+        }
         glUniform1f(glGetUniformLocation(prog, "uUpperBinConeSin"), sinT);
     }
     glUniform1i(glGetUniformLocation(prog, "uPhase3DebugMode"), phase3DebugMode);
@@ -2492,7 +2518,7 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
         // sampling. renderFrameIndex changes each frame → stochastic sample direction
         // varies → temporal EMA accumulates many directions over time.
         glUniform1ui(glGetUniformLocation(prog, "uMBFrameSeed"),
-                     static_cast<unsigned int>(renderFrameIndex));
+                     static_cast<unsigned int>(renderFrameIndex + noiseSeedOffset * 9973));
         // Critic-04 L2: log state changes for this cascade (only the first cascade since
         // all share the same C0 history; avoid log spam from C1/C2/C3 updates).
         if (cascadeIndex == 0) {
@@ -2907,7 +2933,8 @@ void Demo3D::raymarchPass() {
     // (v1.2 reversion of F1: hybrid noise is now denoised by hybrid_blur.comp BEFORE merging
     // with cascade. Blurring the merged result over-softens cascade. GI blur is back to being
     // a pure user-controlled toggle.)
-    const bool giBlurActive = useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6);
+    const bool giBlurActive = (useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6)) ||
+                              (exrCapture && raymarchRenderMode == 17);
     glUniform1i(glGetUniformLocation(prog, "uSeparateGI"), giBlurActive ? 1 : 0);
 
     if (giBlurActive) {
@@ -2915,8 +2942,11 @@ void Demo3D::raymarchPass() {
         if (w != giLastW || h != giLastH) initGIBlur(w, h);
         if (giFBO != 0) {
             glBindFramebuffer(GL_FRAMEBUFFER, giFBO);
-            GLenum drawBufs[3] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
-            glDrawBuffers(3, drawBufs);
+            GLenum drawBufs[6] = {
+                GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2,
+                GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4, GL_COLOR_ATTACHMENT5
+            };
+            glDrawBuffers(6, drawBufs);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
         }
@@ -2968,8 +2998,23 @@ void Demo3D::initGIBlur(int w, int h) {
     makeColorTex(giIndirectTex, w, h);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, giIndirectTex, 0);
 
-    GLenum drawBufs[3] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
-    glDrawBuffers(3, drawBufs);
+    // [3] = mode-17 shader-side probe diagnostic: normalized pg.xyz + raw indirect luma.
+    makeColorTex(giProbeDiagTex, w, h);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, giProbeDiagTex, 0);
+
+    // [4] = mode-17 contribution diagnostic: top trilinear probe + luma share.
+    makeColorTex(giProbeContribTex, w, h);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, giProbeContribTex, 0);
+
+    // [5] = mode-17 bin diagnostic: top directional bin + luma share + reconstructed luma.
+    makeColorTex(giProbeBinTex, w, h);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT5, GL_TEXTURE_2D, giProbeBinTex, 0);
+
+    GLenum drawBufs[6] = {
+        GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2,
+        GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4, GL_COLOR_ATTACHMENT5
+    };
+    glDrawBuffers(6, drawBufs);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         std::cerr << "[GIBlur] FBO incomplete at " << w << "x" << h << "\n";
@@ -2985,6 +3030,9 @@ void Demo3D::destroyGIBlur() {
     if (giDirectTex)   { glDeleteTextures(1, &giDirectTex);      giDirectTex = 0; }
     if (giGBufferTex)  { glDeleteTextures(1, &giGBufferTex);     giGBufferTex = 0; }
     if (giIndirectTex) { glDeleteTextures(1, &giIndirectTex);    giIndirectTex = 0; }
+    if (giProbeDiagTex){ glDeleteTextures(1, &giProbeDiagTex);   giProbeDiagTex = 0; }
+    if (giProbeContribTex){ glDeleteTextures(1, &giProbeContribTex); giProbeContribTex = 0; }
+    if (giProbeBinTex){ glDeleteTextures(1, &giProbeBinTex);     giProbeBinTex = 0; }
     giLastW = giLastH = 0;
 }
 
@@ -3178,7 +3226,8 @@ void Demo3D::ptDispatchReference() {
     // Dispatch 2: DIRECT-ONLY PT (uPtMaxBounces = 1). Writes ptDirectAccumTexture.
     // Mode 19 computes PT_GI = ptAccumTexture - ptDirectAccumTexture per pixel.
     // Skips this dispatch when only mode 16 is active (mode 16 doesn't need direct-only).
-    if (raymarchRenderMode == 18 || raymarchRenderMode == 19) {
+    if (raymarchRenderMode == 18 || raymarchRenderMode == 19 ||
+            (exrCapture && raymarchRenderMode == 17)) {
         glUniform1i(maxBouncesLoc, 1);
         glBindImageTexture(0, ptDirectAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
         glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "pt_reference_direct");
@@ -3511,7 +3560,8 @@ void Demo3D::hybridDispatchCorrection() {
     glUniform1i(glGetUniformLocation(prog, "uHybridRaysPerFrame"), hybridRaysPerFrame);
     glUniform1f(glGetUniformLocation(prog, "uHybridMaxDist"), glm::length(volumeSize));
     glUniform1f(glGetUniformLocation(prog, "uHybridEMAAlpha"), hybridEMAAlpha);
-    glUniform1ui(glGetUniformLocation(prog, "uHybridFrameSeed"), hybridFrameSeed);
+    glUniform1ui(glGetUniformLocation(prog, "uHybridFrameSeed"),
+                 static_cast<unsigned int>(hybridFrameSeed + noiseSeedOffset * 26699));
     glUniform1i(glGetUniformLocation(prog, "uHybridSppBefore"), hybridSampleCount);
     glUniform1i(glGetUniformLocation(prog, "uHybridAabbClamp"), hybridAabbClamp ? 1 : 0);
     glUniform1f(glGetUniformLocation(prog, "uHybridAabbSlack"), hybridAabbSlack);
@@ -6471,6 +6521,294 @@ void Demo3D::initToolsPaths() {
     analysisDir   = tools.string();
     toolsScript   = (tools / "analyze_screenshot.py").string();
     std::cout << "[6a] Tools path: " << tools << std::endl;
+}
+
+void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
+    if (!exrCapture) return;
+    if (raymarchRenderMode != 17) {
+        std::cerr << "[hdr-exr] --screenshot-exr currently expects render-mode 17; got "
+                  << raymarchRenderMode << "\n";
+        return;
+    }
+    if (giIndirectTex == 0 || ptAccumTexture == 0 || ptDirectAccumTexture == 0) {
+        std::cerr << "[hdr-exr] missing capture textures (gi=" << giIndirectTex
+                  << " ptFull=" << ptAccumTexture
+                  << " ptDirect=" << ptDirectAccumTexture << ")\n";
+        return;
+    }
+
+    auto readTexRGB = [](GLuint tex, int& w, int& h) -> std::vector<float> {
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,  &w);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+        std::vector<float> buf(static_cast<size_t>(w) * h * 3);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, buf.data());
+        GLenum e = glGetError();
+        if (e != GL_NO_ERROR) {
+            std::cerr << "[hdr-exr] glGetTexImage err=0x" << std::hex << e
+                      << std::dec << " tex=" << tex << "\n";
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return buf;
+    };
+
+    auto saveExrRGB = [](const std::string& path, const std::vector<float>& rgb,
+                         int w, int h) -> bool {
+        std::vector<float> flipped(rgb.size());
+        const size_t row = static_cast<size_t>(w) * 3;
+        for (int y = 0; y < h; ++y) {
+            std::memcpy(&flipped[static_cast<size_t>(y) * row],
+                        &rgb[static_cast<size_t>(h - 1 - y) * row],
+                        row * sizeof(float));
+        }
+        return exrw::save_rgb32f_exr(path.c_str(), flipped.data(), w, h);
+    };
+    auto readTexRGBA = [](GLuint tex, int& w, int& h) -> std::vector<float> {
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,  &w);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+        std::vector<float> buf(static_cast<size_t>(w) * h * 4);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, buf.data());
+        GLenum e = glGetError();
+        if (e != GL_NO_ERROR) {
+            std::cerr << "[hdr-exr] glGetTexImage RGBA err=0x" << std::hex << e
+                      << std::dec << " tex=" << tex << "\n";
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return buf;
+    };
+    auto saveExrRGBA = [](const std::string& path, const std::vector<float>& rgba,
+                          int w, int h) -> bool {
+        std::vector<float> flipped(rgba.size());
+        const size_t row = static_cast<size_t>(w) * 4;
+        for (int y = 0; y < h; ++y) {
+            std::memcpy(&flipped[static_cast<size_t>(y) * row],
+                        &rgba[static_cast<size_t>(h - 1 - y) * row],
+                        row * sizeof(float));
+        }
+        return exrw::save_rgba32f_exr(path.c_str(), flipped.data(), w, h);
+    };
+
+    int giW = 0, giH = 0;
+    std::vector<float> gi = readTexRGB(giIndirectTex, giW, giH);
+    saveExrRGB(stem + "_cascade_gi.exr", gi, giW, giH);
+
+    int ptW = 0, ptH = 0;
+    std::vector<float> ptFull = readTexRGB(ptAccumTexture, ptW, ptH);
+    saveExrRGB(stem + "_pt_full.exr", ptFull, ptW, ptH);
+
+    int pdW = 0, pdH = 0;
+    std::vector<float> ptDirect = readTexRGB(ptDirectAccumTexture, pdW, pdH);
+    saveExrRGB(stem + "_pt_direct.exr", ptDirect, pdW, pdH);
+
+    int gbW = 0, gbH = 0;
+    if (giGBufferTex != 0) {
+        std::vector<float> gbuffer = readTexRGBA(giGBufferTex, gbW, gbH);
+        saveExrRGBA(stem + "_gbuffer.exr", gbuffer, gbW, gbH);
+    }
+
+    int diagW = 0, diagH = 0;
+    if (giProbeDiagTex != 0) {
+        std::vector<float> probeDiag = readTexRGBA(giProbeDiagTex, diagW, diagH);
+        saveExrRGBA(stem + "_probe_diag.exr", probeDiag, diagW, diagH);
+    }
+
+    int contribW = 0, contribH = 0;
+    if (giProbeContribTex != 0) {
+        std::vector<float> probeContrib = readTexRGBA(giProbeContribTex, contribW, contribH);
+        saveExrRGBA(stem + "_probe_contrib.exr", probeContrib, contribW, contribH);
+    }
+
+    int binW = 0, binH = 0;
+    if (giProbeBinTex != 0) {
+        std::vector<float> probeBin = readTexRGBA(giProbeBinTex, binW, binH);
+        saveExrRGBA(stem + "_probe_bin.exr", probeBin, binW, binH);
+    }
+
+    std::cout << "[hdr-exr] dumped stem=" << stem
+              << " cascadeGI=" << giW << "x" << giH
+              << " ptFull=" << ptW << "x" << ptH
+              << " ptDirect=" << pdW << "x" << pdH
+              << " gbuffer=" << gbW << "x" << gbH
+              << " probeDiag=" << diagW << "x" << diagH
+              << " probeContrib=" << contribW << "x" << contribH
+              << " probeBin=" << binW << "x" << binH
+              << " ptSamples=" << ptSampleCount << "\n";
+
+    if (giFBO != 0 && giDirectTex != 0) {
+        int sw = GetScreenWidth(), sh = GetScreenHeight();
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, giFBO);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK);
+        glBlitFramebuffer(0, 0, sw, sh, 0, 0, sw, sh,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+}
+
+bool Demo3D::dumpProbeStatsJson(const std::string& path) const {
+    namespace fs = std::filesystem;
+    if (path.empty()) return false;
+
+    fs::path outPath(path);
+    if (outPath.has_parent_path())
+        fs::create_directories(outPath.parent_path());
+
+    std::ofstream j(path);
+    if (!j) {
+        std::cerr << "[probe-stats] failed to open: " << path << "\n";
+        return false;
+    }
+
+    j << "{\n";
+    j << "  \"dirRes\": "            << dirRes            << ",\n";
+    j << "  \"cascadeCount\": "      << cascadeCount      << ",\n";
+    j << "  \"temporalAlpha\": "     << temporalAlpha     << ",\n";
+    j << "  \"probeJitterScale\": "  << probeJitterScale  << ",\n";
+    j << "  \"jitterPatternSize\": " << jitterPatternSize << ",\n";
+    j << "  \"jitterHoldFrames\": "  << jitterHoldFrames  << ",\n";
+    j << "  \"c0MinRange\": "        << c0MinRange        << ",\n";
+    j << "  \"c1MinRange\": "        << c1MinRange        << ",\n";
+    j << "  \"baseRes\": "           << cascadeC0Res      << ",\n";
+    j << "  \"volumeSize\": "        << volumeSize.x      << ",\n";
+    j << "  \"cascadeTimeMs\": "     << cascadeTimeMs     << ",\n";
+    j << "  \"raymarchTimeMs\": "    << raymarchTimeMs    << ",\n";
+    j << "  \"cascades\": [\n";
+    for (int ci = 0; ci < cascadeCount; ++ci) {
+        int tot = probeTotalPerCascade[ci];
+        if (tot < 1) tot = 1;
+        j << "    {\n";
+        j << "      \"index\": "      << ci << ",\n";
+        j << "      \"resolution\": " << (cascades[ci].active ? cascades[ci].resolution : 0) << ",\n";
+        j << "      \"dirRes\": "     << cascadeDirRes[ci] << ",\n";
+        j << "      \"anyPct\": "     << (100.f * probeNonZero[ci]    / tot) << ",\n";
+        j << "      \"surfPct\": "    << (100.f * probeSurfaceHit[ci] / tot) << ",\n";
+        j << "      \"skyPct\": "     << (100.f * probeSkyHit[ci]     / tot) << ",\n";
+        j << "      \"meanLum\": "    << probeMeanLum[ci]  << ",\n";
+        j << "      \"maxLum\": "     << probeMaxLum[ci]   << ",\n";
+        j << "      \"variance\": "   << probeVariance[ci] << "\n";
+        j << "    }";
+        if (ci + 1 < cascadeCount) j << ",";
+        j << "\n";
+    }
+    j << "  ]\n";
+    j << "}\n";
+
+    std::cout << "[probe-stats] written: " << path << "\n";
+    return true;
+}
+
+bool Demo3D::dumpAtlasAttributionJson(const std::string& path, const std::vector<glm::ivec3>& cells) const {
+    namespace fs = std::filesystem;
+    if (path.empty()) return false;
+    GLuint atlasTex = 0;
+    if (cascadeCount > 0 && cascades[0].active) {
+        atlasTex = (useTemporalAccum && cascades[0].probeAtlasHistory != 0)
+                   ? cascades[0].probeAtlasHistory
+                   : cascades[0].probeAtlasTexture;
+    }
+    if (atlasTex == 0) {
+        std::cerr << "[atlas-attrib] C0 atlas unavailable\n";
+        return false;
+    }
+
+    const int res = cascades[0].resolution;
+    const int D = cascadeDirRes[0];
+    const int atlasXY = res * D;
+    std::vector<float> atlas(static_cast<size_t>(atlasXY) * atlasXY * res * 4);
+    glBindTexture(GL_TEXTURE_3D, atlasTex);
+    glGetTexImage(GL_TEXTURE_3D, 0, GL_RGBA, GL_FLOAT, atlas.data());
+    GLenum e = glGetError();
+    glBindTexture(GL_TEXTURE_3D, 0);
+    if (e != GL_NO_ERROR) {
+        std::cerr << "[atlas-attrib] glGetTexImage err=0x" << std::hex << e << std::dec << "\n";
+        return false;
+    }
+
+    fs::path outPath(path);
+    if (outPath.has_parent_path())
+        fs::create_directories(outPath.parent_path());
+    std::ofstream j(path);
+    if (!j) {
+        std::cerr << "[atlas-attrib] failed to open: " << path << "\n";
+        return false;
+    }
+
+    auto idx = [atlasXY](int x, int y, int z) -> size_t {
+        return (static_cast<size_t>(z) * atlasXY * atlasXY +
+                static_cast<size_t>(y) * atlasXY +
+                static_cast<size_t>(x)) * 4;
+    };
+    auto lum = [](float r, float g, float b) -> float {
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+    };
+    auto dirForBin = [D](int dx, int dy) -> glm::vec3 {
+        glm::vec2 uv((float(dx) + 0.5f) / float(D), (float(dy) + 0.5f) / float(D));
+        uv = uv * 2.0f - glm::vec2(1.0f);
+        glm::vec3 d(uv.x, uv.y, 1.0f - std::abs(uv.x) - std::abs(uv.y));
+        if (d.z < 0.0f) {
+            glm::vec2 old(d.x, d.y);
+            d.x = (1.0f - std::abs(old.y)) * (old.x >= 0.0f ? 1.0f : -1.0f);
+            d.y = (1.0f - std::abs(old.x)) * (old.y >= 0.0f ? 1.0f : -1.0f);
+        }
+        return glm::normalize(d);
+    };
+
+    glm::ivec3 offsets[8] = {
+        {0,0,0}, {1,0,0}, {0,1,0}, {1,1,0},
+        {0,0,1}, {1,0,1}, {0,1,1}, {1,1,1}
+    };
+
+    j << "{\n";
+    j << "  \"cascade\": 0,\n";
+    j << "  \"source\": \"" << ((useTemporalAccum && cascades[0].probeAtlasHistory != 0) ? "probeAtlasHistory" : "probeAtlasTexture") << "\",\n";
+    j << "  \"resolution\": " << res << ",\n";
+    j << "  \"dirRes\": " << D << ",\n";
+    j << "  \"targets\": [\n";
+    for (size_t ti = 0; ti < cells.size(); ++ti) {
+        glm::ivec3 base = glm::clamp(cells[ti], glm::ivec3(0), glm::ivec3(res - 1));
+        j << "    {\n";
+        j << "      \"p000\": [" << base.x << ", " << base.y << ", " << base.z << "],\n";
+        j << "      \"neighbors\": [\n";
+        for (int ni = 0; ni < 8; ++ni) {
+            glm::ivec3 pc = glm::clamp(base + offsets[ni], glm::ivec3(0), glm::ivec3(res - 1));
+            j << "        {\n";
+            j << "          \"offset\": [" << offsets[ni].x << ", " << offsets[ni].y << ", " << offsets[ni].z << "],\n";
+            j << "          \"probe\": [" << pc.x << ", " << pc.y << ", " << pc.z << "],\n";
+            j << "          \"bins\": [\n";
+            for (int dy = 0; dy < D; ++dy) {
+                for (int dx = 0; dx < D; ++dx) {
+                    int ax = pc.x * D + dx;
+                    int ay = pc.y * D + dy;
+                    size_t k = idx(ax, ay, pc.z);
+                    glm::vec3 bd = dirForBin(dx, dy);
+                    float r = atlas[k + 0], g = atlas[k + 1], b = atlas[k + 2], a = atlas[k + 3];
+                    j << "            {\"bin\":[" << dx << "," << dy << "],"
+                      << "\"dir\":[" << bd.x << "," << bd.y << "," << bd.z << "],"
+                      << "\"rgb\":[" << r << "," << g << "," << b << "],"
+                      << "\"alpha\":" << a << ","
+                      << "\"luma\":" << lum(r, g, b) << "}";
+                    if (!(dy == D - 1 && dx == D - 1)) j << ",";
+                    j << "\n";
+                }
+            }
+            j << "          ]\n";
+            j << "        }";
+            if (ni + 1 < 8) j << ",";
+            j << "\n";
+        }
+        j << "      ]\n";
+        j << "    }";
+        if (ti + 1 < cells.size()) j << ",";
+        j << "\n";
+    }
+    j << "  ]\n";
+    j << "}\n";
+
+    std::cout << "[atlas-attrib] written: " << path << " targets=" << cells.size()
+              << " D=" << D << "\n";
+    return true;
 }
 
 void Demo3D::takeScreenshot(bool launchAiAnalysis) {

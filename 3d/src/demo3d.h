@@ -641,6 +641,30 @@ public:
     }
     bool getUseWeightedSample() const { return useWeightedSample; }
 
+    void setM1Delta3GatedTrilinear(bool v) {
+        if (v == m1Delta3GatedTrilinear) return;
+        m1Delta3GatedTrilinear = v;
+        if (v) useWeightedSample = true;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] m1Delta3GatedTrilinear=" << (v ? "ON" : "OFF")
+                  << " (uses WeightedSample.rgb renormalized over visible corners)\n";
+    }
+
+    void setM1Delta6GeometricCone(bool v) {
+        if (v == m1Delta6GeometricCone) return;
+        m1Delta6GeometricCone = v;
+        if (v) useWeightedSample = true;
+        cascadeReady = false;
+        forceCascadeRebuild = true;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        std::cout << "[Demo3D] m1Delta6GeometricCone=" << (v ? "ON" : "OFF")
+                  << " (ShaderToy-like permissive WeightedSample cone candidate)\n";
+    }
+
     void setPhase3DebugMode(int v) {
         if (v == phase3DebugMode) return;
         phase3DebugMode = v;
@@ -741,6 +765,61 @@ public:
     void setUseProbeJitter(bool v)   { useProbeJitter = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
     void setUseTemporalAccum(bool v) { useTemporalAccum = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
     void setUseHistoryClamp(bool v)  { useHistoryClamp = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
+    void setUseScaledDirRes(bool v)  { useScaledDirRes = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
+    void setUseDirectionalMergeCLI(bool v) { useDirectionalMerge = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
+    void setUseDirBilinearCLI(bool v)      { useDirBilinear = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
+    void setUseSpatialTrilinearCLI(bool v) { useSpatialTrilinear = v; cascadeReady = false; renderFrameIndex = 0; historyNeedsSeed = true; }
+    void setUseDirectionalGI(bool v)       { useDirectionalGI = v; std::cout << "[Demo3D] useDirectionalGI=" << (v ? "ON" : "OFF") << " (display path)\n"; }
+
+    void setAutoCaptureDelaySeconds(float s) { autoCaptureDelaySeconds = s < 0.0f ? 0.0f : s; }
+    void setNoiseSeedOffset(int v) {
+        if (v < 0) v = 0;
+        noiseSeedOffset = v;
+        cascadeReady = false;
+        renderFrameIndex = 0;
+        historyNeedsSeed = true;
+        resetPTAccumulator();
+        resetHybridAccumulator();
+    }
+
+    static constexpr int kMeasurementCameraSlots = 3;
+    void setMeasurementCameraSlot(int idx, const glm::vec3& pos, const glm::vec3& target) {
+        if (idx < 0 || idx >= kMeasurementCameraSlots) return;
+        measurementCameraPositions[idx] = pos;
+        measurementCameraTargets[idx]   = target;
+        measurementCameraValid[idx]     = true;
+        std::cout << "[Demo3D] measurementCameraSlot[" << idx << "] pos=("
+                  << pos.x << "," << pos.y << "," << pos.z << ") target=("
+                  << target.x << "," << target.y << "," << target.z << ")\n";
+    }
+    void setMeasurementCamera(int v) {
+        if (v < -1) v = -1;
+        if (v >= kMeasurementCameraSlots) v = kMeasurementCameraSlots - 1;
+        measurementCamera = v;
+        if (v >= 0 && measurementCameraValid[v]) {
+            camera.position = measurementCameraPositions[v];
+            camera.target   = measurementCameraTargets[v];
+            syncCameraYawPitchFromTarget();
+            cascadeReady = false;
+            renderFrameIndex = 0;
+            historyNeedsSeed = true;
+            resetPTAccumulator();
+            resetHybridAccumulator();
+        }
+        std::cout << "[Demo3D] measurementCamera=" << v << "\n";
+    }
+
+    void setExrCapture(bool v) {
+        if (v == exrCapture) return;
+        exrCapture = v;
+        resetPTAccumulator();
+        std::cout << "[Demo3D] exrCapture=" << (v ? "ON" : "OFF")
+                  << " (mode 17 screenshot dumps cascade_gi/pt_full/pt_direct EXRs)\n";
+    }
+    bool getExrCapture() const { return exrCapture; }
+    void dumpScreenshotEXRs(const std::string& stem);
+    bool dumpProbeStatsJson(const std::string& path) const;
+    bool dumpAtlasAttributionJson(const std::string& path, const std::vector<glm::ivec3>& cells) const;
 
     // Diagnostic CLI for cascade-staggering hypothesis testing.
     void setStaggerMaxInterval(int v) {
@@ -855,6 +934,13 @@ private:
     std::string burstPaths[3];          // [0]=_m0  [1]=_m3  [2]=_m6
     std::string lastScreenshotPath;     // set by takeScreenshot() on each successful write
     std::string pendingScreenshotTag;   // suffix inserted before ".png" (_m0/_m3/_m6/"")
+
+    int noiseSeedOffset = 0;
+    int measurementCamera = -1;
+    glm::vec3 measurementCameraPositions[kMeasurementCameraSlots] = {};
+    glm::vec3 measurementCameraTargets[kMeasurementCameraSlots]   = {};
+    bool      measurementCameraValid[kMeasurementCameraSlots]     = {};
+    bool exrCapture = false;
 
     void launchBurstAnalysis();
 
@@ -1330,6 +1416,8 @@ private:
      *  uUseSpatialTrilinear). See doc/6/claude_plan/visibility_phase3_plan.md and
      *  res/shaders/radiance_3d.comp for the algorithm. */
     bool useWeightedSample;
+    bool m1Delta3GatedTrilinear = false;
+    bool m1Delta6GeometricCone = false;
 
     /** 2026-05-18 debug: instrument Phase 3 v2 to find WHY GI is still dimmed.
      *  0=normal, 1=force aFactor=1, 2=visualize aFactor, 3=visualize upperDir.a,
@@ -1648,12 +1736,15 @@ private:
     GLuint cascadeFBO;
 
     // GI bilateral blur FBO (Phase 9d)
-    // 3 color attachments: [0]=direct (linear), [1]=gbuffer (normal+depth), [2]=indirect/GI (linear)
+    // 6 color attachments: direct, gbuffer, indirect/GI, probe diag, contribution, bin
     // Only active when useGIBlur=true AND raymarchRenderMode==0.
     GLuint giFBO;
     GLuint giDirectTex;    // linear direct lighting (location=0 from raymarch.frag)
     GLuint giGBufferTex;   // normal*0.5+0.5 + linearDepth (location=1)
     GLuint giIndirectTex;  // linear indirect/GI (location=2 from raymarch.frag)
+    GLuint giProbeDiagTex; // mode-17 probe coord + raw indirect luma (location=3)
+    GLuint giProbeContribTex; // mode-17 top probe coord + share (location=4)
+    GLuint giProbeBinTex;     // mode-17 top bin + share + reconstructed luma (location=5)
     int giLastW, giLastH;
 
     // GI blur settings

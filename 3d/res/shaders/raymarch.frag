@@ -45,6 +45,16 @@ layout(location=1) out vec4 fragGBuffer;
  *  Discarded when rendering to the default framebuffer or in debug modes. */
 layout(location=2) out vec4 fragGI;
 
+/** Shader-side probe-coordinate diagnostic for mode-17 captures (location=3).
+ *  rgb = continuous C0 probe-grid coordinate normalized to [0,1], a = raw indirect luminance. */
+layout(location=3) out vec4 fragProbeDiag;
+
+/** Mode-17 contribution summary: rgb = top probe / C0 res, a = top-probe luma share. */
+layout(location=4) out vec4 fragProbeContrib;
+
+/** Mode-17 contribution summary: rg = top bin center / D, b = top-bin luma share, a = reconstructed raw luma. */
+layout(location=5) out vec4 fragProbeBin;
+
 // =============================================================================
 // Uniforms
 // =============================================================================
@@ -392,6 +402,22 @@ struct ProbeSample {
     float oscillation;
 };
 
+struct ProbeDirDetail {
+    ProbeSample sample;
+    float wsum;
+    float topBinLum;
+    ivec2 topBin;
+};
+
+struct DirectionalDetail {
+    ProbeSample sample;
+    float rawLum;
+    float topProbeLum;
+    ivec3 topProbe;
+    float topBinLum;
+    ivec2 topBin;
+};
+
 ProbeSample sampleProbeDir(ivec3 pc, vec3 normal, int D) {
     vec3  irrad   = vec3(0.0);
     float wsum    = 0.0;        // sum(wcos * a.a) — for irrad normalization
@@ -417,6 +443,55 @@ ProbeSample sampleProbeDir(ivec3 pc, vec3 normal, int D) {
     r.leak        = dot(leakRgb, vec3(0.2126, 0.7152, 0.0722));
     r.oscillation = oscSum / max(wcosSum, 1e-4);
     return r;
+}
+
+ProbeDirDetail sampleProbeDirDetail(ivec3 pc, vec3 normal, int D) {
+    vec3  irrad   = vec3(0.0);
+    float wsum    = 0.0;
+    float wcosSum = 0.0;
+    vec3  leakRgb = vec3(0.0);
+    float oscSum  = 0.0;
+    float bestUnnormLum = -1.0;
+    ivec2 bestBin = ivec2(0);
+
+    vec3 binRgb[256];
+    float binW[256];
+    int idx = 0;
+    for (int dy = 0; dy < D; ++dy) {
+        for (int dx = 0; dx < D; ++dx) {
+            vec3  bdir = binToDir(ivec2(dx, dy), D);
+            float wcos = max(0.0, dot(bdir, normal));
+            vec4  a    = texelFetch(uDirectionalAtlas,
+                                    ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
+            float w    = wcos * a.a;
+            irrad   += a.rgb * w;
+            wsum    += w;
+            wcosSum += wcos;
+            leakRgb += a.rgb * wcos * (1.0 - a.a);
+            oscSum  += wcos * 4.0 * a.a * (1.0 - a.a);
+            binRgb[idx] = a.rgb;
+            binW[idx] = w;
+            float unnormLum = dot(a.rgb * w, vec3(0.2126, 0.7152, 0.0722));
+            if (unnormLum > bestUnnormLum) {
+                bestUnnormLum = unnormLum;
+                bestBin = ivec2(dx, dy);
+            }
+            idx++;
+        }
+    }
+
+    float invW = 1.0 / max(wsum, 1e-4);
+    ProbeSample s;
+    s.irrad       = irrad * invW;
+    s.leak        = dot(leakRgb, vec3(0.2126, 0.7152, 0.0722));
+    s.oscillation = oscSum / max(wcosSum, 1e-4);
+
+    ProbeDirDetail d;
+    d.sample = s;
+    d.wsum = wsum;
+    d.topBin = bestBin;
+    d.topBinLum = max(bestUnnormLum * invW, 0.0);
+    return d;
 }
 
 // (sampleProbeDirPerBinOccluded and sampleProbeDirDepthAware removed in Phase 2
@@ -466,6 +541,66 @@ ProbeSample sampleDirectionalGI(vec3 pos, vec3 normal) {
         r.oscillation += s.oscillation * w[i];
     }
     return r;
+}
+
+DirectionalDetail sampleDirectionalGIDetail(vec3 pos, vec3 normal) {
+    DirectionalDetail outD;
+    outD.sample.irrad = vec3(0.0); outD.sample.leak = 0.0; outD.sample.oscillation = 0.0;
+    outD.rawLum = 0.0; outD.topProbeLum = 0.0; outD.topProbe = ivec3(0);
+    outD.topBinLum = 0.0; outD.topBin = ivec2(0);
+
+    vec3 uvw = (pos - uAtlasGridOrigin) / uAtlasGridSize;
+    if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0))))
+        return outD;
+
+    vec3  pg   = clamp(uvw * vec3(uAtlasVolumeSize) - 0.5,
+                       vec3(0.0), vec3(uAtlasVolumeSize - ivec3(1)));
+    ivec3 p000 = ivec3(floor(pg));
+    vec3  f    = fract(pg);
+    ivec3 hi   = uAtlasVolumeSize - ivec3(1);
+    int   D    = uAtlasDirRes;
+
+    ivec3 offsets[8] = ivec3[8](
+        ivec3(0,0,0), ivec3(1,0,0), ivec3(0,1,0), ivec3(1,1,0),
+        ivec3(0,0,1), ivec3(1,0,1), ivec3(0,1,1), ivec3(1,1,1));
+    float w[8];
+    w[0] = (1.0-f.x)*(1.0-f.y)*(1.0-f.z);
+    w[1] =      f.x *(1.0-f.y)*(1.0-f.z);
+    w[2] = (1.0-f.x)*     f.y *(1.0-f.z);
+    w[3] =      f.x *     f.y *(1.0-f.z);
+    w[4] = (1.0-f.x)*(1.0-f.y)*     f.z;
+    w[5] =      f.x *(1.0-f.y)*     f.z;
+    w[6] = (1.0-f.x)*     f.y *     f.z;
+    w[7] =      f.x *     f.y *     f.z;
+
+    for (int i = 0; i < 8; ++i) {
+        ivec3 pc = p000 + offsets[i];
+        bool inBounds = !(any(lessThan(pc, ivec3(0))) || any(greaterThan(pc, hi)));
+        if (!inBounds) continue;
+        ProbeDirDetail d = sampleProbeDirDetail(pc, normal, D);
+        outD.sample.irrad       += d.sample.irrad       * w[i];
+        outD.sample.leak        += d.sample.leak        * w[i];
+        outD.sample.oscillation += d.sample.oscillation * w[i];
+
+        float probeLum = dot(d.sample.irrad * w[i], vec3(0.2126, 0.7152, 0.0722));
+        float binLum = d.topBinLum * w[i];
+        if (probeLum > outD.topProbeLum) {
+            outD.topProbeLum = probeLum;
+            outD.topProbe = pc;
+        }
+        if (binLum > outD.topBinLum) {
+            outD.topBinLum = binLum;
+            outD.topBin = d.topBin;
+        }
+    }
+    outD.rawLum = dot(outD.sample.irrad, vec3(0.2126, 0.7152, 0.0722));
+    return outD;
+}
+
+vec3 probeGridCoord(vec3 pos) {
+    vec3 uvw = (pos - uAtlasGridOrigin) / uAtlasGridSize;
+    return clamp(uvw * vec3(uAtlasVolumeSize) - 0.5,
+                 vec3(0.0), vec3(uAtlasVolumeSize - ivec3(1)));
 }
 
 /**
@@ -533,6 +668,9 @@ void main() {
     // Default GBuffer = sky (a=0 signals no surface to the blur pass)
     fragGBuffer = vec4(0.0);
     fragGI      = vec4(0.0);
+    fragProbeDiag = vec4(0.0);
+    fragProbeContrib = vec4(0.0);
+    fragProbeBin = vec4(0.0);
 
     // Phase 7 (PT reference): mode 16 displays ptAccumTexture directly. Skip the
     // entire SDF raymarch + GI pipeline — pure texture display + tonemap. This is
@@ -695,6 +833,21 @@ void main() {
                     ? sampleDirectionalGI(pos, normal).irrad
                     : texture(uRadiance, uvw).rgb;
                 indirectColor = albedo * indirect;
+            }
+
+            if (uRenderMode == 17 && uUseCascade != 0) {
+                vec3 pg = probeGridCoord(pos);
+                float rawLum = dot(indirect, vec3(0.2126, 0.7152, 0.0722));
+                fragProbeDiag = vec4(pg / max(vec3(uAtlasVolumeSize), vec3(1.0)), rawLum);
+                if (uUseDirectionalGI != 0) {
+                    DirectionalDetail dd = sampleDirectionalGIDetail(pos, normal);
+                    float denom = max(dd.rawLum, 1e-6);
+                    fragProbeContrib = vec4((vec3(dd.topProbe) + vec3(0.5)) / max(vec3(uAtlasVolumeSize), vec3(1.0)),
+                                            clamp(dd.topProbeLum / denom, 0.0, 1.0));
+                    fragProbeBin = vec4((vec2(dd.topBin) + vec2(0.5)) / max(float(uAtlasDirRes), 1.0),
+                                        clamp(dd.topBinLum / denom, 0.0, 1.0),
+                                        dd.rawLum);
+                }
             }
 
             // 2026-05-19 Hybrid RC + Per-Pixel Correction (doc/7).
@@ -866,8 +1019,8 @@ void main() {
             // Step 10 (codex 06 F3): gate on uRenderMode == 0 so the new diagnostic
             // modes (9, 10) always reach the composite below; the GI-blur split path
             // is only meaningful for the default render mode.
-            if (uSeparateGI != 0 && uRenderMode == 0) {
-                fragColor = vec4(directColor,   1.0);
+            if (uSeparateGI != 0 && (uRenderMode == 0 || uRenderMode == 17)) {
+                fragColor = vec4((uRenderMode == 17) ? indirectColor : directColor, 1.0);
                 fragGI    = vec4(indirectColor, 1.0);
                 return;
             }

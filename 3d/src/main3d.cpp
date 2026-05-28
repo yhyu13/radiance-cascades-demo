@@ -15,6 +15,11 @@
 #include "demo3d.h"  // This includes raylib.h
 #include <iostream>
 #include <cstdlib>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <vector>
 
 #ifdef _WIN32
     #include <direct.h>  // For _chdir on Windows
@@ -39,6 +44,22 @@ const std::string WINDOW_TITLE = "Radiance Cascades 3D";
 /** Require OpenGL 4.3 minimum */
 constexpr int OPENGL_MAJOR_VERSION = 4;
 constexpr int OPENGL_MINOR_VERSION = 3;
+
+static std::vector<glm::ivec3> parseAtlasCells(const std::string& text) {
+    std::vector<glm::ivec3> cells;
+    std::string normalized = text;
+    for (char& c : normalized) {
+        if (c == '|') c = ';';
+    }
+    std::stringstream ss(normalized);
+    std::string item;
+    while (std::getline(ss, item, ';')) {
+        int x = 0, y = 0, z = 0;
+        if (std::sscanf(item.c_str(), "%d,%d,%d", &x, &y, &z) == 3)
+            cells.emplace_back(x, y, z);
+    }
+    return cells;
+}
 
 // =============================================================================
 // Function Declarations
@@ -84,6 +105,55 @@ bool g_cacheHitTest = false;
 // codex 04 F2 verify: toggle GPU SDF off after load to exercise the
 // CPU-mirror-preserved transition.
 bool g_toggleGpuSdfOffAfterLoad = false;
+
+static int loadMeasurementCamerasJson(Demo3D* demo, const std::string& path) {
+    std::ifstream f(path);
+    if (!f) {
+        std::cerr << "[MAIN] --measurement-cameras-file: could not open '"
+                  << path << "'\n";
+        return 0;
+    }
+
+    std::stringstream ss;
+    ss << f.rdbuf();
+    std::string text = ss.str();
+
+    int loaded = 0;
+    size_t pos = 0;
+    while (loaded < Demo3D::kMeasurementCameraSlots) {
+        size_t pKey = text.find("\"position\"", pos);
+        if (pKey == std::string::npos) break;
+        size_t pOpen = text.find('[', pKey);
+        size_t pClose = (pOpen == std::string::npos) ? std::string::npos : text.find(']', pOpen);
+        if (pClose == std::string::npos) break;
+
+        glm::vec3 p(0.0f);
+        if (std::sscanf(text.c_str() + pOpen + 1, " %f , %f , %f", &p.x, &p.y, &p.z) != 3) {
+            std::cerr << "[MAIN] cameras.json: malformed position at byte " << pOpen << "\n";
+            break;
+        }
+
+        size_t tKey = text.find("\"target\"", pClose);
+        if (tKey == std::string::npos) break;
+        size_t tOpen = text.find('[', tKey);
+        size_t tClose = (tOpen == std::string::npos) ? std::string::npos : text.find(']', tOpen);
+        if (tClose == std::string::npos) break;
+
+        glm::vec3 t(0.0f);
+        if (std::sscanf(text.c_str() + tOpen + 1, " %f , %f , %f", &t.x, &t.y, &t.z) != 3) {
+            std::cerr << "[MAIN] cameras.json: malformed target at byte " << tOpen << "\n";
+            break;
+        }
+
+        demo->setMeasurementCameraSlot(loaded, p, t);
+        ++loaded;
+        pos = tClose + 1;
+    }
+
+    std::cout << "[MAIN] --measurement-cameras-file=" << path
+              << " loaded " << loaded << " cameras\n";
+    return loaded;
+}
 
 int main(int argc, char* argv[]) {
     /**
@@ -187,6 +257,9 @@ int main(int argc, char* argv[]) {
     bool        autoAnalyze   = false;
     std::string loadObjName;
     std::string screenshotPath;
+    std::string probeStatsPath;
+    std::string atlasAttributionPath;
+    std::vector<glm::ivec3> atlasAttributionCells;
     // Continuous-shot capture inside a SINGLE session (critic 15 H2 / H3 follow-up):
     // capture frames [shotsAfter, shotsAfter + shotsCount) into PREFIX_fN.png.
     // Lets us measure true interactive frame-to-frame motion rather than cold-start A/B.
@@ -203,6 +276,7 @@ int main(int argc, char* argv[]) {
     bool        cliCameraTargetSet = false; glm::vec3 cliCameraTarget{0.0f};
     bool        cliFovySet         = false; float     cliFovy = 60.0f;
     std::string cliCameraPresetName;          // Phase 2.5d critic-10 W4: scene-validation hook
+    int         measurementCameraToApply = -999;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--auto-analyze") {
@@ -225,10 +299,31 @@ int main(int argc, char* argv[]) {
         } else if (arg.rfind("--screenshot=", 0) == 0) {
             screenshotPath = arg.substr(13);
             std::cout << "[MAIN] --screenshot=" << screenshotPath << ": will capture last frame.\n";
+        } else if (arg.rfind("--probe-stats-json=", 0) == 0) {
+            probeStatsPath = arg.substr(19);
+            std::cout << "[MAIN] --probe-stats-json=" << probeStatsPath
+                      << ": will dump per-cascade probe stats on exit frame.\n";
+        } else if (arg.rfind("--atlas-attribution-json=", 0) == 0) {
+            atlasAttributionPath = arg.substr(25);
+            std::cout << "[MAIN] --atlas-attribution-json=" << atlasAttributionPath
+                      << ": will dump targeted C0 atlas texels on exit frame.\n";
+        } else if (arg.rfind("--atlas-attribution-cells=", 0) == 0) {
+            atlasAttributionCells = parseAtlasCells(arg.substr(26));
+            std::cout << "[MAIN] --atlas-attribution-cells count="
+                      << atlasAttributionCells.size() << "\n";
+        } else if (arg.rfind("--screenshot-exr=", 0) == 0) {
+            int v = std::atoi(arg.substr(17).c_str());
+            demo->setExrCapture(v != 0);
+            std::cout << "[MAIN] --screenshot-exr=" << v
+                      << " (HDR sidecars for mode-17 cascade_gi/pt_full/pt_direct)\n";
         } else if (arg.rfind("--render-mode=", 0) == 0) {
             int m = std::atoi(arg.substr(14).c_str());
             demo->setRenderMode(m);
             std::cout << "[MAIN] --render-mode=" << m << "\n";
+        } else if (arg.rfind("--auto-capture-delay=", 0) == 0) {
+            float s = static_cast<float>(std::atof(arg.substr(21).c_str()));
+            demo->setAutoCaptureDelaySeconds(s);
+            std::cout << "[MAIN] --auto-capture-delay=" << s << "\n";
         } else if (arg.rfind("--inject-bake-failures=", 0) == 0) {
             int n = std::atoi(arg.substr(23).c_str());
             demo->setInjectBakeFailures(n);
@@ -351,6 +446,31 @@ int main(int argc, char* argv[]) {
             int v = std::atoi(arg.substr(20).c_str());
             demo->setUseHistoryClamp(v != 0);
             std::cout << "[MAIN] --use-history-clamp=" << v << "\n";
+        } else if (arg.rfind("--cascade-scaled-dir-res=", 0) == 0) {
+            int v = std::atoi(arg.substr(25).c_str());
+            demo->setUseScaledDirRes(v != 0);
+            std::cout << "[MAIN] --cascade-scaled-dir-res=" << v << "\n";
+        } else if (arg.rfind("--noise-seed-offset=", 0) == 0) {
+            int v = std::atoi(arg.substr(20).c_str());
+            demo->setNoiseSeedOffset(v);
+            std::cout << "[MAIN] --noise-seed-offset=" << v << "\n";
+        } else if (arg.rfind("--use-directional-merge=", 0) == 0) {
+            int v = std::atoi(arg.substr(24).c_str());
+            demo->setUseDirectionalMergeCLI(v != 0);
+            std::cout << "[MAIN] --use-directional-merge=" << v << "\n";
+        } else if (arg.rfind("--use-directional-gi=", 0) == 0) {
+            int v = std::atoi(arg.substr(21).c_str());
+            demo->setUseDirectionalGI(v != 0);
+            std::cout << "[MAIN] --use-directional-gi=" << v
+                      << " (1=normal-aware atlas final sampling, 0=isotropic probe grid)\n";
+        } else if (arg.rfind("--use-dir-bilinear=", 0) == 0) {
+            int v = std::atoi(arg.substr(19).c_str());
+            demo->setUseDirBilinearCLI(v != 0);
+            std::cout << "[MAIN] --use-dir-bilinear=" << v << "\n";
+        } else if (arg.rfind("--use-spatial-trilinear=", 0) == 0) {
+            int v = std::atoi(arg.substr(24).c_str());
+            demo->setUseSpatialTrilinearCLI(v != 0);
+            std::cout << "[MAIN] --use-spatial-trilinear=" << v << "\n";
         } else if (arg.rfind("--stagger=", 0) == 0) {
             int v = std::atoi(arg.substr(10).c_str());
             demo->setStaggerMaxInterval(v);
@@ -457,6 +577,18 @@ int main(int argc, char* argv[]) {
             demo->setUseWeightedSample(v != 0);
             std::cout << "[MAIN] --use-weighted-sample=" << v
                       << " (1=ON Phase 3 per-corner gating; 0=OFF Phase 2 unconditional)\n";
+        } else if (arg.rfind("--m1-delta3-gated-trilinear=", 0) == 0) {
+            static constexpr const char* kPrefix = "--m1-delta3-gated-trilinear=";
+            int v = std::atoi(arg.substr(std::strlen(kPrefix)).c_str());
+            demo->setM1Delta3GatedTrilinear(v != 0);
+            std::cout << "[MAIN] --m1-delta3-gated-trilinear=" << v
+                      << " (uses WeightedSample.rgb instead of scalar attenuation)\n";
+        } else if (arg.rfind("--m1-delta6-geometric-cone=", 0) == 0) {
+            static constexpr const char* kPrefix = "--m1-delta6-geometric-cone=";
+            int v = std::atoi(arg.substr(std::strlen(kPrefix)).c_str());
+            demo->setM1Delta6GeometricCone(v != 0);
+            std::cout << "[MAIN] --m1-delta6-geometric-cone=" << v
+                      << " (ShaderToy-like cone candidate for WeightedSample)\n";
         } else if (arg.rfind("--visibility-mode=", 0) == 0) {
             // Phase 2.5c (revised per critic 11 M3): Phase 2 already shipped to
             // users with this flag deprecated-but-functional. Silent slip-through
@@ -543,6 +675,12 @@ int main(int argc, char* argv[]) {
             cliFovy = static_cast<float>(std::atof(arg.substr(14).c_str()));
             cliFovySet = true;
             std::cout << "[MAIN] --camera-fovy=" << cliFovy << "\n";
+        } else if (arg.rfind("--measurement-cameras-file=", 0) == 0) {
+            loadMeasurementCamerasJson(demo, arg.substr(27));
+        } else if (arg.rfind("--measurement-camera=", 0) == 0) {
+            measurementCameraToApply = std::atoi(arg.substr(21).c_str());
+            std::cout << "[MAIN] --measurement-camera=" << measurementCameraToApply
+                      << " (will apply after scene load)\n";
         }
     }
 
@@ -582,6 +720,9 @@ int main(int argc, char* argv[]) {
     if (g_toggleGpuSdfOffAfterLoad) {
         std::cout << "[MAIN] Toggling GPU SDF off after load (codex 04 F2 verify)\n";
         demo->setUseGPUSDF(false);
+    }
+    if (measurementCameraToApply != -999) {
+        demo->setMeasurementCamera(measurementCameraToApply);
     }
     // Step 10 (codex 06 F7): camera CLI overrides apply LAST so they win
     // over loadOBJMesh's auto-fit, --switch-to-scene's resetCamera, AND
@@ -644,6 +785,23 @@ int main(int argc, char* argv[]) {
 
             // codex 09 F4: clean --screenshot capture happens HERE, before UI draw.
             if (wantCleanScreenshot) {
+                if (demo->getExrCapture()) {
+                    std::filesystem::path p(screenshotPath);
+                    p.replace_extension();
+                    demo->dumpScreenshotEXRs(p.string());
+                }
+                if (!probeStatsPath.empty())
+                    demo->dumpProbeStatsJson(probeStatsPath);
+                if (!atlasAttributionPath.empty()) {
+                    if (atlasAttributionCells.empty()) {
+                        atlasAttributionCells = {
+                            glm::ivec3(7, 5, 4),
+                            glm::ivec3(6, 5, 4),
+                            glm::ivec3(6, 4, 4)
+                        };
+                    }
+                    demo->dumpAtlasAttributionJson(atlasAttributionPath, atlasAttributionCells);
+                }
                 TakeScreenshot(screenshotPath.c_str());
                 std::cout << "[MAIN] --screenshot saved (clean 3D, no UI): "
                           << screenshotPath << "\n";

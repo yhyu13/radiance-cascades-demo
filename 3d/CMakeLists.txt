@@ -61,6 +61,8 @@ set(SOURCES_3D
     src/gl_helpers.cpp
     src/analytic_sdf.cpp  # Analytic SDF primitives for Phase 0
     src/rdoc_helper.cpp   # Phase 6b: RenderDoc DLL loading (isolated from raylib.h)
+    src/exr_writer.cpp    # HDR EXR sidecar writer, tinyexr isolated from raylib.h
+    lib/tinyexr/miniz.c   # tinyexr compression dependency
 )
 
 set(HEADERS_3D
@@ -86,6 +88,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${PROJECT_SOURCE_DIR}/../lib/raylib/src"
     "${PROJECT_SOURCE_DIR}/include"
     "${PROJECT_SOURCE_DIR}/lib/renderdoc"
+    "${PROJECT_SOURCE_DIR}/lib/tinyexr"
     ${OPENGL_INCLUDE_DIR}
     ${GLEW_INCLUDE_DIRS}
 )
@@ -151,6 +154,14 @@ configure_file(src/config.h.in "${PROJECT_BINARY_DIR}/config.h" @ONLY)
 # =============================================================================
 # Copy Shaders and Resources
 # =============================================================================
+
+# miniz.c is third-party amalgamated code; suppress its warnings so project
+# warnings remain useful.
+if(MSVC)
+    set_source_files_properties(lib/tinyexr/miniz.c PROPERTIES COMPILE_FLAGS "/W0")
+else()
+    set_source_files_properties(lib/tinyexr/miniz.c PROPERTIES COMPILE_FLAGS "-w")
+endif()
 
 # Copy shaders to build directory
 file(COPY ${PROJECT_SOURCE_DIR}/res/shaders 
