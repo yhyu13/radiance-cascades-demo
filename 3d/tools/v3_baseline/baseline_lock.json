@@ -1,0 +1,251 @@
+﻿{
+    "_note":  "v4 ShaderToy adoption Phase 2 closeout lock. Supersedes v3 M0 Stage 1 lock.",
+    "_locked_at":  "2026-05-28T17:45:00+08:00",
+    "_behavioral_equivalence":  "Phase 2B removed M1 delta flags (always false). EXR output bit-identical to Phase 1 binary for same CLI flags.",
+    "_engine_build":  {
+                          "exe":  {
+                                      "path":  "build/RadianceCascades3D.exe",
+                                      "status":  "present",
+                                      "bytes":  6294528,
+                                      "sha256":  "6085633a62f03bd963e691ff6f081f32df7560d1312ab3fff7ec2daab92c8f99"
+                                  },
+                          "build_id":  "3d_v4.0 Phase 2 closeout (M1 delta flags removed; per-scene MB-gain preset added)"
+                      },
+    "captures":  {
+                     "cornell_cam0_cascade_off":  {
+                                                      "tag":  "cv1_cornell_cam0_mbon_g100_hyb0_N2048_m17_postfix",
+                                                      "dir":  "tools/v20_convergence/captures_cv1_postfix",
+                                                      "N":  2048,
+                                                      "status":  "complete",
+                                                      "source":  "reused from v20 cv1_postfix",
+                                                      "files":  {
+                                                                    "png":  {
+                                                                                "path":  "tools/v20_convergence/captures_cv1_postfix/cv1_cornell_cam0_mbon_g100_hyb0_N2048_m17_postfix.png",
+                                                                                "status":  "present",
+                                                                                "bytes":  212520,
+                                                                                "sha256":  "10c2d6bc5d5034d01862cb0310a30812d95f1d733d6592dee8e60db5eae44016"
+                                                                            },
+                                                                    "cascade_gi":  {
+                                                                                       "path":  "tools/v20_convergence/captures_cv1_postfix/cv1_cornell_cam0_mbon_g100_hyb0_N2048_m17_postfix_cascade_gi.exr",
+                                                                                       "status":  "present",
+                                                                                       "bytes":  809680,
+                                                                                       "sha256":  "46682b2b325aa0a73c6e2d00d22d980ee24730f4663ea58369451f004176e74c"
+                                                                                   },
+                                                                    "pt_full":  {
+                                                                                    "path":  "tools/v20_convergence/captures_cv1_postfix/cv1_cornell_cam0_mbon_g100_hyb0_N2048_m17_postfix_pt_full.exr",
+                                                                                    "status":  "present",
+                                                                                    "bytes":  553763,
+                                                                                    "sha256":  "499794a735c0f08f5c64e1f08c55f4d8bfcd485a3b59f531329465610c737fea"
+                                                                                },
+                                                                    "pt_direct":  {
+                                                                                      "path":  "tools/v20_convergence/captures_cv1_postfix/cv1_cornell_cam0_mbon_g100_hyb0_N2048_m17_postfix_pt_direct.exr",
+                                                                                      "status":  "present",
+                                                                                      "bytes":  451366,
+                                                                                      "sha256":  "758189ca73125db934914abd8136861146228f38cb288101cba03c377d7d8ee4"
+                                                                                  }
+                                                                },
+                                                      "metrics":  {
+                                                                      "ratio_self":  0.64992207288742065,
+                                                                      "dim_pct":  28.5971420418377,
+                                                                      "abs_p95":  1.2775648832321167,
+                                                                      "bright_pct":  5.4415347806045169,
+                                                                      "valid":  45557,
+                                                                      "mean_casc":  0.24431087076663971,
+                                                                      "mean_pt":  0.37590795755386353
+                                                                  }
+                                                  },
+                     "cornell_cam0_hybrid_on":  {
+                                                    "tag":  "v3base_cornell_cam0_mbon_g100_hyb1_N2048_m17",
+                                                    "dir":  "tools/v3_baseline/captures_cornell_hybon",
+                                                    "N":  2048,
+                                                    "status":  "complete",
+                                                    "source":  "captured by tools/v3_baseline/cornell_hybon_capture.ps1",
+                                                    "files":  {
+                                                                  "png":  {
+                                                                              "path":  "tools/v3_baseline/captures_cornell_hybon/v3base_cornell_cam0_mbon_g100_hyb1_N2048_m17.png",
+                                                                              "status":  "present",
+                                                                              "bytes":  213102,
+                                                                              "sha256":  "cfa43f6250b3d61a7956daf15ff179bc365bee80869fbf89de78b4bda0c3301a"
+                                                                          },
+                                                                  "cascade_gi":  {
+                                                                                     "path":  "tools/v3_baseline/captures_cornell_hybon/v3base_cornell_cam0_mbon_g100_hyb1_N2048_m17_cascade_gi.exr",
+                                                                                     "status":  "present",
+                                                                                     "bytes":  933559,
+                                                                                     "sha256":  "8a90e53929234cf496de5422bda8ed9c396e26733393a93bf30b894beb4390d1"
+                                                                                 },
+                                                                  "pt_full":  {
+                                                                                  "path":  "tools/v3_baseline/captures_cornell_hybon/v3base_cornell_cam0_mbon_g100_hyb1_N2048_m17_pt_full.exr",
+                                                                                  "status":  "present",
+                                                                                  "bytes":  553763,
+                                                                                  "sha256":  "499794a735c0f08f5c64e1f08c55f4d8bfcd485a3b59f531329465610c737fea"
+                                                                              },
+                                                                  "pt_direct":  {
+                                                                                    "path":  "tools/v3_baseline/captures_cornell_hybon/v3base_cornell_cam0_mbon_g100_hyb1_N2048_m17_pt_direct.exr",
+                                                                                    "status":  "present",
+                                                                                    "bytes":  451366,
+                                                                                    "sha256":  "758189ca73125db934914abd8136861146228f38cb288101cba03c377d7d8ee4"
+                                                                                }
+                                                              }
+                                                },
+                     "sponza_cam0_cascade_off":  {
+                                                     "tag":  "v3base_sponza_cam0_mbon_g100_hyb0_N2048_m17",
+                                                     "dir":  "tools/v3_baseline/captures_sponza_default",
+                                                     "N":  2048,
+                                                     "status":  "complete",
+                                                     "source":  "captured by tools/v3_baseline/sponza_capture.ps1 -UseHybrid 0",
+                                                     "files":  {
+                                                                   "png":  {
+                                                                               "path":  "tools/v3_baseline/captures_sponza_default/v3base_sponza_cam0_mbon_g100_hyb0_N2048_m17.png",
+                                                                               "status":  "present",
+                                                                               "bytes":  443773,
+                                                                               "sha256":  "0b0e351a991e8a212fcb47411b51706a6eed25572c78bb26bc3d8c9d1e8cb621"
+                                                                           },
+                                                                   "cascade_gi":  {
+                                                                                      "path":  "tools/v3_baseline/captures_sponza_default/v3base_sponza_cam0_mbon_g100_hyb0_N2048_m17_cascade_gi.exr",
+                                                                                      "status":  "present",
+                                                                                      "bytes":  2032356,
+                                                                                      "sha256":  "f83a630d54020c577646979c9629c4d88bb50af3c8219395c6753ed8edb2fe41"
+                                                                                  },
+                                                                   "pt_full":  {
+                                                                                   "path":  "tools/v3_baseline/captures_sponza_default/v3base_sponza_cam0_mbon_g100_hyb0_N2048_m17_pt_full.exr",
+                                                                                   "status":  "present",
+                                                                                   "bytes":  2648890,
+                                                                                   "sha256":  "fa5e9fa2bb391e777f48d79406636c262fefd1b60257b436e7192958cf34c890"
+                                                                               },
+                                                                   "pt_direct":  {
+                                                                                     "path":  "tools/v3_baseline/captures_sponza_default/v3base_sponza_cam0_mbon_g100_hyb0_N2048_m17_pt_direct.exr",
+                                                                                     "status":  "present",
+                                                                                     "bytes":  35740,
+                                                                                     "sha256":  "9a340a142c701b10deb154a183dde74a0d1e0cd002951f9be10ed4c7ecceddea"
+                                                                                 }
+                                                               },
+                                                     "metrics":  {
+                                                                     "stem":  "v3base_sponza_cam0_mbon_g100_hyb0_N2048_m17",
+                                                                     "status":  "ok",
+                                                                     "cascade_mean":  0.273588627576828,
+                                                                     "pt_indirect_mean":  0.05887740105390549,
+                                                                     "ratio_self":  4.7148027420043945,
+                                                                     "p05_rel":  2.6144814491271973,
+                                                                     "p50_rel":  3.8200924396514893,
+                                                                     "p95_rel":  4.527912616729736,
+                                                                     "abs_p95":  4.527912616729736,
+                                                                     "dim_pct":  0.0,
+                                                                     "bright_pct":  100.0,
+                                                                     "valid":  693
+                                                                 }
+                                                 },
+                     "sponza_cam0_hybrid_on":  {
+                                                   "tag":  "v3base_sponza_cam0_mbon_g100_hyb1_N2048_m17",
+                                                   "dir":  "tools/v3_baseline/captures_sponza_hybon",
+                                                   "N":  2048,
+                                                   "status":  "complete",
+                                                   "source":  "captured by tools/v3_baseline/sponza_capture.ps1 -UseHybrid 1",
+                                                   "files":  {
+                                                                 "png":  {
+                                                                             "path":  "tools/v3_baseline/captures_sponza_hybon/v3base_sponza_cam0_mbon_g100_hyb1_N2048_m17.png",
+                                                                             "status":  "present",
+                                                                             "bytes":  322560,
+                                                                             "sha256":  "8bcc5744b30d78d86e764e2883eef010429b4eab752b0a65bb204d291b8c616c"
+                                                                         },
+                                                                 "cascade_gi":  {
+                                                                                    "path":  "tools/v3_baseline/captures_sponza_hybon/v3base_sponza_cam0_mbon_g100_hyb1_N2048_m17_cascade_gi.exr",
+                                                                                    "status":  "present",
+                                                                                    "bytes":  2660290,
+                                                                                    "sha256":  "506d706ee1ddd5b7602bc5609d6e96eedd857a80567d5be47b116e3a2becfbc2"
+                                                                                },
+                                                                 "pt_full":  {
+                                                                                 "path":  "tools/v3_baseline/captures_sponza_hybon/v3base_sponza_cam0_mbon_g100_hyb1_N2048_m17_pt_full.exr",
+                                                                                 "status":  "present",
+                                                                                 "bytes":  2648890,
+                                                                                 "sha256":  "fa5e9fa2bb391e777f48d79406636c262fefd1b60257b436e7192958cf34c890"
+                                                                             },
+                                                                 "pt_direct":  {
+                                                                                   "path":  "tools/v3_baseline/captures_sponza_hybon/v3base_sponza_cam0_mbon_g100_hyb1_N2048_m17_pt_direct.exr",
+                                                                                   "status":  "present",
+                                                                                   "bytes":  35740,
+                                                                                   "sha256":  "9a340a142c701b10deb154a183dde74a0d1e0cd002951f9be10ed4c7ecceddea"
+                                                                               }
+                                                             },
+                                                   "metrics":  {
+                                                                   "stem":  "v3base_sponza_cam0_mbon_g100_hyb1_N2048_m17",
+                                                                   "status":  "ok",
+                                                                   "cascade_mean":  0.04879431053996086,
+                                                                   "pt_indirect_mean":  0.05887740105390549,
+                                                                   "ratio_self":  0.8315186500549316,
+                                                                   "p05_rel":  -0.30903446674346924,
+                                                                   "p50_rel":  -0.17169100046157837,
+                                                                   "p95_rel":  -0.03129344806075096,
+                                                                   "abs_p95":  0.30903446674346924,
+                                                                   "dim_pct":  6.637806637806638,
+                                                                   "bright_pct":  0.0,
+                                                                   "valid":  693
+                                                               }
+                                               },
+                     "sponza_cam0_cascade_off_g010_pscene":  {
+                                                                  "tag":  "v4_sponza_cam0_mbon_g010_hyb0_N2048_m17_pscene",
+                                                                  "dir":  ".",
+
+                                                                  "N":  2048,
+                                                                  "status":  "complete",
+                                                                  "source":  "v4 Phase 3 verification capture (--mb-gain-per-scene). Metrics bit-identical to Stage 9 gain=0.10 (2026-05-27).",
+                                                                  "_validated_at":  "2026-05-28T18:00:00+08:00",
+                                                                  "files":  {
+                                                                                "png":  {
+                                                                                            "path":  "v4_phase3_sponza_pscene.png",
+                                                                                            "status":  "present",
+                                                                                            "bytes":  242111,
+                                                                                            "sha256":  "858468750212e54638eec9b321ed2c881e30a89140413ae3d9b98558990bc214"
+                                                                                        },
+                                                                                "cascade_gi":  {
+                                                                                                   "path":  "v4_phase3_sponza_pscene_cascade_gi.exr",
+                                                                                                   "status":  "present",
+                                                                                                   "bytes":  2388127,
+                                                                                                   "sha256":  "1e2673e5eacd449b4a3f4bcd40d315808632f67f16be99f98e8fc1654ee6f249"
+                                                                                               },
+                                                                                "pt_full":  {
+                                                                                                "path":  "v4_phase3_sponza_pscene_pt_full.exr",
+                                                                                                "status":  "present",
+                                                                                                "bytes":  2648890,
+                                                                                                "sha256":  "fa5e9fa2bb391e777f48d79406636c262fefd1b60257b436e7192958cf34c890"
+                                                                                            },
+                                                                                "pt_direct":  {
+                                                                                                  "path":  "v4_phase3_sponza_pscene_pt_direct.exr",
+                                                                                                  "status":  "present",
+                                                                                                  "bytes":  35740,
+                                                                                                  "sha256":  "9a340a142c701b10deb154a183dde74a0d1e0cd002951f9be10ed4c7ecceddea"
+                                                                                              }
+                                                                            },
+                                                                  "metrics":  {
+                                                                                  "ratio_self":  1.040154,
+                                                                                  "abs_p95":  0.253074,
+                                                                                  "bright_pct":  1.7316,
+                                                                                  "dim_pct":  1.1544,
+                                                                                  "valid":  693,
+                                                                                  "cascade_mean":  0.060398,
+                                                                                  "pt_indirect_mean":  0.058877,
+                                                                                  "source":  "Phase 3 verification capture (2026-05-28). Bit-identical to Stage 9 gain=0.10 metrics."
+                                                                              }
+                                                              }
+                 },
+    "audits":  {
+                   "delta3_alpha_audit":  {
+                                              "doc":  "tools/v3_baseline/delta3_alpha_audit.md",
+                                              "verdict":  "see doc"
+                                          },
+                   "delta5_ceiling_estimate":  {
+                                                   "doc":  "tools/v3_baseline/delta5_ceiling_estimate.md",
+                                                   "verdict":  "\u003c3 percent magnitude leverage estimate"
+                                               },
+                   "delta7_offset_audit":  {
+                                               "doc":  "tools/v3_baseline/delta7_offset_audit.md",
+                                               "verdict":  "conformant"
+                                           }
+               },
+    "sign_off":  {
+                     "cornell_N":  2048,
+                     "sponza_N":  2048,
+                     "sponza_convergence_verdict":  "CONVERGED",
+                     "v4_sponza_retirement":  "CLEARS |p95|≤0.50 at gain=0.10 (|p95|=0.25, ratio=1.04 per Stage 9)",
+                     "v4_cornell_constraint":  "Point-light enclosed geometry under-emit ~2×. Not fixable in volumetric topology. Hybrid correction covers (ratio=0.83). See doc/8_shadertoy/cornell_point_light_constraint.md."
+                 }
+}
