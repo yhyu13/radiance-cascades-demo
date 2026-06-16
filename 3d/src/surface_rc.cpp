@@ -261,8 +261,8 @@ void SurfaceRC::setRingDebugMode(int mode) {
 }
 
 void SurfaceRC::setRadianceDebugMode(int mode) {
-    // Phase 2D: Extended to support modes 17 (feedback write) and 18 (feedback readback)
-    radianceDebugMode = std::clamp(mode, 0, 18);
+    // Phase 2D/C-quality: supports feedback modes and producer-gate diagnostics.
+    radianceDebugMode = std::clamp(mode, 0, 20);
 }
 
 void SurfaceRC::setRayBias(float bias) {
@@ -405,6 +405,8 @@ const char* SurfaceRC::radianceDebugModeName(int mode) {
         // Phase 2D: Feedback modes
         case 17: return "feedback write (accumulated)";
         case 18: return "feedback readback (accumulated GI)";
+        case 19: return "producer gate audit";
+        case 20: return "direct no-shadow atlas";
         default: return "unknown";
     }
 }
@@ -830,9 +832,9 @@ void SurfaceRC::dispatchRadianceDebug(GLuint computeProgram,
         // Mode 18: will use radianceDebugTexture for visualization below
     }
 
-    // Phase 2B-6: For mode 15, write directly to atlas texture instead of debug texture
+    // Phase 2B-6/C-quality: direct atlas write modes use the raymarch bridge atlas.
     GLuint targetTexture = radianceDebugTexture;
-    if (radianceDebugMode == 15 && directAtlasTexture != 0) {
+    if ((radianceDebugMode == 15 || radianceDebugMode == 20) && directAtlasTexture != 0) {
         targetTexture = directAtlasTexture;
     }
 

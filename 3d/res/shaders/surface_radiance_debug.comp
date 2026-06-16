@@ -507,11 +507,13 @@ vec3 estimateNormal(vec3 p) {
     return normalize(g);
 }
 
-float shadowVisibility(vec3 hitPos, vec3 lightDir, float lightDist) {
-    float t = max(uRayBias * 2.0, uHitEpsilon * 2.0);
-    float tMax = max(lightDist - uRayBias * 2.0, t);
+float shadowVisibility(vec3 hitPos, vec3 hitNormal, vec3 lightDir, float lightDist) {
+    float bias = max(uRayBias * 2.0, uHitEpsilon * 4.0);
+    vec3 origin = hitPos + hitNormal * bias + lightDir * bias;
+    float t = 0.0;
+    float tMax = max(lightDist - bias * 2.0, bias);
     for (int i = 0; i < uTraceSteps && t < tMax; ++i) {
-        vec3 p = hitPos + lightDir * t;
+        vec3 p = origin + lightDir * t;
         float d = sampleSDF(p);
         if (d >= INF * TRACE_ESCAPE_INF_FRACTION) return 1.0;
         if (d < uHitEpsilon) return 0.0;
@@ -565,14 +567,14 @@ void main() {
         float ndotl = 0.0;
         vec3 direct = vec3(0.0);
         float visibility = 1.0;
-        if (tr.state == 1 && hs.valid && uDebugMode >= 9) {
+        if (tr.state == 1 && uDebugMode >= 9) {
             hitNormal = estimateNormal(tr.pos);
             vec3 L = uLightPos - tr.pos;
             float dist2 = max(dot(L, L), 1e-4);
             vec3 lightDir = normalize(L);
             ndotl = max(dot(hitNormal, lightDir), 0.0);
             direct = uLightColor * ndotl;
-            if (uDebugMode >= 13) visibility = shadowVisibility(tr.pos, lightDir, sqrt(dist2));
+            if (uDebugMode >= 13) visibility = shadowVisibility(tr.pos, hitNormal, lightDir, sqrt(dist2));
         }
 
         if (uDebugMode == 0) {
@@ -696,10 +698,18 @@ void main() {
                 rgb = vec3(0.0);
                 a = (tr.state == 2) ? 1.0 : 0.5;
             }
+        } else if (uDebugMode == 19) {
+            float stateCode = (tr.state == 1) ? 1.0 : ((tr.state == 2) ? 0.5 : 0.0);
+            float chartValid = (tr.state == 1 && hs.valid) ? 1.0 : 0.0;
+            float ndotlOut = tr.state == 1 ? ndotl : 0.0;
+            float visibilityOut = tr.state == 1 ? visibility : 0.0;
+            imageStore(oRadianceDebug, p, vec4(stateCode, chartValid, ndotlOut, visibilityOut));
+            return;
         } else if (uDebugMode == 15) {
             // Phase 2B-6: Direct radiance atlas write (single frame, no accumulation)
-            if (tr.state == 1 && hs.valid) {
-                // Write shadowed direct radiance to atlas at this texel location
+            if (tr.state == 1) {
+                // C0 direct radiance only needs the first SDF hit. The target hit
+                // may be uncharted Sponza mesh detail, so do not gate it on hs.valid.
                 vec3 shadowedDirect = sanitizeRadiance(direct * visibility);
                 imageStore(oRadianceDebug, p, vec4(shadowedDirect, 1.0));
                 return;  // Early exit - already wrote to atlas
@@ -707,6 +717,16 @@ void main() {
                 // Clear non-hit texels to black
                 imageStore(oRadianceDebug, p, vec4(0.0, 0.0, 0.0, 0.0));
                 return;  // Early exit
+            }
+        } else if (uDebugMode == 20) {
+            // C-quality diagnostic: bypass shadow visibility but keep the same C0
+            // first-hit direct lighting and atlas packing as mode 15.
+            if (tr.state == 1) {
+                imageStore(oRadianceDebug, p, vec4(sanitizeRadiance(direct), 1.0));
+                return;
+            } else {
+                imageStore(oRadianceDebug, p, vec4(0.0, 0.0, 0.0, 0.0));
+                return;
             }
         } else if (uDebugMode == 16) {
             // Phase 2B-6: Atlas readback visualization
@@ -716,7 +736,7 @@ void main() {
             a = atlasSample.a;
         } else if (uDebugMode == 17) {
             // Phase 2D: Feedback-enabled atlas write (temporal accumulation)
-            if (tr.state == 1 && hs.valid) {
+            if (tr.state == 1) {
                 vec2 uv = vec2(p) / vec2(uAtlasSize);
                 
                 // Read previous frame's accumulated radiance

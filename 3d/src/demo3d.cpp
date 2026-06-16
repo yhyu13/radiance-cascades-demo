@@ -29,6 +29,7 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+#include <array>
 #include <random>
 #include <cassert>
 #include <utility>
@@ -1076,8 +1077,9 @@ void Demo3D::render() {
 
             if (enableSurfaceRCInRaymarch) {
                 const int savedRadianceMode = surfaceRC->getRadianceDebugMode();
-                if (savedRadianceMode != 15) {
-                    surfaceRC->setRadianceDebugMode(15);
+                const int directAtlasMode = (savedRadianceMode == 20) ? 20 : 15;
+                if (savedRadianceMode != directAtlasMode) {
+                    surfaceRC->setRadianceDebugMode(directAtlasMode);
                     surfaceRC->dispatchRadianceDebug(radit->second, sdfTexture, volumeOrigin, volumeSize,
                                                      surfaceLightPos, surfaceLightColor);
                     surfaceRC->setRadianceDebugMode(savedRadianceMode);
@@ -6983,6 +6985,314 @@ bool Demo3D::dumpProbeStatsJson(const std::string& path) const {
     j << "}\n";
 
     std::cout << "[probe-stats] written: " << path << "\n";
+    return true;
+}
+
+bool Demo3D::dumpSurfaceC0ProducerJson(const std::string& path) const {
+    namespace fs = std::filesystem;
+    if (path.empty()) return false;
+    if (!surfaceRC || !surfaceRC->isEnabled()) {
+        std::cerr << "[surface-c0-producer] surface RC unavailable or disabled\n";
+        return false;
+    }
+
+    const GLuint diagTex = surfaceRC->getRadianceDebugTexture();
+    const GLuint directTex = surfaceRC->getDirectAtlasTexture();
+    const int width = surfaceRC->getRingAtlasWidth();
+    const int height = surfaceRC->getRingAtlasHeight();
+    const int bandHeight = surfaceRC->getRingBandHeight();
+    if (diagTex == 0 || directTex == 0 || width <= 0 || height <= 0 || bandHeight <= 0) {
+        std::cerr << "[surface-c0-producer] missing surface atlas texture(s)\n";
+        return false;
+    }
+
+    auto readTexRGBA = [&](GLuint tex, std::vector<float>& out, const char* label) {
+        glBindTexture(GL_TEXTURE_2D, tex);
+        while (glGetError() != GL_NO_ERROR) {}
+
+        GLint texW = 0;
+        GLint texH = 0;
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
+        if (texW != width || texH != height) {
+            std::cerr << "[surface-c0-producer] " << label << " size mismatch: "
+                      << texW << "x" << texH << " expected "
+                      << width << "x" << height << "\n";
+            glBindTexture(GL_TEXTURE_2D, 0);
+            return false;
+        }
+
+        out.assign(static_cast<size_t>(texW) * texH * 4, 0.0f);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
+                        GL_TEXTURE_FETCH_BARRIER_BIT |
+                        GL_TEXTURE_UPDATE_BARRIER_BIT);
+        glFinish();
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, out.data());
+        GLenum err = glGetError();
+        glBindTexture(GL_TEXTURE_2D, 0);
+        if (err != GL_NO_ERROR) {
+            std::cerr << "[surface-c0-producer] " << label << " glGetTexImage err=0x"
+                      << std::hex << err << std::dec << "\n";
+            return false;
+        }
+        return true;
+    };
+
+    std::vector<float> diag;
+    std::vector<float> direct;
+    if (!readTexRGBA(diagTex, diag, "mode19") ||
+        !readTexRGBA(directTex, direct, "directAtlas"))
+        return false;
+
+    const size_t c0Pixels = static_cast<size_t>(width) * bandHeight;
+    auto pixelOffset = [width](int x, int y) {
+        return (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4;
+    };
+    auto luma = [](float r, float g, float b) {
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+    };
+    auto percentile = [](std::vector<float> values, double q) {
+        if (values.empty()) return 0.0f;
+        std::sort(values.begin(), values.end());
+        const double pos = std::clamp(q, 0.0, 1.0) * double(values.size() - 1);
+        const size_t lo = static_cast<size_t>(std::floor(pos));
+        const size_t hi = static_cast<size_t>(std::ceil(pos));
+        const float t = static_cast<float>(pos - double(lo));
+        return values[lo] * (1.0f - t) + values[hi] * t;
+    };
+    auto jsonEscape = [](const std::string& s) {
+        std::string out;
+        out.reserve(s.size());
+        for (char c : s) {
+            if (c == '\\' || c == '"') out.push_back('\\');
+            out.push_back(c);
+        }
+        return out;
+    };
+
+    size_t traceHit = 0;
+    size_t traceEscape = 0;
+    size_t traceMiss = 0;
+    size_t chartValid = 0;
+    size_t ndotlPositive = 0;
+    size_t visibilityPositive = 0;
+    size_t litVisible = 0;
+    size_t hitNdotlPositive = 0;
+    size_t hitVisibilityPositive = 0;
+    size_t hitLitVisible = 0;
+    double ndotlSum = 0.0;
+    double visibilitySum = 0.0;
+    double hitNdotlSum = 0.0;
+    double hitVisibilitySum = 0.0;
+
+    size_t directAlpha = 0;
+    size_t directNonzero1e6 = 0;
+    size_t directNonzero1e5 = 0;
+    double directLumaSumAll = 0.0;
+    double directLumaSumAlpha = 0.0;
+    float directMaxLuma = 0.0f;
+    std::vector<float> directLumas;
+    directLumas.reserve(c0Pixels);
+
+    struct ChartAudit {
+        int id;
+        const char* name;
+        int x0;
+        int w;
+        size_t pixels = 0;
+        size_t traceHit = 0;
+        size_t chartValid = 0;
+        size_t litVisible = 0;
+        size_t hitNdotlPositive = 0;
+        size_t hitVisibilityPositive = 0;
+        size_t hitLitVisible = 0;
+        size_t directAlpha = 0;
+        size_t directNonzero = 0;
+        double directLumaSumAll = 0.0;
+        double directLumaSumAlpha = 0.0;
+        float directMaxLuma = 0.0f;
+    };
+    std::array<ChartAudit, 18> chartAudits{{
+        {1, "floor", 0, 256},
+        {2, "ceiling", 256, 256},
+        {3, "left_wall", 512, 128},
+        {4, "right_wall", 640, 128},
+        {5, "back_wall", 768, 128},
+        {6, "front_wall", 896, 128},
+        {7, "short_bottom", 1024, 128},
+        {8, "short_top", 1152, 128},
+        {9, "short_left", 1280, 128},
+        {10, "short_right", 1408, 128},
+        {11, "short_front", 1536, 128},
+        {12, "short_back", 1664, 128},
+        {13, "tall_bottom", 1792, 128},
+        {14, "tall_top", 1920, 128},
+        {15, "tall_left", 2048, 128},
+        {16, "tall_right", 2176, 128},
+        {17, "tall_front", 2304, 128},
+        {18, "tall_back", 2432, 128},
+    }};
+
+    for (int y = 0; y < bandHeight; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const size_t o = pixelOffset(x, y);
+            const float stateCode = diag[o + 0];
+            const bool isHit = stateCode > 0.75f;
+            const bool isEscape = stateCode > 0.25f && stateCode <= 0.75f;
+            const bool isValid = diag[o + 1] > 0.5f;
+            const float ndotl = diag[o + 2];
+            const float visibility = diag[o + 3];
+
+            if (isHit) ++traceHit;
+            else if (isEscape) ++traceEscape;
+            else ++traceMiss;
+            if (isHit) {
+                hitNdotlSum += ndotl;
+                hitVisibilitySum += visibility;
+                if (ndotl > 1e-6f) ++hitNdotlPositive;
+                if (visibility > 0.5f) ++hitVisibilityPositive;
+                if (ndotl > 1e-6f && visibility > 0.5f) ++hitLitVisible;
+            }
+            if (isValid) {
+                ++chartValid;
+                ndotlSum += ndotl;
+                visibilitySum += visibility;
+                if (ndotl > 1e-6f) ++ndotlPositive;
+                if (visibility > 0.5f) ++visibilityPositive;
+                if (ndotl > 1e-6f && visibility > 0.5f) ++litVisible;
+            }
+
+            const float lum = luma(direct[o + 0], direct[o + 1], direct[o + 2]);
+            directLumas.push_back(lum);
+            directLumaSumAll += lum;
+            directMaxLuma = std::max(directMaxLuma, lum);
+            if (direct[o + 3] > 0.5f) {
+                ++directAlpha;
+                directLumaSumAlpha += lum;
+            }
+            if (lum > 1e-6f) ++directNonzero1e6;
+            if (lum > 1e-5f) ++directNonzero1e5;
+        }
+    }
+
+    for (ChartAudit& c : chartAudits) {
+        for (int y = 0; y < bandHeight; ++y) {
+            for (int x = c.x0; x < c.x0 + c.w; ++x) {
+                const size_t o = pixelOffset(x, y);
+                const float stateCode = diag[o + 0];
+                const bool isHit = stateCode > 0.75f;
+                const bool isValid = diag[o + 1] > 0.5f;
+                const float ndotl = diag[o + 2];
+                const float visibility = diag[o + 3];
+                const float lum = luma(direct[o + 0], direct[o + 1], direct[o + 2]);
+                ++c.pixels;
+                if (isHit) ++c.traceHit;
+                if (isValid) ++c.chartValid;
+                if (isValid && ndotl > 1e-6f && visibility > 0.5f) ++c.litVisible;
+                if (isHit && ndotl > 1e-6f) ++c.hitNdotlPositive;
+                if (isHit && visibility > 0.5f) ++c.hitVisibilityPositive;
+                if (isHit && ndotl > 1e-6f && visibility > 0.5f) ++c.hitLitVisible;
+                c.directLumaSumAll += lum;
+                c.directMaxLuma = std::max(c.directMaxLuma, lum);
+                if (direct[o + 3] > 0.5f) {
+                    ++c.directAlpha;
+                    c.directLumaSumAlpha += lum;
+                }
+                if (lum > 1e-6f) ++c.directNonzero;
+            }
+        }
+    }
+
+    const double total = std::max<double>(1.0, static_cast<double>(c0Pixels));
+    const double hitDenom = std::max<double>(1.0, static_cast<double>(traceHit));
+    const double validDenom = std::max<double>(1.0, static_cast<double>(chartValid));
+    const double alphaDenom = std::max<double>(1.0, static_cast<double>(directAlpha));
+
+    fs::path outPath(path);
+    if (outPath.has_parent_path())
+        fs::create_directories(outPath.parent_path());
+    std::ofstream j(path);
+    if (!j) {
+        std::cerr << "[surface-c0-producer] failed to open: " << path << "\n";
+        return false;
+    }
+
+    j << std::fixed << std::setprecision(8);
+    j << "{\n";
+    j << "  \"test\": \"surface_c0_producer_audit\",\n";
+    j << "  \"scene\": \"" << jsonEscape(surfaceRC->getSceneLabel()) << "\",\n";
+    j << "  \"sceneType\": " << surfaceRC->getSceneType() << ",\n";
+    j << "  \"radianceDebugMode\": " << surfaceRC->getRadianceDebugMode() << ",\n";
+    j << "  \"producerGateMode19Valid\": "
+      << (surfaceRC->getRadianceDebugMode() == 19 ? "true" : "false") << ",\n";
+    j << "  \"atlas\": {\"width\": " << width << ", \"height\": " << height
+      << ", \"bandHeight\": " << bandHeight << ", \"c0Pixels\": " << c0Pixels << "},\n";
+    j << "  \"producerGateMode19\": {\n";
+    j << "    \"traceHitPixels\": " << traceHit << ",\n";
+    j << "    \"traceHitFraction\": " << (double(traceHit) / total) << ",\n";
+    j << "    \"traceEscapePixels\": " << traceEscape << ",\n";
+    j << "    \"traceEscapeFraction\": " << (double(traceEscape) / total) << ",\n";
+    j << "    \"traceMissPixels\": " << traceMiss << ",\n";
+    j << "    \"traceMissFraction\": " << (double(traceMiss) / total) << ",\n";
+    j << "    \"chartValidPixels\": " << chartValid << ",\n";
+    j << "    \"chartValidFraction\": " << (double(chartValid) / total) << ",\n";
+    j << "    \"chartValidGivenHitFraction\": " << (traceHit > 0 ? double(chartValid) / double(traceHit) : 0.0) << ",\n";
+    j << "    \"ndotlPositivePixels\": " << ndotlPositive << ",\n";
+    j << "    \"ndotlPositiveFraction\": " << (double(ndotlPositive) / total) << ",\n";
+    j << "    \"visibilityPositivePixels\": " << visibilityPositive << ",\n";
+    j << "    \"visibilityPositiveFraction\": " << (double(visibilityPositive) / total) << ",\n";
+    j << "    \"litVisiblePixels\": " << litVisible << ",\n";
+    j << "    \"litVisibleFraction\": " << (double(litVisible) / total) << ",\n";
+    j << "    \"hitNdotLPositivePixels\": " << hitNdotlPositive << ",\n";
+    j << "    \"hitNdotLPositiveFraction\": " << (double(hitNdotlPositive) / total) << ",\n";
+    j << "    \"hitVisibilityPositivePixels\": " << hitVisibilityPositive << ",\n";
+    j << "    \"hitVisibilityPositiveFraction\": " << (double(hitVisibilityPositive) / total) << ",\n";
+    j << "    \"hitLitVisiblePixels\": " << hitLitVisible << ",\n";
+    j << "    \"hitLitVisibleFraction\": " << (double(hitLitVisible) / total) << ",\n";
+    j << "    \"meanNdotLWhenValid\": " << (ndotlSum / validDenom) << ",\n";
+    j << "    \"meanVisibilityWhenValid\": " << (visibilitySum / validDenom) << ",\n";
+    j << "    \"meanNdotLWhenHit\": " << (hitNdotlSum / hitDenom) << ",\n";
+    j << "    \"meanVisibilityWhenHit\": " << (hitVisibilitySum / hitDenom) << "\n";
+    j << "  },\n";
+    j << "  \"directAtlasC0\": {\n";
+    j << "    \"alphaPixels\": " << directAlpha << ",\n";
+    j << "    \"alphaFraction\": " << (double(directAlpha) / total) << ",\n";
+    j << "    \"nonzeroPixelsGt1e6\": " << directNonzero1e6 << ",\n";
+    j << "    \"nonzeroFractionGt1e6\": " << (double(directNonzero1e6) / total) << ",\n";
+    j << "    \"nonzeroPixelsGt1e5\": " << directNonzero1e5 << ",\n";
+    j << "    \"nonzeroFractionGt1e5\": " << (double(directNonzero1e5) / total) << ",\n";
+    j << "    \"meanLumaAll\": " << (directLumaSumAll / total) << ",\n";
+    j << "    \"meanLumaAlpha\": " << (directLumaSumAlpha / alphaDenom) << ",\n";
+    j << "    \"p95LumaAll\": " << percentile(directLumas, 0.95) << ",\n";
+    j << "    \"p99LumaAll\": " << percentile(directLumas, 0.99) << ",\n";
+    j << "    \"maxLuma\": " << directMaxLuma << "\n";
+    j << "  },\n";
+    j << "  \"charts\": [\n";
+    for (size_t i = 0; i < chartAudits.size(); ++i) {
+        const ChartAudit& c = chartAudits[i];
+        const double chartTotal = std::max<double>(1.0, static_cast<double>(c.pixels));
+        const double chartAlphaDenom = std::max<double>(1.0, static_cast<double>(c.directAlpha));
+        j << "    {\"id\": " << c.id
+          << ", \"name\": \"" << c.name << "\""
+          << ", \"pixels\": " << c.pixels
+          << ", \"traceHitFraction\": " << (double(c.traceHit) / chartTotal)
+          << ", \"chartValidFraction\": " << (double(c.chartValid) / chartTotal)
+          << ", \"litVisibleFraction\": " << (double(c.litVisible) / chartTotal)
+          << ", \"hitNdotLPositiveFraction\": " << (double(c.hitNdotlPositive) / chartTotal)
+          << ", \"hitVisibilityPositiveFraction\": " << (double(c.hitVisibilityPositive) / chartTotal)
+          << ", \"hitLitVisibleFraction\": " << (double(c.hitLitVisible) / chartTotal)
+          << ", \"directAlphaFraction\": " << (double(c.directAlpha) / chartTotal)
+          << ", \"directNonzeroFraction\": " << (double(c.directNonzero) / chartTotal)
+          << ", \"directMeanLumaAll\": " << (c.directLumaSumAll / chartTotal)
+          << ", \"directMeanLumaAlpha\": " << (c.directLumaSumAlpha / chartAlphaDenom)
+          << ", \"directMaxLuma\": " << c.directMaxLuma << "}";
+        if (i + 1 < chartAudits.size()) j << ",";
+        j << "\n";
+    }
+    j << "  ]\n";
+    j << "}\n";
+
+    std::cout << "[surface-c0-producer] written: " << path << "\n";
     return true;
 }
 

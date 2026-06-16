@@ -815,6 +815,7 @@ public:
     void dumpScreenshotEXRs(const std::string& stem);
     bool dumpProbeStatsJson(const std::string& path) const;
     bool dumpAtlasAttributionJson(const std::string& path, const std::vector<glm::ivec3>& cells) const;
+    bool dumpSurfaceC0ProducerJson(const std::string& path) const;
 
     // Diagnostic CLI for cascade-staggering hypothesis testing.
     void setStaggerMaxInterval(int v) {

@@ -270,6 +270,7 @@ int main(int argc, char* argv[]) {
     std::string screenshotPath;
     std::string probeStatsPath;
     std::string atlasAttributionPath;
+    std::string surfaceC0ProducerPath;
     bool        validateUVRoundTripRequested = false;
     bool        phase3ValidationFailed = false;
     std::string phase3ValidationJsonPath = "tools/phase3_validation/uv_roundtrip_metrics.json";
@@ -321,6 +322,10 @@ int main(int argc, char* argv[]) {
             atlasAttributionPath = arg.substr(25);
             std::cout << "[MAIN] --atlas-attribution-json=" << atlasAttributionPath
                       << ": will dump targeted C0 atlas texels on exit frame.\n";
+        } else if (arg.rfind("--surface-c0-producer-json=", 0) == 0) {
+            surfaceC0ProducerPath = arg.substr(27);
+            std::cout << "[MAIN] --surface-c0-producer-json=" << surfaceC0ProducerPath
+                      << ": will dump surface-RC C0 producer/direct-atlas stats on exit frame.\n";
         } else if (arg == "--validate-uv-roundtrip") {
             validateUVRoundTripRequested = true;
             std::cout << "[MAIN] --validate-uv-roundtrip: will write Phase 3 chart metrics.\n";
@@ -926,6 +931,8 @@ int main(int argc, char* argv[]) {
                 }
                 if (!probeStatsPath.empty())
                     demo->dumpProbeStatsJson(probeStatsPath);
+                if (!surfaceC0ProducerPath.empty())
+                    demo->dumpSurfaceC0ProducerJson(surfaceC0ProducerPath);
                 if (!atlasAttributionPath.empty()) {
                     if (atlasAttributionCells.empty()) {
                         atlasAttributionCells = {
