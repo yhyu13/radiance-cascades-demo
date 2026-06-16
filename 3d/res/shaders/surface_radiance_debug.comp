@@ -61,7 +61,8 @@ struct HitSurface {
 };
 
 bool isPointNearBox(vec3 p, vec3 bmin, vec3 bmax, float eps);
-HitSurface classifyBoxFace(vec3 p, vec3 bmin, vec3 bmax, int baseChartId);
+bool isPointInsideBoxProxy(vec3 p, vec3 bmin, vec3 bmax, float eps);
+HitSurface classifyBoxFace(vec3 p, vec3 bmin, vec3 bmax, int baseChartId, bool acceptInteriorProxy);
 
 struct ChartInfo {
     int id;
@@ -414,11 +415,14 @@ HitSurface classifyHitSurface(vec3 p) {
     }
 
     float planeEps = max(0.06, uHitEpsilon * 2.0);
-    if (isPointNearBox(p, uShortBoxBmin, uShortBoxBmax, planeEps)) {
-        return classifyBoxFace(p, uShortBoxBmin, uShortBoxBmax, 7);
+    bool acceptInteriorProxy = (uSurfaceSceneType == 2);
+    if ((acceptInteriorProxy && isPointInsideBoxProxy(p, uShortBoxBmin, uShortBoxBmax, planeEps)) ||
+        (!acceptInteriorProxy && isPointNearBox(p, uShortBoxBmin, uShortBoxBmax, planeEps))) {
+        return classifyBoxFace(p, uShortBoxBmin, uShortBoxBmax, 7, acceptInteriorProxy);
     }
-    if (isPointNearBox(p, uTallBoxBmin, uTallBoxBmax, planeEps)) {
-        return classifyBoxFace(p, uTallBoxBmin, uTallBoxBmax, 13);
+    if ((acceptInteriorProxy && isPointInsideBoxProxy(p, uTallBoxBmin, uTallBoxBmax, planeEps)) ||
+        (!acceptInteriorProxy && isPointNearBox(p, uTallBoxBmin, uTallBoxBmax, planeEps))) {
+        return classifyBoxFace(p, uTallBoxBmin, uTallBoxBmax, 13, acceptInteriorProxy);
     }
 
     h = classifyRoomSurface(p, uSurfaceSceneType == 2, planeEps);
@@ -439,8 +443,14 @@ bool isPointNearBox(vec3 p, vec3 bmin, vec3 bmax, float eps) {
     return (nearX && inY && inZ) || (inX && nearY && inZ) || (inX && inY && nearZ);
 }
 
+bool isPointInsideBoxProxy(vec3 p, vec3 bmin, vec3 bmax, float eps) {
+    return p.x >= bmin.x - eps && p.x <= bmax.x + eps &&
+           p.y >= bmin.y - eps && p.y <= bmax.y + eps &&
+           p.z >= bmin.z - eps && p.z <= bmax.z + eps;
+}
+
 // Phase 2C: Classify which box face a hit point is on
-HitSurface classifyBoxFace(vec3 p, vec3 bmin, vec3 bmax, int baseChartId) {
+HitSurface classifyBoxFace(vec3 p, vec3 bmin, vec3 bmax, int baseChartId, bool acceptInteriorProxy) {
     HitSurface h;
     float eps = max(0.06, uHitEpsilon * 2.0);
     
@@ -481,7 +491,7 @@ HitSurface classifyBoxFace(vec3 p, vec3 bmin, vec3 bmax, int baseChartId) {
         h.uv = vec2(remap01(p.x, bmin.x, bmax.x), remap01(p.y, bmin.y, bmax.y));
     }
     
-    h.valid = (best <= eps);
+    h.valid = acceptInteriorProxy ? isPointInsideBoxProxy(p, bmin, bmax, eps) : (best <= eps);
     return h;
 }
 

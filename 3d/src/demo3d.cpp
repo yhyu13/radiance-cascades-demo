@@ -3068,6 +3068,7 @@ void Demo3D::raymarchPass() {
     // classification. Higher-cascade quality validation remains a follow-up.
     const bool surfaceRCGIActive =
         enableSurfaceRCInRaymarch && surfaceRC && surfaceRC->isEnabled() && surfaceRC->getCascadeCount() > 0;
+    static bool loggedSurfaceRaymarchDiag = false;
     if (surfaceRCGIActive) {
         constexpr int kSurfaceCascadeBaseUnit = 10;
         const int cascadeCountToBind = std::min(surfaceRC->getCascadeCount(), 5);
@@ -3100,11 +3101,29 @@ void Demo3D::raymarchPass() {
         glUniform3fv(glGetUniformLocation(prog, "uTallBoxMin"), 1, glm::value_ptr(tallBmin));
         glUniform3fv(glGetUniformLocation(prog, "uTallBoxMax"), 1, glm::value_ptr(tallBmax));
 
+        if (!loggedSurfaceRaymarchDiag && raymarchRenderMode >= 21 && raymarchRenderMode <= 23) {
+            loggedSurfaceRaymarchDiag = true;
+            std::cout << "[SurfaceRC] raymarch bridge active mode=" << raymarchRenderMode
+                      << " sceneType=" << surfaceRC->getSceneType()
+                      << " shortBox=(" << shortBmin.x << "," << shortBmin.y << "," << shortBmin.z
+                      << ")..(" << shortBmax.x << "," << shortBmax.y << "," << shortBmax.z
+                      << ") tallBox=(" << tallBmin.x << "," << tallBmin.y << "," << tallBmin.z
+                      << ")..(" << tallBmax.x << "," << tallBmax.y << "," << tallBmax.z << ")\n";
+        }
+
         glUniform1f(glGetUniformLocation(prog, "uSurfaceGIScale"), surfaceGIScale);
         glUniform1i(glGetUniformLocation(prog, "uEnableSurfaceRC"), 1);
         glUniform1i(glGetUniformLocation(prog, "uBlendWithVolumetric"), blendWithVolumetric ? 1 : 0);
         glUniform1f(glGetUniformLocation(prog, "uBlendFactor"), blendFactor);
     } else {
+        if (!loggedSurfaceRaymarchDiag && raymarchRenderMode >= 21 && raymarchRenderMode <= 23) {
+            loggedSurfaceRaymarchDiag = true;
+            std::cout << "[SurfaceRC] raymarch bridge inactive mode=" << raymarchRenderMode
+                      << " enable=" << (enableSurfaceRCInRaymarch ? 1 : 0)
+                      << " surface=" << (surfaceRC ? 1 : 0)
+                      << " surfaceEnabled=" << (surfaceRC && surfaceRC->isEnabled() ? 1 : 0)
+                      << " cascadeCount=" << (surfaceRC ? surfaceRC->getCascadeCount() : 0) << "\n";
+        }
         int resolutions[5] = {32, 16, 8, 4, 2};
         glUniform1iv(glGetUniformLocation(prog, "uCascadeResolutions"), 5, resolutions);
         glUniform1i(glGetUniformLocation(prog, "uSurfaceSceneType"), 0);

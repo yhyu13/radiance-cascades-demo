@@ -760,7 +760,13 @@ float surfaceRemap01(float value, float lo, float hi) {
     return clamp((value - lo) / max(hi - lo, 1e-5), 0.0, 1.0);
 }
 
-SurfaceChartHit classifyBoxSurface(vec3 p, vec3 bmin, vec3 bmax, int baseChartId, float eps) {
+bool pointInsideBoxProxy(vec3 p, vec3 bmin, vec3 bmax, float eps) {
+    return p.x >= bmin.x - eps && p.x <= bmax.x + eps &&
+           p.y >= bmin.y - eps && p.y <= bmax.y + eps &&
+           p.z >= bmin.z - eps && p.z <= bmax.z + eps;
+}
+
+SurfaceChartHit classifyBoxSurface(vec3 p, vec3 bmin, vec3 bmax, int baseChartId, float eps, bool acceptInteriorProxy) {
     SurfaceChartHit h;
     h.chartId = 0;
     h.uv = vec2(0.0);
@@ -769,7 +775,11 @@ SurfaceChartHit classifyBoxSurface(vec3 p, vec3 bmin, vec3 bmax, int baseChartId
     bool inX = (p.x >= bmin.x - eps && p.x <= bmax.x + eps);
     bool inY = (p.y >= bmin.y - eps && p.y <= bmax.y + eps);
     bool inZ = (p.z >= bmin.z - eps && p.z <= bmax.z + eps);
-    if (!((inX && inY) || (inX && inZ) || (inY && inZ))) {
+    if (acceptInteriorProxy) {
+        if (!(inX && inY && inZ)) {
+            return h;
+        }
+    } else if (!((inX && inY) || (inX && inZ) || (inY && inZ))) {
         return h;
     }
 
@@ -810,7 +820,7 @@ SurfaceChartHit classifyBoxSurface(vec3 p, vec3 bmin, vec3 bmax, int baseChartId
         h.uv = vec2(surfaceRemap01(p.x, bmin.x, bmax.x), surfaceRemap01(p.y, bmin.y, bmax.y));
     }
 
-    h.valid = (best <= eps);
+    h.valid = acceptInteriorProxy ? pointInsideBoxProxy(p, bmin, bmax, eps) : (best <= eps);
     return h;
 }
 
@@ -878,8 +888,9 @@ SurfaceChartHit classifySurfaceChart(vec3 p) {
     }
 
     float eps = 0.06;
-    SurfaceChartHit shortBox = classifyBoxSurface(p, uShortBoxMin, uShortBoxMax, 7, eps);
-    SurfaceChartHit tallBox = classifyBoxSurface(p, uTallBoxMin, uTallBoxMax, 13, eps);
+    bool acceptInteriorProxy = (uSurfaceSceneType == 2);
+    SurfaceChartHit shortBox = classifyBoxSurface(p, uShortBoxMin, uShortBoxMax, 7, eps, acceptInteriorProxy);
+    SurfaceChartHit tallBox = classifyBoxSurface(p, uTallBoxMin, uTallBoxMax, 13, eps, acceptInteriorProxy);
     if (shortBox.valid) return shortBox;
     if (tallBox.valid) return tallBox;
 
@@ -1133,6 +1144,29 @@ void main() {
             // Phase 2F: Sample surface RC GI
             vec3 surfaceGI = sanitizeRadiance(sampleSurfaceRC_GI(pos, normal, uCameraPos));
             vec3 surfaceIndirect = sanitizeRadiance(albedo * surfaceGI * uSurfaceGIScale);
+            if (uRenderMode == 24) {
+                float eps = 0.06;
+                if (uSurfaceSceneType != 2) {
+                    fragColor = vec4(0.0, 0.0, 1.0, 1.0);
+                    return;
+                }
+                if (pointInsideBoxProxy(pos, uShortBoxMin, uShortBoxMax, eps)) {
+                    fragColor = vec4(0.0, 1.0, 0.0, 1.0);
+                    return;
+                }
+                if (pointInsideBoxProxy(pos, uTallBoxMin, uTallBoxMax, eps)) {
+                    fragColor = vec4(0.0, 1.0, 1.0, 1.0);
+                    return;
+                }
+                SurfaceChartHit roomHit = classifyRoomSurface(pos, true, eps);
+                fragColor = roomHit.valid ? vec4(1.0, 1.0, 0.0, 1.0) : vec4(1.0, 0.0, 0.0, 1.0);
+                return;
+            }
+            if (uRenderMode == 25) {
+                vec3 extent = max(uSceneBoundsMax - uSceneBoundsMin, vec3(1e-4));
+                fragColor = vec4(clamp((pos - uSceneBoundsMin) / extent, vec3(0.0), vec3(1.0)), 1.0);
+                return;
+            }
             if (uRenderMode == 22) {
                 SurfaceChartHit h = classifySurfaceChart(pos);
                 if (!h.valid) {

@@ -503,12 +503,12 @@ public:
     );
 
     // codex 07 F2/F3 — let main3d.cpp set initial render mode for headless captures.
-    // Range now covers modes 0-23, including Phase 2F modes 21-23.
+    // Range now covers modes 0-25, including Phase 2F modes 21-25.
     // No clamp; preserves existing shader fallthrough on out-of-range.
     void setRenderMode(int m) {
-        if (m < 0 || m > 23) {
+        if (m < 0 || m > 25) {
             std::cerr << "[Demo3D] WARN: render mode " << m
-                      << " out of range [0,23]; rendering as default\n";
+                      << " out of range [0,25]; rendering as default\n";
         }
         raymarchRenderMode = m;
     }

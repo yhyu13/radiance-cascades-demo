@@ -673,17 +673,17 @@ void SurfaceRC::updateScene(const std::string& sceneKey,
         addRoomCharts(true, false);
 
         const glm::vec3 extent = glm::max(boundsMax - boundsMin, glm::vec3(1e-4f));
-        const float yMin = boundsMin.y + extent.y * 0.02f;
-        const float yMax = boundsMax.y - extent.y * 0.02f;
-        const float zMin = boundsMin.z + extent.z * 0.16f;
-        const float zMax = boundsMax.z - extent.z * 0.16f;
-        shortBoxBmin = glm::vec3(boundsMin.x + extent.x * 0.18f, yMin, zMin);
-        shortBoxBmax = glm::vec3(boundsMin.x + extent.x * 0.34f, yMax, zMax);
-        tallBoxBmin = glm::vec3(boundsMax.x - extent.x * 0.34f, yMin, zMin);
-        tallBoxBmax = glm::vec3(boundsMax.x - extent.x * 0.18f, yMax, zMax);
+        const float yMin = boundsMin.y + extent.y * 0.25f;
+        const float yMax = boundsMin.y + extent.y * 0.72f;
+        const float zMin = boundsMin.z + extent.z * 0.15f;
+        const float zMax = boundsMin.z + extent.z * 0.45f;
+        shortBoxBmin = glm::vec3(boundsMin.x + extent.x * 0.04f, yMin, zMin);
+        shortBoxBmax = glm::vec3(boundsMin.x + extent.x * 0.55f, yMax, zMax);
+        tallBoxBmin = glm::vec3(boundsMin.x + extent.x * 0.55f, yMin, zMin);
+        tallBoxBmax = glm::vec3(boundsMin.x + extent.x * 0.80f, yMax, zMax);
 
-        addBoxCharts(7, shortBoxBmin, shortBoxBmax, "sponza_left_proxy", true, true);
-        addBoxCharts(13, tallBoxBmin, tallBoxBmax, "sponza_right_proxy", true, true);
+        addBoxCharts(7, shortBoxBmin, shortBoxBmax, "sponza_left_arch_proxy", true, true);
+        addBoxCharts(13, tallBoxBmin, tallBoxBmax, "sponza_right_column_proxy", true, true);
     } else {
         addRoomCharts(false, true);
     }
