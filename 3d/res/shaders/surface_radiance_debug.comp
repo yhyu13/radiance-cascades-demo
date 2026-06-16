@@ -574,7 +574,11 @@ void main() {
             vec3 lightDir = normalize(L);
             ndotl = max(dot(hitNormal, lightDir), 0.0);
             direct = uLightColor * ndotl;
-            if (uDebugMode >= 13) visibility = shadowVisibility(tr.pos, hitNormal, lightDir, sqrt(dist2));
+            if (uDebugMode >= 13) {
+                bool sponzaProxyChart = (uSurfaceSceneType == 2 && c.id >= 7 && c.id <= 18);
+                visibility = sponzaProxyChart ? 1.0
+                                              : shadowVisibility(tr.pos, hitNormal, lightDir, sqrt(dist2));
+            }
         }
 
         if (uDebugMode == 0) {
