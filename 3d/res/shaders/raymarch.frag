@@ -1225,7 +1225,18 @@ void main() {
                 }
             }
 
+            // Select the GI path once so mode 0 and the mode-17 EXR sidecar
+            // measure the same indirect signal. With surface-RC disabled this
+            // remains the legacy volumetric cascade output.
             vec3 finalIndirectForComposite = indirectColor;
+            if (uEnableSurfaceRC) {
+                if (uBlendWithVolumetric) {
+                    finalIndirectForComposite = mix(surfaceIndirect, indirectColor, uBlendFactor);
+                } else {
+                    finalIndirectForComposite = surfaceIndirect;
+                }
+            }
+            finalIndirectForComposite = sanitizeRadiance(finalIndirectForComposite);
 
             // Step 10 (codex 06 F2 + F8): GI diagnostic modes. Mode 9 strips the
             // hidden vec3(0.05) ambient floor; mode 10 shows ONLY that floor.
@@ -1240,24 +1251,9 @@ void main() {
             // brightens with MB ON because multi-bounce adds to the atlas. Differs
             // from mode 6 which still composites direct via uSeparateGI path; mode 17
             // is the pure-GI viewer for MB A/B comparisons.
-            else if (uRenderMode == 17) modeColor = indirectColor;
+            else if (uRenderMode == 17) modeColor = finalIndirectForComposite;
             else {
-                // Phase 2F: Blend surface RC GI with volumetric RC
-                vec3 combinedIndirect = indirectColor;
-                
-                if (uEnableSurfaceRC) {
-                    if (uBlendWithVolumetric) {
-                        // Hybrid mode: blend surface RC and volumetric RC
-                        combinedIndirect = mix(surfaceIndirect, indirectColor, uBlendFactor);
-                    } else {
-                        // Pure surface RC mode
-                        combinedIndirect = surfaceIndirect;
-                    }
-                }
-                combinedIndirect = sanitizeRadiance(combinedIndirect);
-                finalIndirectForComposite = combinedIndirect;
-                
-                modeColor = directColor + combinedIndirect;
+                modeColor = directColor + finalIndirectForComposite;
             }
 
             // uSeparateGI=1: output linear direct + linear indirect separately for the
@@ -1266,8 +1262,8 @@ void main() {
             // modes (9, 10) always reach the composite below; the GI-blur split path
             // is only meaningful for the default render mode.
             if (uSeparateGI != 0 && (uRenderMode == 0 || uRenderMode == 17)) {
-                fragColor = vec4((uRenderMode == 17) ? indirectColor : directColor, 1.0);
-                fragGI    = vec4((uRenderMode == 17) ? indirectColor : finalIndirectForComposite, 1.0);
+                fragColor = vec4((uRenderMode == 17) ? finalIndirectForComposite : directColor, 1.0);
+                fragGI    = vec4(finalIndirectForComposite, 1.0);
                 return;
             }
 

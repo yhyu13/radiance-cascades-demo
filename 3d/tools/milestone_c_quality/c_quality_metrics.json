@@ -1,0 +1,324 @@
+{
+  "test": "milestone_c_quality_sponza_linear_exr_pt_gate",
+  "note": "Linear EXR/PT gate. Surface-RC is compared against PT indirect using physical surface-gi-scale=1; Phase 4 remains blocked unless c_quality_gate_for_phase4 passes.",
+  "samples": 512,
+  "thresholds": {
+    "surface_p95_abs_ratio_error": 0.5,
+    "surface_rmse_vs_volumetric_factor": 1.25
+  },
+  "variants": {
+    "volumetric": {
+      "status": "ok",
+      "paths": {
+        "png": "tools\\milestone_c_quality\\captures\\cquality_sponza_volumetric_N0512_m17.png",
+        "gi": "tools\\milestone_c_quality\\captures\\cquality_sponza_volumetric_N0512_m17_cascade_gi.exr",
+        "pt_full": "tools\\milestone_c_quality\\captures\\cquality_sponza_volumetric_N0512_m17_pt_full.exr",
+        "pt_direct": "tools\\milestone_c_quality\\captures\\cquality_sponza_volumetric_N0512_m17_pt_direct.exr",
+        "gbuffer": "tools\\milestone_c_quality\\captures\\cquality_sponza_volumetric_N0512_m17_gbuffer.exr",
+        "log": "tools\\milestone_c_quality\\captures\\cquality_sponza_volumetric_N0512_m17.log"
+      },
+      "resolution": {
+        "gi": [
+          640,
+          360
+        ],
+        "pt": [
+          640,
+          360
+        ]
+      },
+      "finite_fraction": 1.0,
+      "negative_fraction": 0.0,
+      "positive_gi_fraction": 0.9711458333333334,
+      "nonzero_gi_fraction": 0.9711458333333334,
+      "mean_gi_luma": 0.03990670293569565,
+      "p95_gi_luma": 0.07030144333839417,
+      "p99_gi_luma": 0.08281782269477844,
+      "max_gi_luma": 0.18098533153533936,
+      "gi_vs_pt_indirect_linear": {
+        "status": "ok",
+        "valid_pixels": 86897,
+        "rmse_luma": 0.027825871482491493,
+        "mae_luma": 0.0243753083050251,
+        "mean_candidate_luma": 0.03822503611445427,
+        "mean_reference_luma": 0.014353329315781593,
+        "mean_luma_ratio": 2.6631476879119873,
+        "ratio_self_mean": 2.746687889099121,
+        "ratio_self_p95_abs_minus_1": 4.003782749176025,
+        "relative_error_p95_abs": 4.003782749176025,
+        "dim_pct_ratio_lt_0p7": 2.1105446678251263,
+        "bright_pct_ratio_gt_1p3": 96.43255808600988
+      },
+      "composite_vs_pt_full_linear": {
+        "status": "ok",
+        "valid_pixels": 1579,
+        "rmse_luma": 0.035511281341314316,
+        "mae_luma": 0.032600536942481995,
+        "mean_candidate_luma": 0.38644182682037354,
+        "mean_reference_luma": 0.35384318232536316,
+        "mean_luma_ratio": 1.0921273231506348,
+        "ratio_self_mean": 1.1888983249664307,
+        "ratio_self_p95_abs_minus_1": 0.6307862401008606,
+        "relative_error_p95_abs": 0.6307862997055054,
+        "dim_pct_ratio_lt_0p7": 0.0,
+        "bright_pct_ratio_gt_1p3": 20.39265357821406
+      },
+      "preview": {
+        "path": "tools\\milestone_c_quality\\sponza_volumetric_gi_preview.png",
+        "exists": true,
+        "width": 640,
+        "height": 360,
+        "bytes": 104659,
+        "mean_luma_8bit": 51.05623245239258,
+        "nonblack_pixels": 223752,
+        "nonblack_fraction": 0.9711458333333334
+      }
+    },
+    "surface_rc": {
+      "status": "ok",
+      "paths": {
+        "png": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_N0512_m17.png",
+        "gi": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_N0512_m17_cascade_gi.exr",
+        "pt_full": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_N0512_m17_pt_full.exr",
+        "pt_direct": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_N0512_m17_pt_direct.exr",
+        "gbuffer": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_N0512_m17_gbuffer.exr",
+        "log": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_N0512_m17.log"
+      },
+      "resolution": {
+        "gi": [
+          640,
+          360
+        ],
+        "pt": [
+          640,
+          360
+        ]
+      },
+      "finite_fraction": 1.0,
+      "negative_fraction": 0.0,
+      "positive_gi_fraction": 0.0006857638888888889,
+      "nonzero_gi_fraction": 0.0006857638888888889,
+      "mean_gi_luma": 6.611741264350712e-05,
+      "p95_gi_luma": 0.0,
+      "p99_gi_luma": 0.0,
+      "max_gi_luma": 0.3366304039955139,
+      "gi_vs_pt_indirect_linear": {
+        "status": "ok",
+        "valid_pixels": 86897,
+        "rmse_luma": 0.01558441948145628,
+        "mae_luma": 0.014467522501945496,
+        "mean_candidate_luma": 0.0001583202974870801,
+        "mean_reference_luma": 0.014353329315781593,
+        "mean_luma_ratio": 0.01103021390736103,
+        "ratio_self_mean": 0.010198467411100864,
+        "ratio_self_p95_abs_minus_1": 1.0,
+        "relative_error_p95_abs": 1.0,
+        "dim_pct_ratio_lt_0p7": 99.86535783743973,
+        "bright_pct_ratio_gt_1p3": 0.11853113456160742
+      },
+      "composite_vs_pt_full_linear": {
+        "status": "ok",
+        "valid_pixels": 1579,
+        "rmse_luma": 0.021329212933778763,
+        "mae_luma": 0.015997236594557762,
+        "mean_candidate_luma": 0.33784598112106323,
+        "mean_reference_luma": 0.35384318232536316,
+        "mean_luma_ratio": 0.9547901153564453,
+        "ratio_self_mean": 0.9006763696670532,
+        "ratio_self_p95_abs_minus_1": 0.35806506872177124,
+        "relative_error_p95_abs": 0.35806506872177124,
+        "dim_pct_ratio_lt_0p7": 12.79290690310323,
+        "bright_pct_ratio_gt_1p3": 0.0
+      },
+      "preview": {
+        "path": "tools\\milestone_c_quality\\sponza_surface_rc_gi_preview.png",
+        "exists": true,
+        "width": 640,
+        "height": 360,
+        "bytes": 1571,
+        "mean_luma_8bit": 0.061877164989709854,
+        "nonblack_pixels": 158,
+        "nonblack_fraction": 0.0006857638888888889
+      }
+    },
+    "surface_rc_scale10_diagnostic": {
+      "status": "ok",
+      "paths": {
+        "png": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_scale10_N0512_m17.png",
+        "gi": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_scale10_N0512_m17_cascade_gi.exr",
+        "pt_full": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_scale10_N0512_m17_pt_full.exr",
+        "pt_direct": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_scale10_N0512_m17_pt_direct.exr",
+        "gbuffer": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_scale10_N0512_m17_gbuffer.exr",
+        "log": "tools\\milestone_c_quality\\captures\\cquality_sponza_surface_rc_scale10_N0512_m17.log"
+      },
+      "resolution": {
+        "gi": [
+          640,
+          360
+        ],
+        "pt": [
+          640,
+          360
+        ]
+      },
+      "finite_fraction": 1.0,
+      "negative_fraction": 0.0,
+      "positive_gi_fraction": 0.0006857638888888889,
+      "nonzero_gi_fraction": 0.0006857638888888889,
+      "mean_gi_luma": 0.0006612683646380901,
+      "p95_gi_luma": 0.0,
+      "p99_gi_luma": 0.0,
+      "max_gi_luma": 3.367316246032715,
+      "gi_vs_pt_indirect_linear": {
+        "status": "ok",
+        "valid_pixels": 86897,
+        "rmse_luma": 0.053406402468681335,
+        "mae_luma": 0.015891248360276222,
+        "mean_candidate_luma": 0.0015834319638088346,
+        "mean_reference_luma": 0.014353329315781593,
+        "mean_luma_ratio": 0.11031809449195862,
+        "ratio_self_mean": 0.10199961066246033,
+        "ratio_self_p95_abs_minus_1": 1.0,
+        "relative_error_p95_abs": 1.0,
+        "dim_pct_ratio_lt_0p7": 99.86075468658296,
+        "bright_pct_ratio_gt_1p3": 0.13924531341703397
+      },
+      "composite_vs_pt_full_linear": {
+        "status": "ok",
+        "valid_pixels": 1579,
+        "rmse_luma": 0.021329212933778763,
+        "mae_luma": 0.015997236594557762,
+        "mean_candidate_luma": 0.33784598112106323,
+        "mean_reference_luma": 0.35384318232536316,
+        "mean_luma_ratio": 0.9547901153564453,
+        "ratio_self_mean": 0.9006763696670532,
+        "ratio_self_p95_abs_minus_1": 0.35806506872177124,
+        "relative_error_p95_abs": 0.35806506872177124,
+        "dim_pct_ratio_lt_0p7": 12.79290690310323,
+        "bright_pct_ratio_gt_1p3": 0.0
+      },
+      "preview": {
+        "path": "tools\\milestone_c_quality\\sponza_surface_rc_scale10_gi_preview.png",
+        "exists": true,
+        "width": 640,
+        "height": 360,
+        "bytes": 1425,
+        "mean_luma_8bit": 0.14016303420066833,
+        "nonblack_pixels": 158,
+        "nonblack_fraction": 0.0006857638888888889
+      }
+    }
+  },
+  "side_by_side": {
+    "path": "tools\\milestone_c_quality\\sponza_c_quality_linear_side_by_side.png",
+    "exists": true,
+    "width": 1600,
+    "height": 204,
+    "bytes": 108140,
+    "mean_luma_8bit": 17.923437118530273,
+    "nonblack_pixels": 210144,
+    "nonblack_fraction": 0.6438235294117647
+  },
+  "diagnostics": {
+    "mode21_surface_gi_only_scale10": {
+      "exists": true,
+      "path": "tools\\milestone_c_quality\\captures\\cquality_diag_m21_gi_only.png",
+      "width": 1280,
+      "height": 720,
+      "bytes": 37927,
+      "mean_luma_8bit": 0.07225311547517776,
+      "max_luma_8bit": 255.0,
+      "nonblack_pixels": 332,
+      "nonblack_fraction": 0.00036024305555555554,
+      "red_invalid_pixels": 0,
+      "red_invalid_fraction": 0.0
+    },
+    "mode22_surface_chart_classification": {
+      "exists": true,
+      "path": "tools\\milestone_c_quality\\captures\\cquality_diag_m22_chart.png",
+      "width": 1280,
+      "height": 720,
+      "bytes": 84099,
+      "mean_luma_8bit": 59.138214111328125,
+      "max_luma_8bit": 247.85220336914062,
+      "nonblack_pixels": 921173,
+      "nonblack_fraction": 0.9995366753472222,
+      "red_invalid_pixels": 779586,
+      "red_invalid_fraction": 0.8459049479166667
+    },
+    "mode23_surface_c0_raw_scale10": {
+      "exists": true,
+      "path": "tools\\milestone_c_quality\\captures\\cquality_diag_m23_c0_raw.png",
+      "width": 1280,
+      "height": 720,
+      "bytes": 37921,
+      "mean_luma_8bit": 0.07810835540294647,
+      "max_luma_8bit": 255.0,
+      "nonblack_pixels": 332,
+      "nonblack_fraction": 0.00036024305555555554,
+      "red_invalid_pixels": 0,
+      "red_invalid_fraction": 0.0
+    }
+  },
+  "diagnostic_side_by_side": {
+    "path": "tools\\milestone_c_quality\\sponza_c_quality_diagnostics_side_by_side.png",
+    "exists": true,
+    "width": 960,
+    "height": 204,
+    "bytes": 17452,
+    "mean_luma_8bit": 19.838661193847656,
+    "nonblack_pixels": 80877,
+    "nonblack_fraction": 0.4129748774509804,
+    "diagnostic_inputs": {
+      "mode21_surface_gi_only_scale10": {
+        "exists": true,
+        "path": "tools\\milestone_c_quality\\captures\\cquality_diag_m21_gi_only.png",
+        "width": 1280,
+        "height": 720,
+        "bytes": 37927,
+        "mean_luma_8bit": 0.07225311547517776,
+        "max_luma_8bit": 255.0,
+        "nonblack_pixels": 332,
+        "nonblack_fraction": 0.00036024305555555554,
+        "red_invalid_pixels": 0,
+        "red_invalid_fraction": 0.0
+      },
+      "mode22_surface_chart_classification": {
+        "exists": true,
+        "path": "tools\\milestone_c_quality\\captures\\cquality_diag_m22_chart.png",
+        "width": 1280,
+        "height": 720,
+        "bytes": 84099,
+        "mean_luma_8bit": 59.138214111328125,
+        "max_luma_8bit": 247.85220336914062,
+        "nonblack_pixels": 921173,
+        "nonblack_fraction": 0.9995366753472222,
+        "red_invalid_pixels": 779586,
+        "red_invalid_fraction": 0.8459049479166667
+      },
+      "mode23_surface_c0_raw_scale10": {
+        "exists": true,
+        "path": "tools\\milestone_c_quality\\captures\\cquality_diag_m23_c0_raw.png",
+        "width": 1280,
+        "height": 720,
+        "bytes": 37921,
+        "mean_luma_8bit": 0.07810835540294647,
+        "max_luma_8bit": 255.0,
+        "nonblack_pixels": 332,
+        "nonblack_fraction": 0.00036024305555555554,
+        "red_invalid_pixels": 0,
+        "red_invalid_fraction": 0.0
+      }
+    }
+  },
+  "gates": {
+    "volumetric_linear_measured": "PASS",
+    "surface_rc_linear_measured": "PASS",
+    "surface_rc_finite": "PASS",
+    "surface_rc_nonblack_linear": "FAIL",
+    "surface_rc_quality_p95_abs_rel_le_0p50": "FAIL",
+    "surface_rc_competitive_with_volumetric_rmse": "PASS",
+    "side_by_side_created": "PASS",
+    "c_quality_gate_for_phase4": "FAIL"
+  }
+}
