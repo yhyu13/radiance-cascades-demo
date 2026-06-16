@@ -1,0 +1,460 @@
+{
+  "test": "milestone_c_sponza_surface_rc_png_gate",
+  "note": "PNG-space gate only; EXR/PT quality comparison remains separate from this surface-chart integration gate.",
+  "images": {
+    "sponza_volumetric_before": {
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\sponza_volumetric_before.png",
+      "exists": true,
+      "width": 640,
+      "height": 480,
+      "mean_luma_8bit": 116.09574127197266,
+      "max_luma_8bit": 224.1363983154297,
+      "p95_luma_8bit": 159.20460510253906,
+      "nonblack_pixels": 274832,
+      "nonblack_fraction": 0.8946354166666667,
+      "dark_fraction_luma_lt_5": 0.10536458333333333,
+      "bright_fraction_luma_gt_240": 0.0
+    },
+    "sponza_surface_rc_after": {
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\sponza_surface_rc_after.png",
+      "exists": true,
+      "width": 640,
+      "height": 480,
+      "mean_luma_8bit": 145.1587677001953,
+      "max_luma_8bit": 232.2085723876953,
+      "p95_luma_8bit": 195.9919891357422,
+      "nonblack_pixels": 274832,
+      "nonblack_fraction": 0.8946354166666667,
+      "dark_fraction_luma_lt_5": 0.10536458333333333,
+      "bright_fraction_luma_gt_240": 0.0
+    },
+    "sponza_surface_rc_gi_only": {
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\sponza_surface_rc_gi_only.png",
+      "exists": true,
+      "width": 640,
+      "height": 480,
+      "mean_luma_8bit": 161.93673706054688,
+      "max_luma_8bit": 255.0,
+      "p95_luma_8bit": 255.0,
+      "nonblack_pixels": 195347,
+      "nonblack_fraction": 0.6358951822916666,
+      "dark_fraction_luma_lt_5": 0.3641048177083333,
+      "bright_fraction_luma_gt_240": 0.63548828125
+    },
+    "sponza_chart_classification": {
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\sponza_chart_classification_m22.png",
+      "exists": true,
+      "width": 640,
+      "height": 480,
+      "mean_luma_8bit": 114.1859359741211,
+      "max_luma_8bit": 245.2869873046875,
+      "p95_luma_8bit": 213.005615234375,
+      "nonblack_pixels": 274832,
+      "nonblack_fraction": 0.8946354166666667,
+      "dark_fraction_luma_lt_5": 0.10536458333333333,
+      "bright_fraction_luma_gt_240": 0.0026171875
+    },
+    "cornell_control": {
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\cornell_control.png",
+      "exists": true,
+      "width": 640,
+      "height": 480,
+      "mean_luma_8bit": 111.36841583251953,
+      "max_luma_8bit": 242.0,
+      "p95_luma_8bit": 226.2086181640625,
+      "nonblack_pixels": 258822,
+      "nonblack_fraction": 0.84251953125,
+      "dark_fraction_luma_lt_5": 0.15748046875,
+      "bright_fraction_luma_gt_240": 0.02666666666666667
+    }
+  },
+  "png_deltas": {
+    "surface_rc_after_vs_volumetric_before": {
+      "a_path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\sponza_volumetric_before.png",
+      "b_path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\sponza_surface_rc_after.png",
+      "rms_luma_8bit": 41.541489016902396,
+      "mae_luma_8bit": 31.3908634185791,
+      "p95_abs_luma_delta_8bit": 101.99200439453125,
+      "changed_fraction": 0.8896354166666667,
+      "mean_luma_ratio_after_over_before": 1.2503366470336914,
+      "ratio_self_mean": 1.3307445049285889,
+      "ratio_self_p95_abs_minus_1": 1.8237929344177246,
+      "dim_pct": 13.593759096466204,
+      "bright_pct": 77.33378936950574
+    }
+  },
+  "uv_roundtrip": {
+    "sponza_uv": {
+      "test": "surface_uv_roundtrip",
+      "scene": "sponza",
+      "surface_rc_enabled": true,
+      "active_chart_count": 18,
+      "tests_per_chart": 100,
+      "total_tests": 1800,
+      "passed": 1800,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "tolerance": 0.01,
+      "seed": 1337,
+      "result": "PASS",
+      "charts": [
+        {
+          "chart_id": 1,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 2,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 3,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 4,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 5,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 6,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 7,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 8,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 9,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 10,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 11,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 12,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 13,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 14,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 15,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 16,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 17,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 18,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        }
+      ],
+      "exists": true,
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\sponza_uv_roundtrip_metrics.json"
+    },
+    "cornell_control": {
+      "test": "surface_uv_roundtrip",
+      "scene": "cornell",
+      "surface_rc_enabled": true,
+      "active_chart_count": 17,
+      "tests_per_chart": 100,
+      "total_tests": 1700,
+      "passed": 1700,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "tolerance": 0.01,
+      "seed": 1337,
+      "result": "PASS",
+      "charts": [
+        {
+          "chart_id": 1,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 2,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 3,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 4,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 5,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 7,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 8,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 9,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 10,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 11,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 12,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 13,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 14,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 15,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 16,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 17,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        },
+        {
+          "chart_id": 18,
+          "tested": 100,
+          "passed": 100,
+          "failed": 0,
+          "pass_rate": 1.0,
+          "max_u_error": 0.0,
+          "max_v_error": 0.0
+        }
+      ],
+      "exists": true,
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\cornell_control_metrics.json"
+    }
+  },
+  "side_by_side": {
+    "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\milestone_c\\sponza_milestone_c_side_by_side.png",
+    "exists": true,
+    "width": 1280,
+    "height": 264,
+    "mean_luma_8bit": 124.11156463623047,
+    "max_luma_8bit": 255.0,
+    "p95_luma_8bit": 255.0,
+    "nonblack_pixels": 289369,
+    "nonblack_fraction": 0.8563239820075758,
+    "dark_fraction_luma_lt_5": 0.14398674242424242,
+    "bright_fraction_luma_gt_240": 0.14044744318181818
+  },
+  "gates": {
+    "sponza_uv_roundtrip": "PASS",
+    "cornell_uv_roundtrip": "PASS",
+    "sponza_gi_only_nonblack": "PASS",
+    "sponza_before_after_distinct": "PASS",
+    "side_by_side_created": "PASS",
+    "milestone_c_png_gate": "PASS"
+  }
+}

@@ -334,6 +334,7 @@ Demo3D::Demo3D()
     , radianceExposure(1.0f)
     , radianceIntensityScale(1.0f)
     , showRadianceGrid(false)
+    , surfaceRC(nullptr)
     , probeTotal(0)
     , probeCenterSample(0.0f)
     , probeBackwallSample(0.0f)
@@ -434,6 +435,17 @@ Demo3D::Demo3D()
     // v1.2: bilateral blur pass on the hybrid accumulator (depth+normal aware).
     // Mandatory companion to hybrid_correction.comp when useHybrid is on.
     ok &= loadShader("hybrid_blur.comp");
+    // v5 / ShaderToy2 Phase 0-1 surface-attached debug path. Non-critical while
+    // --use-surface-rc is opt-in; failures are still visible via loadShader banner.
+    loadShader("surface_cornell_debug.comp");
+    loadShader("surface_ring_debug.comp");
+    loadShader("surface_radiance_debug.comp");
+    loadShader("surface_debug.frag");
+    
+    // Phase 2E: Cascade hierarchy shaders
+    loadShader("cascade_downsample.comp");
+    loadShader("cascade_upsample.comp");
+    
     criticalShaderLoadOk = ok;
     
     // Step 5: Initialize cascades
@@ -441,6 +453,10 @@ Demo3D::Demo3D()
     
     // Step 6: Initialize debug quad geometry
     initDebugQuad();
+
+    // v5 / ShaderToy2 Phase 0-1: allocate hardcoded Cornell chart debug atlas.
+    surfaceRC = std::make_unique<SurfaceRC>();
+    surfaceRC->initialize(1024, 512);
     
     // Step 7: Set up initial scene
     std::cout << "\n[Demo3D] Setting up initial scene..." << std::endl;
@@ -471,6 +487,7 @@ Demo3D::~Demo3D() {
      */
     
     // TODO: Implement destructor
+    surfaceRC.reset();
     destroyCascades();
     destroyVolumeBuffers();
     
@@ -1000,6 +1017,86 @@ void Demo3D::render() {
         cascadeReady  = true;
     }
 
+    // v5 / ShaderToy2 Phase 0-1: update the experimental surface debug atlas.
+    // This does not feed final shading yet; volumetric RC remains the renderer.
+    if (surfaceRC) {
+        surfaceRC->updateScene(currentOBJPath, currentObjBmin, currentObjBmax, useOBJMesh);
+        
+        // Phase 2D/2E: Track camera movement for feedback/cascade reset
+        static glm::vec3 prevCameraPos = glm::vec3(0.0f);
+        static float prevCameraYaw = 0.0f;
+        static float prevCameraPitch = 0.0f;
+        
+        bool cameraMoved = length(camera.position - prevCameraPos) > 0.05f ||
+                           abs(cameraYaw - prevCameraYaw) > 0.5f ||
+                           abs(cameraPitch - prevCameraPitch) > 0.5f;
+        
+        if (cameraMoved) {
+            surfaceRC->clearAtlases();         // Phase 2D: Reset ping-pong atlases
+            surfaceRC->clearCascadeAtlases();  // Phase 2E: Reset cascade hierarchy
+        }
+        
+        prevCameraPos = camera.position;
+        prevCameraYaw = cameraYaw;
+        prevCameraPitch = cameraPitch;
+        
+        auto sit = shaders.find("surface_cornell_debug.comp");
+        if (sit != shaders.end())
+            surfaceRC->dispatchDebug(sit->second);
+        auto rit = shaders.find("surface_ring_debug.comp");
+        if (rit != shaders.end())
+            surfaceRC->dispatchRingDebug(rit->second);
+        auto radit = shaders.find("surface_radiance_debug.comp");
+        if (radit != shaders.end()) {
+            glm::vec3 surfaceLightPos = lightPosition;
+            if (useDirectionalLight) {
+                glm::vec3 volCenter = volumeOrigin + 0.5f * volumeSize;
+                surfaceLightPos = volCenter - glm::normalize(lightDirection) * 100.0f;
+            }
+            glm::vec3 surfaceLightColor = glm::vec3(1.0f, 0.95f, 0.85f) * lightIntensity;
+            
+            // Phase 2D: Pass feedback parameters to shader
+            glUseProgram(radit->second);
+            glUniform1f(glGetUniformLocation(radit->second, "uFeedbackAlpha"), surfaceFeedbackAlpha);
+            glUniform1i(glGetUniformLocation(radit->second, "uResetFeedback"), surfaceResetFeedback ? 1 : 0);
+            
+            // Phase 2D: Handle manual reset request
+            if (surfaceResetFeedback && surfaceRC) {
+                surfaceRC->clearAtlases();
+                surfaceResetFeedback = false;  // Reset flag after clearing
+            }
+            
+            surfaceRC->dispatchRadianceDebug(radit->second, sdfTexture, volumeOrigin, volumeSize,
+                                             surfaceLightPos, surfaceLightColor);
+            
+            // Phase 2D: Flip ping-pong atlases after each frame
+            if (surfaceRC) {
+                surfaceRC->flipAtlases();
+            }
+
+            if (enableSurfaceRCInRaymarch) {
+                const int savedRadianceMode = surfaceRC->getRadianceDebugMode();
+                if (savedRadianceMode != 15) {
+                    surfaceRC->setRadianceDebugMode(15);
+                    surfaceRC->dispatchRadianceDebug(radit->second, sdfTexture, volumeOrigin, volumeSize,
+                                                     surfaceLightPos, surfaceLightColor);
+                    surfaceRC->setRadianceDebugMode(savedRadianceMode);
+                }
+                surfaceRC->seedCascadeBaseFromDirect();
+            }
+            
+            // Phase 2E: Dispatch cascade hierarchy if enabled
+            if (cascadeHierarchyEnabled && surfaceRC) {
+                auto downProg = shaders.find("cascade_downsample.comp");
+                auto upProg = shaders.find("cascade_upsample.comp");
+                
+                if (downProg != shaders.end() && upProg != shaders.end()) {
+                    surfaceRC->dispatchCascadeHierarchy(downProg->second, upProg->second);
+                }
+            }
+        }
+    }
+
     // Probe readback: once per cascade update, sample all active levels
     if (!probeDumped && cascadeReady) {
         probeDumped = true;
@@ -1290,6 +1387,12 @@ void Demo3D::render() {
 
     // Pass 6: Radiance Cascade Slice Viewer (Phase 1)
     renderRadianceDebug();
+
+    if (surfaceRC) {
+        auto sit = shaders.find("surface_debug.frag");
+        if (sit != shaders.end())
+            surfaceRC->renderDebug(sit->second, debugQuadVAO);
+    }
 
     // Phase 2.5a.1: bake-leak baseline measurement. Triggered by --bake-leak-test=path.
     // Counter increments only when cascade is ready (don't count warm-up frames);
@@ -1824,6 +1927,46 @@ void Demo3D::renderRadianceDebugUI() {
     ImGui::Text("  [Mouse Wheel] Adjust position");
     ImGui::Text("  [F] Cycle visualize mode");
     ImGui::Text("  [+/-] Adjust exposure");
+    ImGui::End();
+}
+
+void Demo3D::renderSurfaceDebugUI() {
+    if (!surfaceRC || !surfaceRC->isEnabled() || !surfaceRC->getShowDebug()) return;
+
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+
+    ImGui::SetNextWindowPos(ImVec2(10, 270));
+    ImGui::Begin("Surface RC Debug Info", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize |
+                 ImGuiWindowFlags_NoBackground);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 pos = ImGui::GetWindowPos();
+    ImVec2 size = ImVec2(540, 120);
+    draw_list->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
+                       IM_COL32(255, 0, 255, 255), 0.0f, ImDrawFlags_None, 2.0f);
+
+    ImGui::Text("ShaderToy2 Surface RC Atlas (Phase 1)");
+    ImGui::Separator();
+    ImGui::Text("Target: %s", SurfaceRC::debugTargetName(surfaceRC->getDebugTarget()));
+    ImGui::Text("Mode: %s", surfaceRC->getDebugTarget() == 1
+        ? SurfaceRC::ringDebugModeName(surfaceRC->getRingDebugMode())
+        : (surfaceRC->getDebugTarget() == 2
+            ? SurfaceRC::radianceDebugModeName(surfaceRC->getRadianceDebugMode())
+            : SurfaceRC::debugModeName(surfaceRC->getDebugMode())));
+    if (surfaceRC->getDebugTarget() == 1 || surfaceRC->getDebugTarget() == 2) {
+        ImGui::Text("Ring atlas: %dx%d, band=%d, cascades=%d",
+                    surfaceRC->getRingAtlasWidth(), surfaceRC->getRingAtlasHeight(),
+                    surfaceRC->getRingBandHeight(), surfaceRC->getRingCascadeCount());
+    } else {
+        ImGui::Text("Chart atlas: %dx%d, charts=%d, valid texels=%d",
+                    surfaceRC->getAtlasWidth(), surfaceRC->getAtlasHeight(),
+                    surfaceRC->getValidChartCount(), surfaceRC->getValidTexelCount());
+    }
+    ImGui::Text("Scene: %s (%s)", surfaceRC->getSceneLabel().c_str(),
+                surfaceRC->isSceneSupported() ? "Cornell-supported" : "unsupported/fallback tint");
+    ImGui::Text("Overlay: bottom-left (%s)", surfaceRC->getDebugTarget() == 1 ? "ring packed" : "chart atlas");
     ImGui::End();
 }
 
@@ -2920,6 +3063,59 @@ void Demo3D::raymarchPass() {
     glUniform1i(glGetUniformLocation(prog, "uHybridSampleCount"), hybridSampleCount);
     glUniform1i(glGetUniformLocation(prog, "uHybridConfidenceSamples"), hybridConfidenceSamples);
 
+    // Phase 2F: Surface RC cascade bridge into the final raymarch shader.
+    // This integration gate consumes the surface atlas through scene-keyed chart
+    // classification. Higher-cascade quality validation remains a follow-up.
+    const bool surfaceRCGIActive =
+        enableSurfaceRCInRaymarch && surfaceRC && surfaceRC->isEnabled() && surfaceRC->getCascadeCount() > 0;
+    if (surfaceRCGIActive) {
+        constexpr int kSurfaceCascadeBaseUnit = 10;
+        const int cascadeCountToBind = std::min(surfaceRC->getCascadeCount(), 5);
+        int resolutions[5] = {32, 16, 8, 4, 2};
+
+        for (int i = 0; i < cascadeCountToBind; ++i) {
+            glActiveTexture(GL_TEXTURE0 + kSurfaceCascadeBaseUnit + i);
+            const GLuint atlasTexture = (i == 0 && surfaceRC->getDirectAtlasTexture() != 0)
+                ? surfaceRC->getDirectAtlasTexture()
+                : surfaceRC->getCascadeAtlas(i);
+            glBindTexture(GL_TEXTURE_2D, atlasTexture);
+            const std::string samplerName = "uCascadeAtlases[" + std::to_string(i) + "]";
+            glUniform1i(glGetUniformLocation(prog, samplerName.c_str()), kSurfaceCascadeBaseUnit + i);
+            resolutions[i] = surfaceRC->getCascadeResolution(i);
+        }
+
+        glUniform1iv(glGetUniformLocation(prog, "uCascadeResolutions"), 5, resolutions);
+        glUniform1i(glGetUniformLocation(prog, "uSurfaceSceneType"), surfaceRC->getSceneType());
+
+        glm::vec3 surfaceBoundsMin(0.0f);
+        glm::vec3 surfaceBoundsMax(0.0f);
+        surfaceRC->getSceneBounds(surfaceBoundsMin, surfaceBoundsMax);
+        glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMin"), 1, glm::value_ptr(surfaceBoundsMin));
+        glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMax"), 1, glm::value_ptr(surfaceBoundsMax));
+
+        glm::vec3 shortBmin(0.0f), shortBmax(0.0f), tallBmin(0.0f), tallBmax(0.0f);
+        surfaceRC->getBoxBounds(shortBmin, shortBmax, tallBmin, tallBmax);
+        glUniform3fv(glGetUniformLocation(prog, "uShortBoxMin"), 1, glm::value_ptr(shortBmin));
+        glUniform3fv(glGetUniformLocation(prog, "uShortBoxMax"), 1, glm::value_ptr(shortBmax));
+        glUniform3fv(glGetUniformLocation(prog, "uTallBoxMin"), 1, glm::value_ptr(tallBmin));
+        glUniform3fv(glGetUniformLocation(prog, "uTallBoxMax"), 1, glm::value_ptr(tallBmax));
+
+        glUniform1f(glGetUniformLocation(prog, "uSurfaceGIScale"), surfaceGIScale);
+        glUniform1i(glGetUniformLocation(prog, "uEnableSurfaceRC"), 1);
+        glUniform1i(glGetUniformLocation(prog, "uBlendWithVolumetric"), blendWithVolumetric ? 1 : 0);
+        glUniform1f(glGetUniformLocation(prog, "uBlendFactor"), blendFactor);
+    } else {
+        int resolutions[5] = {32, 16, 8, 4, 2};
+        glUniform1iv(glGetUniformLocation(prog, "uCascadeResolutions"), 5, resolutions);
+        glUniform1i(glGetUniformLocation(prog, "uSurfaceSceneType"), 0);
+        glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMin"), 1, glm::value_ptr(volumeOrigin));
+        glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMax"), 1, glm::value_ptr(volumeMax));
+        glUniform1f(glGetUniformLocation(prog, "uSurfaceGIScale"), surfaceGIScale);
+        glUniform1i(glGetUniformLocation(prog, "uEnableSurfaceRC"), 0);
+        glUniform1i(glGetUniformLocation(prog, "uBlendWithVolumetric"), blendWithVolumetric ? 1 : 0);
+        glUniform1f(glGetUniformLocation(prog, "uBlendFactor"), blendFactor);
+    }
+
     // GI blur: redirect mode-0/3/6 render to 3-attachment FBO (direct / gbuffer / indirect).
     // Modes 3 and 6 are pure-indirect views so direct=black and blur applies to full output.
     // Other debug modes go directly to the default framebuffer and are unaffected.
@@ -3746,6 +3942,14 @@ void Demo3D::reloadShaders() {
     loadShader("radiance_debug.frag");
     loadShader("lighting_debug.frag");
     loadShader("raymarch.frag");
+    loadShader("gi_blur.frag");
+    loadShader("pt_reference.comp");
+    loadShader("hybrid_correction.comp");
+    loadShader("hybrid_blur.comp");
+    loadShader("surface_cornell_debug.comp");
+    loadShader("surface_ring_debug.comp");
+    loadShader("surface_radiance_debug.comp");
+    loadShader("surface_debug.frag");
 
     std::cout << "[Demo3D] Shaders reloaded" << std::endl;
 }
@@ -4537,6 +4741,7 @@ void Demo3D::renderUI() {
     // Render debug UI overlays
     renderSDFDebugUI();       // Phase 0: SDF visualization
     renderRadianceDebugUI();  // Phase 1: Radiance cascade visualization
+    renderSurfaceDebugUI();   // v5 / ShaderToy2 Phase 1 surface atlas visualization
     renderLightingDebugUI();  // Phase 1: Per-light contribution visualization
     
     if (showImGuiDemo) {
@@ -4668,6 +4873,59 @@ void Demo3D::renderSettingsPanel() {
             cascadeC0Res, dirRes, dirRes * dirRes);
     else
         ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Cascade not initialized!");
+
+    if (surfaceRC && ImGui::CollapsingHeader("Surface RC (ShaderToy2 experimental)")) {
+        bool surfaceOn = surfaceRC->isEnabled();
+        if (ImGui::Checkbox("Use Surface RC debug path", &surfaceOn))
+            surfaceRC->setEnabled(surfaceOn);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Phase 0/1 only: renders a hardcoded Cornell surface atlas debug view.\n"
+                              "Final shading still uses the existing volumetric path.");
+
+        bool showSurface = surfaceRC->getShowDebug();
+        if (ImGui::Checkbox("Show surface atlas overlay", &showSurface))
+            surfaceRC->setShowDebug(showSurface);
+
+        int target = surfaceRC->getDebugTarget();
+        const char* targets[] = {"Chart atlas", "Ring-packed atlas", "Radiance skeleton"};
+        if (ImGui::Combo("Surface debug target", &target, targets, 3))
+            surfaceRC->setDebugTarget(target);
+
+        int mode = surfaceRC->getDebugMode();
+        const char* modes[] = {"Chart ID", "Normal", "World Position", "Albedo", "Valid Mask"};
+        int ringMode = surfaceRC->getRingDebugMode();
+        const char* ringModes[] = {"Chart + Cascade", "Probe Coord", "Direction Coord", "Ring / Theta", "Probe World Pos", "Ray Origin", "Hemisphere Direction"};
+        int radianceMode = surfaceRC->getRadianceDebugMode();
+        const char* radianceModes[] = {"Ray Origin", "Hemisphere Direction", "Normal", "Active / Chart Mask", "Trace Classification", "Trace Distance", "Hit Chart ID", "Hit Chart UV", "UV Round Trip", "Hit Normal", "Unshadowed Direct", "NdotL", "Skip Mask", "Shadow Visibility", "Shadowed Direct", "Direct Atlas Write", "Atlas Readback", "Feedback Write (accumulated)", "Feedback Readback (GI)"};
+        if (target == 1) {
+            if (ImGui::Combo("Ring debug mode", &ringMode, ringModes, 7))
+                surfaceRC->setRingDebugMode(ringMode);
+        } else if (target == 2) {
+            if (ImGui::Combo("Radiance debug mode", &radianceMode, radianceModes, 19))
+                surfaceRC->setRadianceDebugMode(radianceMode);
+        } else {
+            if (ImGui::Combo("Surface debug mode", &mode, modes, 5))
+                surfaceRC->setDebugMode(mode);
+        }
+
+        ImGui::Text("Chart atlas: %dx%d, charts=%d, valid texels=%d",
+                    surfaceRC->getAtlasWidth(), surfaceRC->getAtlasHeight(),
+                    surfaceRC->getValidChartCount(), surfaceRC->getValidTexelCount());
+        ImGui::Text("Ring atlas: %dx%d, band=%d, cascades=%d",
+                    surfaceRC->getRingAtlasWidth(), surfaceRC->getRingAtlasHeight(),
+                    surfaceRC->getRingBandHeight(), surfaceRC->getRingCascadeCount());
+        const auto& active = surfaceRC->getChartActive();
+        ImGui::Text("Active charts: %d/18 [%d %d %d %d %d %d | %d %d %d %d %d %d | %d %d %d %d %d %d]",
+                    surfaceRC->getActiveChartCount(), 
+                    active[0], active[1], active[2], active[3], active[4], active[5],
+                    active[6], active[7], active[8], active[9], active[10], active[11],
+                    active[12], active[13], active[14], active[15], active[16], active[17]);
+        float bias = surfaceRC->getRayBias();
+        if (ImGui::SliderFloat("Surface ray bias", &bias, 0.0005f, 0.05f, "%.4f"))
+            surfaceRC->setRayBias(bias);
+        ImGui::Text("Scene: %s (%s)", surfaceRC->getSceneLabel().c_str(),
+                    surfaceRC->isSceneSupported() ? "Cornell-supported" : "unsupported/fallback tint");
+    }
 
     // Lighting controls follow-up: directional/intensity + 2 independent
     // ambient floor sliders. Replaces the Step 11 binary "strip ambient floor"

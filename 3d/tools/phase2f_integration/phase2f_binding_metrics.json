@@ -1,0 +1,221 @@
+{
+  "status": "SMOKE_PASS_QUALITY_PENDING",
+  "summary": "Surface-RC is now bound into the raymarch mode-0 GI split path and produces distinct non-black PNG evidence. Linear EXR/PT quality is measured for the volumetric baseline only; surface-RC still needs a linear EXR output and real surface cascade hierarchy quality validation before Phase 4.",
+  "capture_date_local": "2026-06-15",
+  "images": {
+    "volumetric_m0": {
+      "exists": true,
+      "path": "tools\\phase2f_integration\\phase2f_volumetric_m0.png",
+      "width": 640,
+      "height": 480,
+      "bytes": 164571,
+      "mean_luma_8bit": 103.7647705078125,
+      "nonblack_pixels": 203239,
+      "nonblack_fraction": 0.6615852864583334,
+      "max_luma_8bit": 236.064208984375
+    },
+    "surface_pure_m0_scale10": {
+      "exists": true,
+      "path": "tools\\phase2f_integration\\phase2f_surface_pure_m0_scale10.png",
+      "width": 640,
+      "height": 480,
+      "bytes": 140547,
+      "mean_luma_8bit": 121.20775604248047,
+      "nonblack_pixels": 203239,
+      "nonblack_fraction": 0.6615852864583334,
+      "max_luma_8bit": 255.0
+    },
+    "hybrid_m0_scale10_blend50": {
+      "exists": true,
+      "path": "tools\\phase2f_integration\\phase2f_hybrid_m0_scale10_blend50.png",
+      "width": 640,
+      "height": 480,
+      "bytes": 193206,
+      "mean_luma_8bit": 120.51826477050781,
+      "nonblack_pixels": 203239,
+      "nonblack_fraction": 0.6615852864583334,
+      "max_luma_8bit": 255.0
+    },
+    "surface_gi_only_m21_scale10": {
+      "exists": true,
+      "path": "tools\\phase2f_integration\\surface_rc_gi_only_mode21_scale10.png",
+      "width": 640,
+      "height": 480,
+      "bytes": 55143,
+      "mean_luma_8bit": 88.93157196044922,
+      "nonblack_pixels": 129578,
+      "nonblack_fraction": 0.4218033854166667,
+      "max_luma_8bit": 255.0
+    },
+    "surface_chart_classification_m22": {
+      "exists": true,
+      "path": "tools\\phase2f_integration\\surface_chart_classification_mode22.png",
+      "width": 640,
+      "height": 480,
+      "bytes": 114404,
+      "mean_luma_8bit": 95.2503433227539,
+      "nonblack_pixels": 203238,
+      "nonblack_fraction": 0.66158203125,
+      "max_luma_8bit": 247.11000061035156
+    },
+    "surface_c0_raw_sample_m23": {
+      "exists": true,
+      "path": "tools\\phase2f_integration\\surface_c0_raw_sample_mode23.png",
+      "width": 640,
+      "height": 480,
+      "bytes": 31906,
+      "mean_luma_8bit": 105.61983489990234,
+      "nonblack_pixels": 129578,
+      "nonblack_fraction": 0.4218033854166667,
+      "max_luma_8bit": 255.0
+    },
+    "volumetric_gi_only_m17": {
+      "exists": true,
+      "path": "tools\\phase2f_integration\\volumetric_m17.png",
+      "width": 640,
+      "height": 480,
+      "bytes": 148397,
+      "mean_luma_8bit": 10.2594633102417,
+      "nonblack_pixels": 202219,
+      "nonblack_fraction": 0.6582649739583334,
+      "max_luma_8bit": 76.47740173339844
+    }
+  },
+  "side_by_side": {
+    "exists": true,
+    "path": "tools\\phase2f_integration\\phase2f_side_by_side.png",
+    "width": 1600,
+    "height": 264,
+    "bytes": 310135,
+    "mean_luma_8bit": 110.97537231445312,
+    "nonblack_pixels": 327769,
+    "nonblack_fraction": 0.7759682765151515,
+    "max_luma_8bit": 255.0
+  },
+  "pt_preview": {
+    "exists": true,
+    "path": "tools\\phase2f_integration\\phase2f_pt_reference_preview.png",
+    "width": 640,
+    "height": 480,
+    "bytes": 183356,
+    "mean_luma_8bit": 163.39779663085938,
+    "nonblack_pixels": 295673,
+    "nonblack_fraction": 0.9624772135416667,
+    "max_luma_8bit": 242.1363983154297
+  },
+  "png_deltas": {
+    "surface_pure_m0_vs_volumetric_m0": {
+      "status": "ok",
+      "rms_luma_8bit": 50.460079193115234,
+      "mae_luma_8bit": 30.79360580444336,
+      "mae_rgb_8bit": [
+        26.661434173583984,
+        31.850088119506836,
+        32.100433349609375
+      ],
+      "changed_pixels": 203118,
+      "changed_fraction": 0.66119140625
+    },
+    "hybrid_m0_vs_volumetric_m0": {
+      "status": "ok",
+      "rms_luma_8bit": 39.6110725402832,
+      "mae_luma_8bit": 22.2564640045166,
+      "mae_rgb_8bit": [
+        19.491561889648438,
+        22.94720458984375,
+        23.17778205871582
+      ],
+      "changed_pixels": 202791,
+      "changed_fraction": 0.660126953125
+    },
+    "surface_gi_only_m21_vs_black": {
+      "status": "ok",
+      "mean_luma_8bit": 88.93157196044922,
+      "nonblack_fraction": 0.4218033854166667
+    }
+  },
+  "preview_quality_vs_pt_png": {
+    "volumetric_m0": {
+      "status": "ok",
+      "rms_luma_8bit": 96.20864868164062,
+      "mae_luma_8bit": 60.95298385620117,
+      "mae_rgb_8bit": [
+        79.40837860107422,
+        56.117496490478516,
+        54.82448959350586
+      ],
+      "changed_pixels": 295666,
+      "changed_fraction": 0.9624544270833333
+    },
+    "surface_pure_m0_scale10": {
+      "status": "ok",
+      "rms_luma_8bit": 103.13216400146484,
+      "mae_luma_8bit": 73.84761810302734,
+      "mae_rgb_8bit": [
+        86.49519348144531,
+        70.55009460449219,
+        69.43449401855469
+      ],
+      "changed_pixels": 295669,
+      "changed_fraction": 0.9624641927083334
+    },
+    "hybrid_m0_scale10_blend50": {
+      "status": "ok",
+      "rms_luma_8bit": 97.71666717529297,
+      "mae_luma_8bit": 65.36859893798828,
+      "mae_rgb_8bit": [
+        79.46148681640625,
+        61.68459701538086,
+        60.57676696777344
+      ],
+      "changed_pixels": 295593,
+      "changed_fraction": 0.962216796875
+    },
+    "pt_reference_preview": {
+      "status": "reference",
+      "path": "tools\\phase2f_integration\\phase2f_pt_reference_preview.png"
+    }
+  },
+  "linear_exr_quality": {
+    "status": "ok",
+    "volumetric_composite_vs_pt_full_linear": {
+      "status": "ok",
+      "valid_pixels": 49563,
+      "rmse_luma": 0.25884512066841125,
+      "mae_luma": 0.21273721754550934,
+      "mean_reference_luma": 0.6639887094497681,
+      "mean_candidate_luma": 0.45272210240364075
+    },
+    "volumetric_gi_vs_pt_indirect_linear": {
+      "status": "ok",
+      "valid_pixels": 49563,
+      "rmse_luma": 0.25884512066841125,
+      "mae_luma": 0.21273721754550934,
+      "mean_reference_luma": 0.2726499140262604,
+      "mean_candidate_luma": 0.06138332560658455
+    },
+    "pt_reference": {
+      "pt_full": "tools\\phase2f_integration\\volumetric_m17_pt_full.exr",
+      "pt_direct": "tools\\phase2f_integration\\volumetric_m17_pt_direct.exr",
+      "pt_samples": 384,
+      "width": 320,
+      "height": 240
+    }
+  },
+  "gates": {
+    "build_release": "PASS",
+    "shader_load_with_enable_surface_rc_gi": "PASS",
+    "surface_rc_gi_only_nonblack": "PASS",
+    "mode0_surface_pure_distinct_from_volumetric": "PASS",
+    "mode0_hybrid_distinct_from_volumetric": "PASS",
+    "volumetric_exr_pt_quality_measured": "PASS",
+    "surface_exr_pt_quality_measured": "PENDING",
+    "phase2f_quality_gate_for_phase4": "PENDING"
+  },
+  "known_limitations": [
+    "surface-RC quality rows are PNG-preview comparisons, not linear EXR comparisons",
+    "surface mode uses C0 direct-atlas smoke sampling; higher cascade hierarchy merge is not validated",
+    "surface GI scale is diagnostic scale10 for visibility, not tuned physical energy",
+    "automatic surface cascade hierarchy dispatch remains disabled for the Phase 2F smoke toggle"
+  ]
+}

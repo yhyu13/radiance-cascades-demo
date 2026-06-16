@@ -39,6 +39,7 @@
 #include "gl_helpers.h"
 #include "analytic_sdf.h"  // Analytic SDF primitives for Phase 0
 #include "obj_loader.h"    // OBJ mesh loader for scene import
+#include "surface_rc.h"    // ShaderToy2 surface-attached RC experimental path
 #include <glm/glm.hpp>
 
 // =============================================================================
@@ -404,6 +405,9 @@ public:
      * @brief Render radiance cascade debug UI overlay (Phase 1)
      */
     void renderRadianceDebugUI();
+
+    /** Render ShaderToy2 surface-attached debug atlas UI overlay. */
+    void renderSurfaceDebugUI();
     
     /**
      * @brief Render lighting debug UI overlay (Phase 1)
@@ -499,12 +503,12 @@ public:
     );
 
     // codex 07 F2/F3 — let main3d.cpp set initial render mode for headless captures.
-    // Range now covers modes 0-16 (14 LeakSuspect, 15 TemporalOscillation, 16 PT-Reference).
+    // Range now covers modes 0-23, including Phase 2F modes 21-23.
     // No clamp; preserves existing shader fallthrough on out-of-range.
     void setRenderMode(int m) {
-        if (m < 0 || m > 19) {
+        if (m < 0 || m > 23) {
             std::cerr << "[Demo3D] WARN: render mode " << m
-                      << " out of range [0,19]; rendering as default\n";
+                      << " out of range [0,23]; rendering as default\n";
         }
         raymarchRenderMode = m;
     }
@@ -872,6 +876,57 @@ public:
     void endRdocFrameIfPending();
     void setAutoRdocMode(float delaySeconds) { autoRdocDelaySeconds = delaySeconds; }
     bool isSkippingUI() const { return skipUIRendering; }
+
+    // v5 / ShaderToy2 Phase 0-1: experimental Cornell-only surface-attached
+    // debug atlas path. Default OFF; volumetric cascade remains default.
+    void setUseSurfaceRC(bool v) {
+        if (!surfaceRC) return;
+        surfaceRC->setEnabled(v);
+    }
+    bool getUseSurfaceRC() const { return surfaceRC && surfaceRC->isEnabled(); }
+    void setSurfaceDebugTarget(int v) { if (surfaceRC) surfaceRC->setDebugTarget(v); }
+    void setSurfaceDebugMode(int v)   { if (surfaceRC) surfaceRC->setDebugMode(v); }
+    void setSurfaceRingDebugMode(int v) { if (surfaceRC) surfaceRC->setRingDebugMode(v); }
+    void setSurfaceRadianceDebugMode(int v) { if (surfaceRC) surfaceRC->setRadianceDebugMode(v); }
+    void setSurfaceRayBias(float v) { if (surfaceRC) surfaceRC->setRayBias(v); }
+    
+    // Phase 2D: Feedback system controls
+    float getSurfaceFeedbackAlpha() const { return surfaceFeedbackAlpha; }
+    void setSurfaceFeedbackAlpha(float v) { surfaceFeedbackAlpha = v; }
+    bool getSurfaceResetFeedback() const { return surfaceResetFeedback; }
+    void setSurfaceResetFeedback(bool v) { surfaceResetFeedback = v; }
+    void resetSurfaceAtlases() { if (surfaceRC) surfaceRC->clearAtlases(); }
+    
+    // Phase 2E: Cascade hierarchy controls
+    bool getCascadeHierarchyEnabled() const { return cascadeHierarchyEnabled; }
+    void setCascadeHierarchyEnabled(bool v) { 
+        cascadeHierarchyEnabled = v;
+        if (v && surfaceRC) surfaceRC->clearCascadeAtlases();  // Reset on enable
+    }
+    float getCascadeInjectionWeight() const { return cascadeInjectionWeight; }
+    void setCascadeInjectionWeight(float v) { cascadeInjectionWeight = v; }
+    
+    // Phase 2F: Raymarch integration controls
+    void setUseCascadeGI(bool v) { useCascadeGI = v; }
+    bool getEnableSurfaceRCInRaymarch() const { return enableSurfaceRCInRaymarch; }
+    void setEnableSurfaceRCInRaymarch(bool v) {
+        enableSurfaceRCInRaymarch = v;
+        if (v && surfaceRC) {
+            surfaceRC->setEnabled(true);
+            surfaceRC->setShowDebug(false);
+        }
+    }
+    float getSurfaceGIScale() const { return surfaceGIScale; }
+    void setSurfaceGIScale(float v) { surfaceGIScale = glm::clamp(v, 0.0f, 10.0f); }
+    bool getBlendWithVolumetric() const { return blendWithVolumetric; }
+    void setBlendWithVolumetric(bool v) { blendWithVolumetric = v; }
+    float getBlendFactor() const { return blendFactor; }
+    void setBlendFactor(float v) { blendFactor = glm::clamp(v, 0.0f, 1.0f); }
+    
+    // Phase 3A: Validation functions
+    bool validateUVRoundTrip(const std::string& metricsPath = "tools/phase3_validation/uv_roundtrip_metrics.json");
+    void measureMisclassificationRate(int numSamples = 1000);
+    void captureUnknownDistribution();
 
 private:
     // =============================================================================
@@ -1278,6 +1333,24 @@ private:
     /** Show voxel grid overlay on radiance debug */
     bool showRadianceGrid;
 
+    /** v5 / ShaderToy2 Phase 0-1 surface-attached Cornell debug atlas. */
+    std::unique_ptr<SurfaceRC> surfaceRC;
+    
+    // Phase 2D: Feedback system parameters
+    float surfaceFeedbackAlpha = 0.1f;  // EMA blend factor for temporal accumulation
+    bool surfaceResetFeedback = false;  // Flag to trigger atlas reset
+    
+    // Phase 2E: Cascade hierarchy parameters
+    bool cascadeHierarchyEnabled = false;  // Enable/disable cascade hierarchy
+    float cascadeInjectionWeight = 0.5f;   // Weight for injecting coarse into fine
+    
+    // Phase 2F: Raymarch integration parameters
+    bool enableSurfaceRCInRaymarch = false;  // Enable surface RC GI in raymarch shader
+    float surfaceGIScale = 1.0f;             // GI contribution scale
+    bool blendWithVolumetric = false;        // Blend with volumetric RC
+    float blendFactor = 0.5f;                // Blend factor (0.0=surface, 1.0=volumetric)
+
+private:
     // Probe readback stats (populated once per cascade update, shown in Cascades panel)
     // Per-cascade probe readback stats (indexed 0..cascadeCount-1)
     int   probeNonZero[MAX_CASCADES];    // any contribution > 1e-4 (includes sky propagation)

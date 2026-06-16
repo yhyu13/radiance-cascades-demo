@@ -1,0 +1,755 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(rgba16f, binding = 0) uniform image2D oRadianceDebug;
+
+uniform ivec2 uAtlasSize;
+uniform int uDebugMode;       // 0 ray origin, 1 hemisphere direction, 2 normal, 3 active/chart mask
+uniform int uSceneSupported;
+uniform int uSurfaceSceneType; // 0=unsupported, 1=Cornell-family, 2=Sponza-family
+uniform int uChartActive[18];
+uniform sampler3D uSDF;
+uniform sampler2D uRadianceAtlas;  // Phase 2B-6: direct radiance atlas for mode 16 readback
+uniform vec3 uSceneBoundsMin;
+uniform vec3 uSceneBoundsMax;
+
+// Phase 2C: Box geometry bounds for Cornell scene
+uniform vec3 uShortBoxBmin;
+uniform vec3 uShortBoxBmax;
+uniform vec3 uTallBoxBmin;
+uniform vec3 uTallBoxBmax;
+
+// Phase 2D: Feedback system uniforms
+uniform sampler2D uAtlasRead;       // Previous frame's accumulated radiance (for mode 17/18)
+uniform float uFeedbackAlpha;       // EMA blend factor (default 0.1)
+uniform int uResetFeedback;         // 1 = clear atlases to black (not used in shader, handled by C++)
+
+uniform vec3 uGridOrigin;
+uniform vec3 uGridSize;
+uniform float uRayBias;
+uniform int uTraceSteps;
+uniform float uTraceMaxDist;
+uniform float uHitEpsilon;
+uniform vec3 uLightPos;
+uniform vec3 uLightColor;
+
+const int BAND_HEIGHT = 256;
+const int CASCADE_COUNT = 6;
+const float INF = 1e10;
+const float TRACE_ESCAPE_INF_FRACTION = 0.5;
+
+float sanitizeRadianceChannel(float v) {
+    return (isnan(v) || isinf(v) || v < 0.0) ? 0.0 : v;
+}
+
+vec3 sanitizeRadiance(vec3 v) {
+    return vec3(sanitizeRadianceChannel(v.r),
+                sanitizeRadianceChannel(v.g),
+                sanitizeRadianceChannel(v.b));
+}
+
+struct TraceResult {
+    int state; // 0=max miss, 1=hit, 2=escaped volume
+    float t;
+    vec3 pos;
+};
+
+struct HitSurface {
+    int chartId;
+    vec2 uv;
+    bool valid;
+};
+
+bool isPointNearBox(vec3 p, vec3 bmin, vec3 bmax, float eps);
+HitSurface classifyBoxFace(vec3 p, vec3 bmin, vec3 bmax, int baseChartId);
+
+struct ChartInfo {
+    int id;
+    vec2 localPx;
+    vec2 gRes;
+    vec3 normal;
+    vec3 tangent;
+    vec3 bitangent;
+    vec3 worldOrigin;
+    bool valid;
+};
+
+vec3 chartColor(int id) {
+    if (id == 1) return vec3(0.85, 0.85, 0.85);  // floor
+    if (id == 2) return vec3(0.55, 0.70, 1.00);  // ceiling
+    if (id == 3) return vec3(0.95, 0.15, 0.12);  // left wall
+    if (id == 4) return vec3(0.10, 0.85, 0.18);  // right wall
+    if (id == 5) return vec3(0.95, 0.95, 0.95);  // back wall
+    if (id == 6) return vec3(0.65, 0.65, 0.75);  // front wall (inactive)
+    
+    // Phase 2C: Box charts
+    if (id >= 7 && id <= 12) {
+        // short_box: brown/orange tones with shading per face
+        vec3 baseColor = vec3(0.75, 0.50, 0.25);
+        float shade = 0.8 + 0.2 * float(id - 7) / 5.0;
+        return baseColor * shade;
+    }
+    if (id >= 13 && id <= 18) {
+        // tall_box: blue/purple tones with shading per face
+        vec3 baseColor = vec3(0.30, 0.40, 0.80);
+        float shade = 0.8 + 0.2 * float(id - 13) / 5.0;
+        return baseColor * shade;
+    }
+    
+    return vec3(0.0);
+}
+
+ChartInfo decodeChart(ivec2 pInBand) {
+    ChartInfo c;
+    c.id = 0;
+    c.localPx = vec2(0.0);
+    c.gRes = vec2(1.0);
+    c.normal = vec3(0.0, 1.0, 0.0);
+    c.tangent = vec3(1.0, 0.0, 0.0);
+    c.bitangent = vec3(0.0, 0.0, 1.0);
+    c.worldOrigin = vec3(0.0);
+    c.valid = false;
+
+    vec3 bmin = uSceneBoundsMin;
+    vec3 bmax = uSceneBoundsMax;
+
+    if (pInBand.x < 256) {
+        c.id = 1;
+        c.localPx = vec2(pInBand.x, pInBand.y);
+        c.gRes = vec2(256.0, 256.0);
+        c.normal = vec3(0.0, 1.0, 0.0);
+        c.tangent = vec3(1.0, 0.0, 0.0);
+        c.bitangent = vec3(0.0, 0.0, 1.0);
+        c.worldOrigin = vec3(bmin.x, bmin.y, bmin.z);
+        c.valid = true;
+    } else if (pInBand.x < 512) {
+        c.id = 2;
+        c.localPx = vec2(pInBand.x - 256, pInBand.y);
+        c.gRes = vec2(256.0, 256.0);
+        c.normal = vec3(0.0, -1.0, 0.0);
+        c.tangent = vec3(1.0, 0.0, 0.0);
+        c.bitangent = vec3(0.0, 0.0, 1.0);
+        c.worldOrigin = vec3(bmin.x, bmax.y, bmin.z);
+        c.valid = true;
+    } else if (pInBand.x < 640) {
+        c.id = 3;
+        c.localPx = vec2(pInBand.x - 512, pInBand.y);
+        c.gRes = vec2(128.0, 256.0);
+        c.normal = vec3(1.0, 0.0, 0.0);
+        c.tangent = vec3(0.0, 1.0, 0.0);
+        c.bitangent = vec3(0.0, 0.0, 1.0);
+        c.worldOrigin = vec3(bmin.x, bmin.y, bmin.z);
+        c.valid = true;
+    } else if (pInBand.x < 768) {
+        c.id = 4;
+        c.localPx = vec2(pInBand.x - 640, pInBand.y);
+        c.gRes = vec2(128.0, 256.0);
+        c.normal = vec3(-1.0, 0.0, 0.0);
+        c.tangent = vec3(0.0, 1.0, 0.0);
+        c.bitangent = vec3(0.0, 0.0, 1.0);
+        c.worldOrigin = vec3(bmax.x, bmin.y, bmin.z);
+        c.valid = true;
+    } else if (pInBand.x < 896) {
+        c.id = 5;
+        c.localPx = vec2(pInBand.x - 768, pInBand.y);
+        c.gRes = vec2(128.0, 256.0);
+        c.normal = vec3(0.0, 0.0, 1.0);
+        c.tangent = vec3(0.0, 1.0, 0.0);
+        c.bitangent = vec3(1.0, 0.0, 0.0);
+        c.worldOrigin = vec3(bmin.x, bmin.y, bmin.z);
+        c.valid = true;
+    } else if (pInBand.x < 1024) {
+        c.id = 6;
+        c.localPx = vec2(pInBand.x - 896, pInBand.y);
+        c.gRes = vec2(128.0, 256.0);
+        c.normal = vec3(0.0, 0.0, -1.0);
+        c.tangent = vec3(0.0, 1.0, 0.0);
+        c.bitangent = vec3(1.0, 0.0, 0.0);
+        c.worldOrigin = vec3(bmin.x, bmin.y, bmax.z);
+        c.valid = true;
+    }
+    
+    // Phase 2C: Box charts (128x256 each, continuing in first row)
+    // Charts 7-12: short_box (6 faces)
+    // Charts 13-18: tall_box (6 faces)
+    else if (pInBand.x < 1792) {  // 1024 + 128*6 = 1792 for short_box
+        int faceIndex = (pInBand.x - 1024) / 128;  // 0-5 for 6 faces
+        c.id = 7 + faceIndex;
+        c.localPx = vec2(float(pInBand.x - 1024 - faceIndex * 128), float(pInBand.y));
+        c.gRes = vec2(128.0, 256.0);
+        
+        vec3 boxBmin = uShortBoxBmin;
+        vec3 boxBmax = uShortBoxBmax;
+        
+        if (faceIndex == 0) {  // bottom (-Y)
+            c.normal = vec3(0.0, -1.0, 0.0);
+            c.tangent = vec3(1.0, 0.0, 0.0);
+            c.bitangent = vec3(0.0, 0.0, 1.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmin.y, boxBmin.z);
+        } else if (faceIndex == 1) {  // top (+Y)
+            c.normal = vec3(0.0, 1.0, 0.0);
+            c.tangent = vec3(1.0, 0.0, 0.0);
+            c.bitangent = vec3(0.0, 0.0, 1.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmax.y, boxBmin.z);
+        } else if (faceIndex == 2) {  // left (-X)
+            c.normal = vec3(-1.0, 0.0, 0.0);
+            c.tangent = vec3(0.0, 1.0, 0.0);
+            c.bitangent = vec3(0.0, 0.0, 1.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmin.y, boxBmin.z);
+        } else if (faceIndex == 3) {  // right (+X)
+            c.normal = vec3(1.0, 0.0, 0.0);
+            c.tangent = vec3(0.0, 1.0, 0.0);
+            c.bitangent = vec3(0.0, 0.0, 1.0);
+            c.worldOrigin = vec3(boxBmax.x, boxBmin.y, boxBmin.z);
+        } else if (faceIndex == 4) {  // front (-Z)
+            c.normal = vec3(0.0, 0.0, -1.0);
+            c.tangent = vec3(0.0, 1.0, 0.0);
+            c.bitangent = vec3(1.0, 0.0, 0.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmin.y, boxBmin.z);
+        } else if (faceIndex == 5) {  // back (+Z)
+            c.normal = vec3(0.0, 0.0, 1.0);
+            c.tangent = vec3(0.0, 1.0, 0.0);
+            c.bitangent = vec3(1.0, 0.0, 0.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmin.y, boxBmax.z);
+        }
+        c.valid = true;
+    } else if (pInBand.x < 2560) {  // 1792 + 128*6 = 2560 for tall_box
+        int faceIndex = (pInBand.x - 1792) / 128;  // 0-5 for 6 faces
+        c.id = 13 + faceIndex;
+        c.localPx = vec2(float(pInBand.x - 1792 - faceIndex * 128), float(pInBand.y));
+        c.gRes = vec2(128.0, 256.0);
+        
+        vec3 boxBmin = uTallBoxBmin;
+        vec3 boxBmax = uTallBoxBmax;
+        
+        if (faceIndex == 0) {  // bottom (-Y)
+            c.normal = vec3(0.0, -1.0, 0.0);
+            c.tangent = vec3(1.0, 0.0, 0.0);
+            c.bitangent = vec3(0.0, 0.0, 1.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmin.y, boxBmin.z);
+        } else if (faceIndex == 1) {  // top (+Y)
+            c.normal = vec3(0.0, 1.0, 0.0);
+            c.tangent = vec3(1.0, 0.0, 0.0);
+            c.bitangent = vec3(0.0, 0.0, 1.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmax.y, boxBmin.z);
+        } else if (faceIndex == 2) {  // left (-X)
+            c.normal = vec3(-1.0, 0.0, 0.0);
+            c.tangent = vec3(0.0, 1.0, 0.0);
+            c.bitangent = vec3(0.0, 0.0, 1.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmin.y, boxBmin.z);
+        } else if (faceIndex == 3) {  // right (+X)
+            c.normal = vec3(1.0, 0.0, 0.0);
+            c.tangent = vec3(0.0, 1.0, 0.0);
+            c.bitangent = vec3(0.0, 0.0, 1.0);
+            c.worldOrigin = vec3(boxBmax.x, boxBmin.y, boxBmin.z);
+        } else if (faceIndex == 4) {  // front (-Z)
+            c.normal = vec3(0.0, 0.0, -1.0);
+            c.tangent = vec3(0.0, 1.0, 0.0);
+            c.bitangent = vec3(1.0, 0.0, 0.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmin.y, boxBmin.z);
+        } else if (faceIndex == 5) {  // back (+Z)
+            c.normal = vec3(0.0, 0.0, 1.0);
+            c.tangent = vec3(0.0, 1.0, 0.0);
+            c.bitangent = vec3(1.0, 0.0, 0.0);
+            c.worldOrigin = vec3(boxBmin.x, boxBmin.y, boxBmax.z);
+        }
+        c.valid = true;
+    }
+
+    return c;
+}
+
+// Phase 2C: Convert chart UV to world position
+vec3 chartToWorld(ChartInfo c, vec2 probeUVChart) {
+    if (c.id == 1) {  // floor
+        return vec3(mix(uSceneBoundsMin.x, uSceneBoundsMax.x, probeUVChart.x), 
+                    uSceneBoundsMin.y, 
+                    mix(uSceneBoundsMin.z, uSceneBoundsMax.z, probeUVChart.y));
+    }
+    if (c.id == 2) {  // ceiling
+        return vec3(mix(uSceneBoundsMin.x, uSceneBoundsMax.x, probeUVChart.x), 
+                    uSceneBoundsMax.y, 
+                    mix(uSceneBoundsMin.z, uSceneBoundsMax.z, probeUVChart.y));
+    }
+    if (c.id == 3) {  // left wall
+        return vec3(uSceneBoundsMin.x, 
+                    mix(uSceneBoundsMin.y, uSceneBoundsMax.y, probeUVChart.x), 
+                    mix(uSceneBoundsMin.z, uSceneBoundsMax.z, probeUVChart.y));
+    }
+    if (c.id == 4) {  // right wall
+        return vec3(uSceneBoundsMax.x, 
+                    mix(uSceneBoundsMin.y, uSceneBoundsMax.y, probeUVChart.x), 
+                    mix(uSceneBoundsMin.z, uSceneBoundsMax.z, probeUVChart.y));
+    }
+    if (c.id == 5) {  // back wall
+        return vec3(mix(uSceneBoundsMin.x, uSceneBoundsMax.x, probeUVChart.y), 
+                    mix(uSceneBoundsMin.y, uSceneBoundsMax.y, probeUVChart.x), 
+                    uSceneBoundsMin.z);
+    }
+    if (c.id == 6) {  // front wall
+        return vec3(mix(uSceneBoundsMin.x, uSceneBoundsMax.x, probeUVChart.y), 
+                    mix(uSceneBoundsMin.y, uSceneBoundsMax.y, probeUVChart.x), 
+                    uSceneBoundsMax.z);
+    }
+    
+    // Phase 2C: Box charts
+    if (c.id >= 7 && c.id <= 12) {  // short_box
+        int faceIndex = c.id - 7;
+        vec3 bmin = uShortBoxBmin;
+        vec3 bmax = uShortBoxBmax;
+        
+        if (faceIndex == 0) return vec3(mix(bmin.x, bmax.x, probeUVChart.x), bmin.y, mix(bmin.z, bmax.z, probeUVChart.y));  // bottom
+        if (faceIndex == 1) return vec3(mix(bmin.x, bmax.x, probeUVChart.x), bmax.y, mix(bmin.z, bmax.z, probeUVChart.y));  // top
+        if (faceIndex == 2) return vec3(bmin.x, mix(bmin.y, bmax.y, probeUVChart.x), mix(bmin.z, bmax.z, probeUVChart.y));  // left
+        if (faceIndex == 3) return vec3(bmax.x, mix(bmin.y, bmax.y, probeUVChart.x), mix(bmin.z, bmax.z, probeUVChart.y));  // right
+        if (faceIndex == 4) return vec3(mix(bmin.x, bmax.x, probeUVChart.x), mix(bmin.y, bmax.y, probeUVChart.y), bmin.z);  // front
+        if (faceIndex == 5) return vec3(mix(bmin.x, bmax.x, probeUVChart.x), mix(bmin.y, bmax.y, probeUVChart.y), bmax.z);  // back
+    }
+    
+    if (c.id >= 13 && c.id <= 18) {  // tall_box
+        int faceIndex = c.id - 13;
+        vec3 bmin = uTallBoxBmin;
+        vec3 bmax = uTallBoxBmax;
+        
+        if (faceIndex == 0) return vec3(mix(bmin.x, bmax.x, probeUVChart.x), bmin.y, mix(bmin.z, bmax.z, probeUVChart.y));  // bottom
+        if (faceIndex == 1) return vec3(mix(bmin.x, bmax.x, probeUVChart.x), bmax.y, mix(bmin.z, bmax.z, probeUVChart.y));  // top
+        if (faceIndex == 2) return vec3(bmin.x, mix(bmin.y, bmax.y, probeUVChart.x), mix(bmin.z, bmax.z, probeUVChart.y));  // left
+        if (faceIndex == 3) return vec3(bmax.x, mix(bmin.y, bmax.y, probeUVChart.x), mix(bmin.z, bmax.z, probeUVChart.y));  // right
+        if (faceIndex == 4) return vec3(mix(bmin.x, bmax.x, probeUVChart.x), mix(bmin.y, bmax.y, probeUVChart.y), bmin.z);  // front
+        if (faceIndex == 5) return vec3(mix(bmin.x, bmax.x, probeUVChart.x), mix(bmin.y, bmax.y, probeUVChart.y), bmax.z);  // back
+    }
+    
+    return vec3(0.0);
+}
+
+float sampleSDF(vec3 worldPos) {
+    vec3 uvw = (worldPos - uGridOrigin) / uGridSize;
+    if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0))))
+        return INF;
+    return texture(uSDF, uvw).r;
+}
+
+TraceResult traceSDF(vec3 origin, vec3 dir) {
+    float t = max(uRayBias * 2.0, uHitEpsilon * 2.0);
+    for (int i = 0; i < uTraceSteps && t < uTraceMaxDist; ++i) {
+        vec3 pos = origin + dir * t;
+        float d = sampleSDF(pos);
+        if (d >= INF * TRACE_ESCAPE_INF_FRACTION) {
+            return TraceResult(2, t, pos);
+        }
+        if (d < uHitEpsilon) {
+            return TraceResult(1, t, pos);
+        }
+        t += max(d, uHitEpsilon);
+    }
+    float tf = min(t, uTraceMaxDist);
+    return TraceResult(0, tf, origin + dir * tf);
+}
+
+float remap01(float v, float lo, float hi) {
+    return clamp((v - lo) / max(hi - lo, 1e-5), 0.0, 1.0);
+}
+
+HitSurface classifyRoomSurface(vec3 p, bool includeFront, float planeEps) {
+    HitSurface h;
+    h.chartId = 0;
+    h.uv = vec2(0.0);
+    h.valid = false;
+
+    vec3 bmin = uSceneBoundsMin;
+    vec3 bmax = uSceneBoundsMax;
+
+    float dFloor = abs(p.y - bmin.y);
+    float dCeil  = abs(p.y - bmax.y);
+    float dLeft  = abs(p.x - bmin.x);
+    float dRight = abs(p.x - bmax.x);
+    float dBack  = abs(p.z - bmin.z);
+    float dFront = abs(p.z - bmax.z);
+
+    float best = dFloor;
+    h.chartId = 1;
+    h.uv = vec2(remap01(p.x, bmin.x, bmax.x), remap01(p.z, bmin.z, bmax.z));
+
+    if (dCeil < best) {
+        best = dCeil;
+        h.chartId = 2;
+        h.uv = vec2(remap01(p.x, bmin.x, bmax.x), remap01(p.z, bmin.z, bmax.z));
+    }
+    if (dLeft < best) {
+        best = dLeft;
+        h.chartId = 3;
+        // Inverse of chartToWorld chart 3: uv.x -> Y, uv.y -> Z.
+        h.uv = vec2(remap01(p.y, bmin.y, bmax.y), remap01(p.z, bmin.z, bmax.z));
+    }
+    if (dRight < best) {
+        best = dRight;
+        h.chartId = 4;
+        // Inverse of chartToWorld chart 4: uv.x -> Y, uv.y -> Z.
+        h.uv = vec2(remap01(p.y, bmin.y, bmax.y), remap01(p.z, bmin.z, bmax.z));
+    }
+    if (dBack < best) {
+        best = dBack;
+        h.chartId = 5;
+        // Inverse of chartToWorld chart 5: uv.x -> Y, uv.y -> X.
+        h.uv = vec2(remap01(p.y, bmin.y, bmax.y), remap01(p.x, bmin.x, bmax.x));
+    }
+    if (includeFront && dFront < best) {
+        best = dFront;
+        h.chartId = 6;
+        h.uv = vec2(remap01(p.y, bmin.y, bmax.y), remap01(p.x, bmin.x, bmax.x));
+    }
+    h.valid = (best <= planeEps);
+
+    return h;
+}
+
+HitSurface classifyHitSurface(vec3 p) {
+    HitSurface h;
+    h.chartId = 0;
+    h.uv = vec2(0.0);
+    h.valid = false;
+
+    if (uSurfaceSceneType == 0) {
+        return h;
+    }
+
+    float planeEps = max(0.06, uHitEpsilon * 2.0);
+    if (isPointNearBox(p, uShortBoxBmin, uShortBoxBmax, planeEps)) {
+        return classifyBoxFace(p, uShortBoxBmin, uShortBoxBmax, 7);
+    }
+    if (isPointNearBox(p, uTallBoxBmin, uTallBoxBmax, planeEps)) {
+        return classifyBoxFace(p, uTallBoxBmin, uTallBoxBmax, 13);
+    }
+
+    h = classifyRoomSurface(p, uSurfaceSceneType == 2, planeEps);
+    return h;
+}
+
+// Phase 2C: Helper to check if point is near a box
+bool isPointNearBox(vec3 p, vec3 bmin, vec3 bmax, float eps) {
+    // Point is near box if it's within eps of any face AND within box bounds
+    bool nearX = (abs(p.x - bmin.x) < eps || abs(p.x - bmax.x) < eps);
+    bool nearY = (abs(p.y - bmin.y) < eps || abs(p.y - bmax.y) < eps);
+    bool nearZ = (abs(p.z - bmin.z) < eps || abs(p.z - bmax.z) < eps);
+    
+    bool inX = (p.x >= bmin.x - eps && p.x <= bmax.x + eps);
+    bool inY = (p.y >= bmin.y - eps && p.y <= bmax.y + eps);
+    bool inZ = (p.z >= bmin.z - eps && p.z <= bmax.z + eps);
+    
+    return (nearX && inY && inZ) || (inX && nearY && inZ) || (inX && inY && nearZ);
+}
+
+// Phase 2C: Classify which box face a hit point is on
+HitSurface classifyBoxFace(vec3 p, vec3 bmin, vec3 bmax, int baseChartId) {
+    HitSurface h;
+    float eps = max(0.06, uHitEpsilon * 2.0);
+    
+    float dBottom = abs(p.y - bmin.y);
+    float dTop    = abs(p.y - bmax.y);
+    float dLeft   = abs(p.x - bmin.x);
+    float dRight  = abs(p.x - bmax.x);
+    float dFront  = abs(p.z - bmin.z);
+    float dBack   = abs(p.z - bmax.z);
+    
+    float best = dBottom;
+    h.chartId = baseChartId;  // bottom face
+    h.uv = vec2(remap01(p.x, bmin.x, bmax.x), remap01(p.z, bmin.z, bmax.z));
+    
+    if (dTop < best) {
+        best = dTop;
+        h.chartId = baseChartId + 1;  // top face
+        h.uv = vec2(remap01(p.x, bmin.x, bmax.x), remap01(p.z, bmin.z, bmax.z));
+    }
+    if (dLeft < best) {
+        best = dLeft;
+        h.chartId = baseChartId + 2;  // left face
+        h.uv = vec2(remap01(p.y, bmin.y, bmax.y), remap01(p.z, bmin.z, bmax.z));
+    }
+    if (dRight < best) {
+        best = dRight;
+        h.chartId = baseChartId + 3;  // right face
+        h.uv = vec2(remap01(p.y, bmin.y, bmax.y), remap01(p.z, bmin.z, bmax.z));
+    }
+    if (dFront < best) {
+        best = dFront;
+        h.chartId = baseChartId + 4;  // front face
+        h.uv = vec2(remap01(p.x, bmin.x, bmax.x), remap01(p.y, bmin.y, bmax.y));
+    }
+    if (dBack < best) {
+        best = dBack;
+        h.chartId = baseChartId + 5;  // back face
+        h.uv = vec2(remap01(p.x, bmin.x, bmax.x), remap01(p.y, bmin.y, bmax.y));
+    }
+    
+    h.valid = (best <= eps);
+    return h;
+}
+
+vec3 estimateNormal(vec3 p) {
+    float e = max(0.01, uHitEpsilon * 4.0);
+    vec3 g = vec3(
+        sampleSDF(p + vec3(e, 0.0, 0.0)) - sampleSDF(p - vec3(e, 0.0, 0.0)),
+        sampleSDF(p + vec3(0.0, e, 0.0)) - sampleSDF(p - vec3(0.0, e, 0.0)),
+        sampleSDF(p + vec3(0.0, 0.0, e)) - sampleSDF(p - vec3(0.0, 0.0, e))
+    );
+    float lenG = length(g);
+    if (lenG < 1e-6) return vec3(0.0, 1.0, 0.0);
+    return normalize(g);
+}
+
+float shadowVisibility(vec3 hitPos, vec3 lightDir, float lightDist) {
+    float t = max(uRayBias * 2.0, uHitEpsilon * 2.0);
+    float tMax = max(lightDist - uRayBias * 2.0, t);
+    for (int i = 0; i < uTraceSteps && t < tMax; ++i) {
+        vec3 p = hitPos + lightDir * t;
+        float d = sampleSDF(p);
+        if (d >= INF * TRACE_ESCAPE_INF_FRACTION) return 1.0;
+        if (d < uHitEpsilon) return 0.0;
+        t += max(d, uHitEpsilon);
+    }
+    return 1.0;
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(p, uAtlasSize))) return;
+
+    int cascade = clamp(p.y / BAND_HEIGHT, 0, CASCADE_COUNT - 1);
+    ivec2 pInBand = ivec2(p.x, p.y - cascade * BAND_HEIGHT);
+    ChartInfo c = decodeChart(pInBand);
+    if (c.valid && uChartActive[c.id - 1] == 0) {
+        c.valid = false;
+    }
+
+    vec3 rgb = vec3(0.0);
+    float a = c.valid ? 1.0 : 0.0;
+
+    if (c.valid) {
+        float probeSize = exp2(float(cascade + 1));
+        vec2 probePositions = c.gRes / probeSize;
+        vec2 probeCoord = mod(c.localPx, probePositions);
+        vec2 dirCoord = floor(c.localPx / probePositions);
+        vec2 probeUV = dirCoord + 0.5;
+        vec2 probeRel = probeUV - probeSize * 0.5;
+
+        vec3 extent = max(uSceneBoundsMax - uSceneBoundsMin, vec3(1e-4));
+        vec2 probeUVChart = clamp((probeCoord + 0.5) * probeSize / c.gRes, vec2(0.0), vec2(1.0));
+        vec3 probeWorldPos = chartToWorld(c, probeUVChart);
+        vec3 rayOrigin = probeWorldPos + c.normal * uRayBias;
+
+        // Debug hemisphere mapping; final radiance may port ShaderToy's exact angular mapping later.
+        vec2 disk = clamp(probeRel / max(probeSize * 0.5, 1.0), vec2(-1.0), vec2(1.0));
+        float localZ = sqrt(max(0.0, 1.0 - dot(disk, disk)));
+        vec3 localDir = normalize(vec3(disk.x, disk.y, localZ));
+        vec3 worldDir = normalize(localDir.x * c.tangent + localDir.y * c.bitangent + localDir.z * c.normal);
+
+        TraceResult tr = TraceResult(0, 0.0, rayOrigin);
+        if (uDebugMode >= 4 && uDebugMode != 8) {
+            tr = traceSDF(rayOrigin, worldDir);
+        }
+        HitSurface hs = HitSurface(0, vec2(0.0), false);
+        if (uDebugMode >= 6 && tr.state == 1) {
+            hs = classifyHitSurface(tr.pos);
+        }
+        vec3 hitNormal = vec3(0.0, 1.0, 0.0);
+        float ndotl = 0.0;
+        vec3 direct = vec3(0.0);
+        float visibility = 1.0;
+        if (tr.state == 1 && hs.valid && uDebugMode >= 9) {
+            hitNormal = estimateNormal(tr.pos);
+            vec3 L = uLightPos - tr.pos;
+            float dist2 = max(dot(L, L), 1e-4);
+            vec3 lightDir = normalize(L);
+            ndotl = max(dot(hitNormal, lightDir), 0.0);
+            direct = uLightColor * ndotl;
+            if (uDebugMode >= 13) visibility = shadowVisibility(tr.pos, lightDir, sqrt(dist2));
+        }
+
+        if (uDebugMode == 0) {
+            rgb = clamp((rayOrigin - uSceneBoundsMin) / extent, vec3(0.0), vec3(1.0));
+        } else if (uDebugMode == 1) {
+            rgb = worldDir * 0.5 + 0.5;
+        } else if (uDebugMode == 2) {
+            rgb = c.normal * 0.5 + 0.5;
+        } else if (uDebugMode == 3) {
+            rgb = chartColor(c.id);
+        } else if (uDebugMode == 4) {
+            if (tr.state == 1) rgb = vec3(0.0, 1.0, 0.0);      // hit
+            else if (tr.state == 2) rgb = vec3(0.0, 0.25, 1.0); // escaped volume
+            else rgb = vec3(1.0, 0.0, 0.0);                     // max-distance miss
+            a = clamp(tr.t / max(uTraceMaxDist, 1e-4), 0.0, 1.0);
+        } else if (uDebugMode == 5) {
+            float dNorm = clamp(tr.t / max(uTraceMaxDist, 1e-4), 0.0, 1.0);
+            rgb = vec3(dNorm);
+            a = (tr.state == 1) ? max(dNorm, 0.001) : 1.0;
+        } else if (uDebugMode == 6) {
+            if (tr.state == 1 && hs.valid) {
+                rgb = chartColor(hs.chartId);
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0); // hit but unknown chart
+                a = 0.5;
+            } else if (tr.state == 2) {
+                rgb = vec3(0.0, 0.08, 0.35);
+                a = 1.0;
+            } else {
+                rgb = vec3(0.35, 0.0, 0.0);
+                a = 1.0;
+            }
+        } else if (uDebugMode == 7) {
+            if (tr.state == 1 && hs.valid) {
+                rgb = vec3(hs.uv, float(hs.chartId) / 18.0);  // Phase 2C: normalize to 18 charts
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0);
+                a = 0.5;
+            } else {
+                rgb = vec3(0.0);
+                a = (tr.state == 2) ? 1.0 : 0.5;
+            }
+        } else if (uDebugMode == 8) {
+            HitSurface rt = classifyHitSurface(probeWorldPos);
+            float err = length(rt.uv - probeUVChart);
+            bool pass = rt.valid && (rt.chartId == c.id) && (err < 0.01);
+            rgb = pass ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+            a = 1.0;
+        } else if (uDebugMode == 9) {
+            if (tr.state == 1 && hs.valid) {
+                rgb = hitNormal * 0.5 + 0.5;
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0);
+                a = 0.5;
+            } else {
+                rgb = vec3(0.0);
+                a = (tr.state == 2) ? 1.0 : 0.5;
+            }
+        } else if (uDebugMode == 10) {
+            if (tr.state == 1 && hs.valid) {
+                rgb = direct / (direct + vec3(1.0));
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0);
+                a = 0.5;
+            } else {
+                rgb = vec3(0.0);
+                a = (tr.state == 2) ? 1.0 : 0.5;
+            }
+        } else if (uDebugMode == 11) {
+            if (tr.state == 1 && hs.valid) {
+                rgb = vec3(ndotl);
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0);
+                a = 0.5;
+            } else {
+                rgb = vec3(0.0);
+                a = (tr.state == 2) ? 1.0 : 0.5;
+            }
+        } else if (uDebugMode == 12) {
+            if (tr.state == 1 && hs.valid) {
+                rgb = vec3(0.0, 1.0, 0.0);
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0);
+                a = 0.5;
+            } else if (tr.state == 2) {
+                rgb = vec3(0.0, 0.25, 1.0);
+                a = 1.0;
+            } else {
+                rgb = vec3(1.0, 0.0, 0.0);
+                a = 1.0;
+            }
+        } else if (uDebugMode == 13) {
+            if (tr.state == 1 && hs.valid) {
+                rgb = (visibility > 0.5) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0);
+                a = 0.5;
+            } else if (tr.state == 2) {
+                rgb = vec3(0.0, 0.25, 1.0);
+                a = 1.0;
+            } else {
+                rgb = vec3(0.35, 0.0, 0.0);
+                a = 1.0;
+            }
+        } else if (uDebugMode == 14) {
+            if (tr.state == 1 && hs.valid) {
+                vec3 shadowedDirect = sanitizeRadiance(direct * visibility);
+                rgb = shadowedDirect / (shadowedDirect + vec3(1.0));
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0);
+                a = 0.5;
+            } else {
+                rgb = vec3(0.0);
+                a = (tr.state == 2) ? 1.0 : 0.5;
+            }
+        } else if (uDebugMode == 15) {
+            // Phase 2B-6: Direct radiance atlas write (single frame, no accumulation)
+            if (tr.state == 1 && hs.valid) {
+                // Write shadowed direct radiance to atlas at this texel location
+                vec3 shadowedDirect = sanitizeRadiance(direct * visibility);
+                imageStore(oRadianceDebug, p, vec4(shadowedDirect, 1.0));
+                return;  // Early exit - already wrote to atlas
+            } else {
+                // Clear non-hit texels to black
+                imageStore(oRadianceDebug, p, vec4(0.0, 0.0, 0.0, 0.0));
+                return;  // Early exit
+            }
+        } else if (uDebugMode == 16) {
+            // Phase 2B-6: Atlas readback visualization
+            vec2 uv = vec2(p) / vec2(uAtlasSize);
+            vec4 atlasSample = texture(uRadianceAtlas, uv);
+            rgb = sanitizeRadiance(atlasSample.rgb);
+            a = atlasSample.a;
+        } else if (uDebugMode == 17) {
+            // Phase 2D: Feedback-enabled atlas write (temporal accumulation)
+            if (tr.state == 1 && hs.valid) {
+                vec2 uv = vec2(p) / vec2(uAtlasSize);
+                
+                // Read previous frame's accumulated radiance
+                vec3 prevRadiance = texture(uAtlasRead, uv).rgb;
+                
+                // Compute current direct lighting (already computed above as 'direct')
+                vec3 shadowedDirect = sanitizeRadiance(direct * visibility);
+                
+                // Temporal accumulation using Exponential Moving Average (EMA)
+                float alpha = uFeedbackAlpha;
+                vec3 newRadiance = mix(prevRadiance, shadowedDirect, alpha);
+                
+                imageStore(oRadianceDebug, p, vec4(newRadiance, 1.0));
+                return;  // Early exit - already wrote to atlas
+            } else {
+                // Clear non-hit texels to black (don't accumulate on misses)
+                imageStore(oRadianceDebug, p, vec4(0.0, 0.0, 0.0, 0.0));
+                return;  // Early exit
+            }
+        } else if (uDebugMode == 18) {
+            // Phase 2D: Feedback readback visualization (shows accumulated GI)
+            vec2 uv = vec2(p) / vec2(uAtlasSize);
+            vec4 accumulated = texture(uAtlasRead, uv);
+            rgb = sanitizeRadiance(accumulated.rgb);
+            a = accumulated.a;
+        } else {
+            if (tr.state == 1 && hs.valid) {
+                vec3 shadowedDirect = sanitizeRadiance(direct * visibility);
+                rgb = shadowedDirect / (shadowedDirect + vec3(1.0));
+                a = 1.0;
+            } else if (tr.state == 1) {
+                rgb = vec3(1.0, 1.0, 0.0);
+                a = 0.5;
+            } else {
+                rgb = vec3(0.0);
+                a = (tr.state == 2) ? 1.0 : 0.5;
+            }
+        }
+
+        if (uSceneSupported == 0) {
+            rgb = mix(rgb, vec3(1.0, 0.0, 1.0), 0.25);
+        }
+    }
+
+    imageStore(oRadianceDebug, p, vec4(rgb, a));
+}

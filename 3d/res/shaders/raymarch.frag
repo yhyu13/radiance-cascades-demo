@@ -154,6 +154,30 @@ uniform float     uHybridCascadeVariance;  // RELATIVE prior for cascade (CoV^2,
 uniform int       uHybridSampleCount;      // current accumulator sample count (confidence gate)
 uniform int       uHybridConfidenceSamples;// samples required for full correction trust (default 8)
 
+// Separate-GI split (codex 06 F3): when uSeparateGI==1, fragColor gets direct-only
+// and fragGI gets indirect-only; gi_blur.frag blurs fragGI and composites back.
+uniform int uSeparateGI;
+
+// =============================================================================
+// Phase 2F: Surface RC cascade integration uniforms
+// =============================================================================
+
+uniform sampler2D uCascadeAtlases[5];   // C0-C4 cascade atlases from Phase 2E
+uniform int uCascadeResolutions[5];     // {32, 16, 8, 4, 2}
+uniform vec3 uSceneBoundsMin;           // Scene bounding box min
+uniform vec3 uSceneBoundsMax;           // Scene bounding box max
+uniform float uSurfaceGIScale;          // GI contribution scale (default 1.0)
+uniform bool uEnableSurfaceRC;          // Enable/disable surface RC GI
+uniform int uSurfaceSceneType;          // 0=unsupported, 1=Cornell-family, 2=Sponza-family
+uniform bool uBlendWithVolumetric;      // Blend with volumetric RC
+uniform float uBlendFactor;             // Blend factor (0.0=surface, 1.0=volumetric)
+
+// Phase 3A: Box geometry bounds (passed from C++)
+uniform vec3 uShortBoxMin;              // Short box minimum corner
+uniform vec3 uShortBoxMax;              // Short box maximum corner
+uniform vec3 uTallBoxMin;               // Tall box minimum corner
+uniform vec3 uTallBoxMax;               // Tall box maximum corner
+
 // =============================================================================
 // Texture Bindings
 // =============================================================================
@@ -196,10 +220,6 @@ uniform int uAtlasDirRes;
 /** Phase 5g: 1=cosine-weighted directional atlas sampling, 0=isotropic average (default) */
 uniform int uUseDirectionalGI;
 
-/** Phase 9d: 1=output linear direct (location=0) and linear indirect (location=2) separately
- *  for the bilateral GI blur composite pass. 0=composite here and tone-map here (default). */
-uniform int uSeparateGI;
-
 // =============================================================================
 // Analytic SDF — primitive SSBO (binding 0, same layout as sdf_analytic.comp)
 // Only accessed when uUseAnalyticSDF == 1.
@@ -229,6 +249,16 @@ const float INF = 1e10;
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+float sanitizeRadianceChannel(float v) {
+    return (isnan(v) || isinf(v) || v < 0.0) ? 0.0 : v;
+}
+
+vec3 sanitizeRadiance(vec3 v) {
+    return vec3(sanitizeRadianceChannel(v.r),
+                sanitizeRadianceChannel(v.g),
+                sanitizeRadianceChannel(v.b));
+}
 
 /**
  * @brief Calculate ray direction from UV and camera matrices
@@ -661,6 +691,286 @@ vec3 toneMapACES(vec3 color) {
 }
 
 // =============================================================================
+// Phase 2F: Surface RC GI Integration Helper Functions
+// =============================================================================
+
+/**
+ * @brief Convert world position to probe coordinates for given cascade level
+ * @param worldPos World-space position
+ * @param cascadeLevel Cascade level (0=C0 finest, 4=C4 coarsest)
+ * @return Probe grid coordinates [0, resolution-1]
+ */
+vec3 worldToProbeCoord(vec3 worldPos, int cascadeLevel) {
+    int res = uCascadeResolutions[cascadeLevel];
+    vec3 normalized = (worldPos - uSceneBoundsMin) / (uSceneBoundsMax - uSceneBoundsMin);
+    vec3 probeCoord = normalized * float(res);
+    return clamp(probeCoord, vec3(0.0), vec3(float(res - 1)));
+}
+
+/**
+ * @brief Select LOD level based on distance to camera
+ * @param distToCamera Distance from hit point to camera
+ * @return Cascade level (0-4)
+ */
+int selectLOD(float distToCamera) {
+    if (distToCamera < 2.0)      return 0;  // C0: finest (32³)
+    else if (distToCamera < 4.0) return 1;  // C1 (16³)
+    else if (distToCamera < 8.0) return 2;  // C2 (8³)
+    else if (distToCamera < 16.0) return 3; // C3 (4³)
+    else                          return 4; // C4: coarsest (2³)
+}
+
+/**
+ * @brief Sample cascade atlas at given level and probe coordinate
+ * @param level Cascade level (0-4)
+ * @param probeCoord Probe grid coordinates
+ * @return GI radiance from cascade
+ */
+vec3 sampleCascadeAtlas(int level, vec3 probeCoord) {
+    if (level < 0 || level >= 5) return vec3(0.0);
+    
+    int res = uCascadeResolutions[level];
+    
+    // Convert probe coord to texture UV
+    // Simplified mapping: assume uniform layout across atlas
+    vec2 uv = probeCoord.xy / float(res);
+    
+    // Sample with bilinear filtering
+    vec4 atlasSample = texture(uCascadeAtlases[level], uv);
+    
+    return atlasSample.rgb;
+}
+
+struct SurfaceChartHit {
+    int chartId;
+    vec2 uv;
+    bool valid;
+};
+
+struct SurfaceChartLayout {
+    float chartX;
+    float chartW;
+    vec2 gRes;
+    bool valid;
+};
+
+SurfaceChartLayout surfaceChartLayout(int chartId);
+
+float surfaceRemap01(float value, float lo, float hi) {
+    return clamp((value - lo) / max(hi - lo, 1e-5), 0.0, 1.0);
+}
+
+SurfaceChartHit classifyBoxSurface(vec3 p, vec3 bmin, vec3 bmax, int baseChartId, float eps) {
+    SurfaceChartHit h;
+    h.chartId = 0;
+    h.uv = vec2(0.0);
+    h.valid = false;
+
+    bool inX = (p.x >= bmin.x - eps && p.x <= bmax.x + eps);
+    bool inY = (p.y >= bmin.y - eps && p.y <= bmax.y + eps);
+    bool inZ = (p.z >= bmin.z - eps && p.z <= bmax.z + eps);
+    if (!((inX && inY) || (inX && inZ) || (inY && inZ))) {
+        return h;
+    }
+
+    float dBottom = abs(p.y - bmin.y);
+    float dTop    = abs(p.y - bmax.y);
+    float dLeft   = abs(p.x - bmin.x);
+    float dRight  = abs(p.x - bmax.x);
+    float dFront  = abs(p.z - bmin.z);
+    float dBack   = abs(p.z - bmax.z);
+
+    float best = dBottom;
+    h.chartId = baseChartId;
+    h.uv = vec2(surfaceRemap01(p.x, bmin.x, bmax.x), surfaceRemap01(p.z, bmin.z, bmax.z));
+
+    if (dTop < best) {
+        best = dTop;
+        h.chartId = baseChartId + 1;
+        h.uv = vec2(surfaceRemap01(p.x, bmin.x, bmax.x), surfaceRemap01(p.z, bmin.z, bmax.z));
+    }
+    if (dLeft < best) {
+        best = dLeft;
+        h.chartId = baseChartId + 2;
+        h.uv = vec2(surfaceRemap01(p.y, bmin.y, bmax.y), surfaceRemap01(p.z, bmin.z, bmax.z));
+    }
+    if (dRight < best) {
+        best = dRight;
+        h.chartId = baseChartId + 3;
+        h.uv = vec2(surfaceRemap01(p.y, bmin.y, bmax.y), surfaceRemap01(p.z, bmin.z, bmax.z));
+    }
+    if (dFront < best) {
+        best = dFront;
+        h.chartId = baseChartId + 4;
+        h.uv = vec2(surfaceRemap01(p.x, bmin.x, bmax.x), surfaceRemap01(p.y, bmin.y, bmax.y));
+    }
+    if (dBack < best) {
+        best = dBack;
+        h.chartId = baseChartId + 5;
+        h.uv = vec2(surfaceRemap01(p.x, bmin.x, bmax.x), surfaceRemap01(p.y, bmin.y, bmax.y));
+    }
+
+    h.valid = (best <= eps);
+    return h;
+}
+
+SurfaceChartHit classifyRoomSurface(vec3 p, bool includeFront, float eps) {
+    SurfaceChartHit h;
+    h.chartId = 0;
+    h.uv = vec2(0.0);
+    h.valid = false;
+
+    float dFloor = abs(p.y - uSceneBoundsMin.y);
+    float dCeil  = abs(p.y - uSceneBoundsMax.y);
+    float dLeft  = abs(p.x - uSceneBoundsMin.x);
+    float dRight = abs(p.x - uSceneBoundsMax.x);
+    float dBack  = abs(p.z - uSceneBoundsMin.z);
+    float dFront = abs(p.z - uSceneBoundsMax.z);
+
+    float best = dFloor;
+    h.chartId = 1;
+    h.uv = vec2(surfaceRemap01(p.x, uSceneBoundsMin.x, uSceneBoundsMax.x),
+                surfaceRemap01(p.z, uSceneBoundsMin.z, uSceneBoundsMax.z));
+
+    if (dCeil < best) {
+        best = dCeil;
+        h.chartId = 2;
+        h.uv = vec2(surfaceRemap01(p.x, uSceneBoundsMin.x, uSceneBoundsMax.x),
+                    surfaceRemap01(p.z, uSceneBoundsMin.z, uSceneBoundsMax.z));
+    }
+    if (dLeft < best) {
+        best = dLeft;
+        h.chartId = 3;
+        h.uv = vec2(surfaceRemap01(p.y, uSceneBoundsMin.y, uSceneBoundsMax.y),
+                    surfaceRemap01(p.z, uSceneBoundsMin.z, uSceneBoundsMax.z));
+    }
+    if (dRight < best) {
+        best = dRight;
+        h.chartId = 4;
+        h.uv = vec2(surfaceRemap01(p.y, uSceneBoundsMin.y, uSceneBoundsMax.y),
+                    surfaceRemap01(p.z, uSceneBoundsMin.z, uSceneBoundsMax.z));
+    }
+    if (dBack < best) {
+        best = dBack;
+        h.chartId = 5;
+        h.uv = vec2(surfaceRemap01(p.y, uSceneBoundsMin.y, uSceneBoundsMax.y),
+                    surfaceRemap01(p.x, uSceneBoundsMin.x, uSceneBoundsMax.x));
+    }
+    if (includeFront && dFront < best) {
+        best = dFront;
+        h.chartId = 6;
+        h.uv = vec2(surfaceRemap01(p.y, uSceneBoundsMin.y, uSceneBoundsMax.y),
+                    surfaceRemap01(p.x, uSceneBoundsMin.x, uSceneBoundsMax.x));
+    }
+
+    h.valid = (best <= eps);
+    return h;
+}
+
+SurfaceChartHit classifySurfaceChart(vec3 p) {
+    SurfaceChartHit h;
+    h.chartId = 0;
+    h.uv = vec2(0.0);
+    h.valid = false;
+
+    if (uSurfaceSceneType == 0) {
+        return h;
+    }
+
+    float eps = 0.06;
+    SurfaceChartHit shortBox = classifyBoxSurface(p, uShortBoxMin, uShortBoxMax, 7, eps);
+    SurfaceChartHit tallBox = classifyBoxSurface(p, uTallBoxMin, uTallBoxMax, 13, eps);
+    if (shortBox.valid) return shortBox;
+    if (tallBox.valid) return tallBox;
+
+    return classifyRoomSurface(p, uSurfaceSceneType == 2, eps);
+}
+
+vec2 surfaceChartAtlasUV(SurfaceChartHit h, int cascadeLevel) {
+    SurfaceChartLayout chartLayout = surfaceChartLayout(h.chartId);
+    if (!chartLayout.valid) return vec2(0.0);
+
+    float bandY = float(clamp(cascadeLevel, 0, 4)) * 256.0;
+    vec2 px = vec2(chartLayout.chartX + h.uv.x * chartLayout.chartW, bandY + h.uv.y * 256.0);
+    return (px + vec2(0.5)) / vec2(2560.0, 1280.0);
+}
+
+SurfaceChartLayout surfaceChartLayout(int chartId) {
+    SurfaceChartLayout chartLayout;
+    chartLayout.chartX = 0.0;
+    chartLayout.chartW = 128.0;
+    chartLayout.gRes = vec2(128.0, 256.0);
+    chartLayout.valid = true;
+
+    if (chartId == 1) {
+        chartLayout.chartX = 0.0;
+        chartLayout.chartW = 256.0;
+        chartLayout.gRes = vec2(256.0, 256.0);
+    } else if (chartId == 2) {
+        chartLayout.chartX = 256.0;
+        chartLayout.chartW = 256.0;
+        chartLayout.gRes = vec2(256.0, 256.0);
+    } else if (chartId >= 3 && chartId <= 6) {
+        chartLayout.chartX = 512.0 + float(chartId - 3) * 128.0;
+    } else if (chartId >= 7 && chartId <= 12) {
+        chartLayout.chartX = 1024.0 + float(chartId - 7) * 128.0;
+    } else if (chartId >= 13 && chartId <= 18) {
+        chartLayout.chartX = 1792.0 + float(chartId - 13) * 128.0;
+    } else {
+        chartLayout.valid = false;
+    }
+
+    return chartLayout;
+}
+
+vec3 sampleSurfaceC0ProbeAverage(SurfaceChartHit h) {
+    SurfaceChartLayout chartLayout = surfaceChartLayout(h.chartId);
+    if (!chartLayout.valid) return vec3(0.0);
+
+    // C0 uses probeSize=2 in surface_radiance_debug.comp:
+    // each chart is packed as a 2x2 direction tile grid, with each tile holding
+    // one texel per chart-space probe. Average the four direction bins for the
+    // nearest probe as the first measurable raymarch consumer.
+    const float probeSize = 2.0;
+    vec2 probePositions = chartLayout.gRes / probeSize;
+    vec2 probeCoord = clamp(floor(h.uv * probePositions),
+                            vec2(0.0), probePositions - vec2(1.0));
+
+    vec3 sumRadiance = vec3(0.0);
+    float weight = 0.0;
+    for (int dy = 0; dy < 2; ++dy) {
+        for (int dx = 0; dx < 2; ++dx) {
+            vec2 localPx = probeCoord + vec2(float(dx), float(dy)) * probePositions;
+            vec2 atlasPx = vec2(chartLayout.chartX, 0.0) + localPx + vec2(0.5);
+            vec2 atlasUV = atlasPx / vec2(2560.0, 1280.0);
+            sumRadiance += sanitizeRadiance(texture(uCascadeAtlases[0], atlasUV).rgb);
+            weight += 1.0;
+        }
+    }
+
+    return sumRadiance / max(weight, 1.0);
+}
+
+/**
+ * @brief Main surface RC GI sampling function
+ * @param hitPos Hit position in world space
+ * @param normal Surface normal at hit point
+ * @param cameraPos Camera position for LOD selection
+ * @return Indirect lighting from surface RC cascades
+ */
+vec3 sampleSurfaceRC_GI(vec3 hitPos, vec3 normal, vec3 cameraPos) {
+    if (!uEnableSurfaceRC) return vec3(0.0);
+
+    SurfaceChartHit h = classifySurfaceChart(hitPos);
+    if (!h.valid) return vec3(0.0);
+
+    // First Phase 2F binding gate: consume C0's probe+direction packed surface
+    // atlas. Higher-cascade chart-space sampling remains a quality follow-up.
+    vec3 gi = sampleSurfaceC0ProbeAverage(h);
+    return min(gi, vec3(10.0));
+}
+
+// =============================================================================
 // Main Fragment Shader
 // =============================================================================
 
@@ -819,6 +1129,28 @@ void main() {
                 : 0.0;
             float diff         = max(dot(normal, lightDir), 0.0) * (1.0 - shadow);
             vec3  directColor  = albedo * (diff * uLightColor + vec3(uAmbientCompositeStrength));
+            
+            // Phase 2F: Sample surface RC GI
+            vec3 surfaceGI = sanitizeRadiance(sampleSurfaceRC_GI(pos, normal, uCameraPos));
+            vec3 surfaceIndirect = sanitizeRadiance(albedo * surfaceGI * uSurfaceGIScale);
+            if (uRenderMode == 22) {
+                SurfaceChartHit h = classifySurfaceChart(pos);
+                if (!h.valid) {
+                    fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                    return;
+                }
+                fragColor = vec4(h.uv, float(h.chartId) / 18.0, 1.0);
+                return;
+            }
+            if (uRenderMode == 23) {
+                fragColor = vec4(clamp(surfaceGI * max(uSurfaceGIScale, 1.0), 0.0, 1.0), 1.0);
+                return;
+            }
+            if (uRenderMode == 21) {
+                fragColor = vec4(clamp(surfaceIndirect, 0.0, 1.0), 1.0);
+                return;
+            }
+            
             vec3  indirectColor = vec3(0.0);
             // Step 11 (codex 07 F3): hoist `indirect` to outer scope so the
             // heatmap modes (12 = raw GI) can read the un-albedo-modulated
@@ -891,6 +1223,52 @@ void main() {
                     float w = clamp(uHybridBlendWeight, 0.0, 1.0);
                     indirectColor = mix(correction, indirectColor, max(0.0, 1.0 - w));
                 }
+            }
+
+            vec3 finalIndirectForComposite = indirectColor;
+
+            // Step 10 (codex 06 F2 + F8): GI diagnostic modes. Mode 9 strips the
+            // hidden vec3(0.05) ambient floor; mode 10 shows ONLY that floor.
+            // Mode 4 (existing) = Mode 9 + Mode 10. Comparing 6 vs 10 reveals
+            // whether the ambient floor is washing out cascade GI bounce.
+            vec3 modeColor;
+            if      (uRenderMode == 9)  modeColor = albedo * diff * uLightColor;
+            else if (uRenderMode == 10) modeColor = albedo * vec3(uAmbientCompositeStrength);
+            // 2026-05-19 Mode 17: GI-only isolated. Pure indirect bounce from cascade
+            // atlas; NO direct light, NO ambient floor, NO shadow. Toggle "Temporal
+            // multi-bounce (Phase MB)" in Hierarchy & Merge tab — image visibly
+            // brightens with MB ON because multi-bounce adds to the atlas. Differs
+            // from mode 6 which still composites direct via uSeparateGI path; mode 17
+            // is the pure-GI viewer for MB A/B comparisons.
+            else if (uRenderMode == 17) modeColor = indirectColor;
+            else {
+                // Phase 2F: Blend surface RC GI with volumetric RC
+                vec3 combinedIndirect = indirectColor;
+                
+                if (uEnableSurfaceRC) {
+                    if (uBlendWithVolumetric) {
+                        // Hybrid mode: blend surface RC and volumetric RC
+                        combinedIndirect = mix(surfaceIndirect, indirectColor, uBlendFactor);
+                    } else {
+                        // Pure surface RC mode
+                        combinedIndirect = surfaceIndirect;
+                    }
+                }
+                combinedIndirect = sanitizeRadiance(combinedIndirect);
+                finalIndirectForComposite = combinedIndirect;
+                
+                modeColor = directColor + combinedIndirect;
+            }
+
+            // uSeparateGI=1: output linear direct + linear indirect separately for the
+            // bilateral GI blur composite pass. Tone mapping moves to gi_blur.frag.
+            // Step 10 (codex 06 F3): gate on uRenderMode == 0 so the new diagnostic
+            // modes (9, 10) always reach the composite below; the GI-blur split path
+            // is only meaningful for the default render mode.
+            if (uSeparateGI != 0 && (uRenderMode == 0 || uRenderMode == 17)) {
+                fragColor = vec4((uRenderMode == 17) ? indirectColor : directColor, 1.0);
+                fragGI    = vec4((uRenderMode == 17) ? indirectColor : finalIndirectForComposite, 1.0);
+                return;
             }
 
             // Step 11 (codex 07 F3): GI heatmaps. Inserted AFTER the main-path
@@ -1014,35 +1392,9 @@ void main() {
                 return;
             }
 
-            // uSeparateGI=1: output linear direct + linear indirect separately for the
-            // bilateral GI blur composite pass. Tone mapping moves to gi_blur.frag.
-            // Step 10 (codex 06 F3): gate on uRenderMode == 0 so the new diagnostic
-            // modes (9, 10) always reach the composite below; the GI-blur split path
-            // is only meaningful for the default render mode.
-            if (uSeparateGI != 0 && (uRenderMode == 0 || uRenderMode == 17)) {
-                fragColor = vec4((uRenderMode == 17) ? indirectColor : directColor, 1.0);
-                fragGI    = vec4(indirectColor, 1.0);
-                return;
-            }
-
-            // Step 10 (codex 06 F2 + F8): GI diagnostic modes. Mode 9 strips the
-            // hidden vec3(0.05) ambient floor; mode 10 shows ONLY that floor.
-            // Mode 4 (existing) = Mode 9 + Mode 10. Comparing 6 vs 10 reveals
-            // whether the ambient floor is washing out cascade GI bounce.
-            vec3 modeColor;
-            if      (uRenderMode == 9)  modeColor = albedo * diff * uLightColor;
-            else if (uRenderMode == 10) modeColor = albedo * vec3(uAmbientCompositeStrength);
-            // 2026-05-19 Mode 17: GI-only isolated. Pure indirect bounce from cascade
-            // atlas; NO direct light, NO ambient floor, NO shadow. Toggle "Temporal
-            // multi-bounce (Phase MB)" in Hierarchy & Merge tab — image visibly
-            // brightens with MB ON because multi-bounce adds to the atlas. Differs
-            // from mode 6 which still composites direct via uSeparateGI path; mode 17
-            // is the pure-GI viewer for MB A/B comparisons.
-            else if (uRenderMode == 17) modeColor = indirectColor;
-            else                        modeColor = directColor + indirectColor;
-
             // Normal path: composite here, tone map after the loop.
             float alpha = 1.0;
+            modeColor = sanitizeRadiance(modeColor);
             accumulatedColor += modeColor * alpha * (1.0 - accumulatedAlpha);
             accumulatedAlpha += alpha * (1.0 - accumulatedAlpha);
 

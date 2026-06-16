@@ -58,6 +58,8 @@ endif()
 set(SOURCES_3D
     src/main3d.cpp
     src/demo3d.cpp
+    src/surface_rc.cpp
+    src/validation_helpers.cpp
     src/gl_helpers.cpp
     src/analytic_sdf.cpp  # Analytic SDF primitives for Phase 0
     src/rdoc_helper.cpp   # Phase 6b: RenderDoc DLL loading (isolated from raylib.h)
@@ -67,6 +69,7 @@ set(SOURCES_3D
 
 set(HEADERS_3D
     src/demo3d.h
+    src/surface_rc.h
     src/analytic_sdf.h  # Analytic SDF header
     include/gl_helpers.h
 )
