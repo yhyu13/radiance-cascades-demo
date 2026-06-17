@@ -7150,16 +7150,16 @@ bool Demo3D::dumpSurfaceC0ProducerJson(const std::string& path) const {
                 hitNdotlSum += ndotl;
                 hitVisibilitySum += visibility;
                 if (ndotl > 1e-6f) ++hitNdotlPositive;
-                if (visibility > 0.5f) ++hitVisibilityPositive;
-                if (ndotl > 1e-6f && visibility > 0.5f) ++hitLitVisible;
+                if (visibility > 1e-6f) ++hitVisibilityPositive;
+                if (ndotl > 1e-6f && visibility > 1e-6f) ++hitLitVisible;
             }
             if (isValid) {
                 ++chartValid;
                 ndotlSum += ndotl;
                 visibilitySum += visibility;
                 if (ndotl > 1e-6f) ++ndotlPositive;
-                if (visibility > 0.5f) ++visibilityPositive;
-                if (ndotl > 1e-6f && visibility > 0.5f) ++litVisible;
+                if (visibility > 1e-6f) ++visibilityPositive;
+                if (ndotl > 1e-6f && visibility > 1e-6f) ++litVisible;
             }
 
             const float lum = luma(direct[o + 0], direct[o + 1], direct[o + 2]);
@@ -7188,10 +7188,10 @@ bool Demo3D::dumpSurfaceC0ProducerJson(const std::string& path) const {
                 ++c.pixels;
                 if (isHit) ++c.traceHit;
                 if (isValid) ++c.chartValid;
-                if (isValid && ndotl > 1e-6f && visibility > 0.5f) ++c.litVisible;
+                if (isValid && ndotl > 1e-6f && visibility > 1e-6f) ++c.litVisible;
                 if (isHit && ndotl > 1e-6f) ++c.hitNdotlPositive;
-                if (isHit && visibility > 0.5f) ++c.hitVisibilityPositive;
-                if (isHit && ndotl > 1e-6f && visibility > 0.5f) ++c.hitLitVisible;
+                if (isHit && visibility > 1e-6f) ++c.hitVisibilityPositive;
+                if (isHit && ndotl > 1e-6f && visibility > 1e-6f) ++c.hitLitVisible;
                 c.directLumaSumAll += lum;
                 c.directMaxLuma = std::max(c.directMaxLuma, lum);
                 if (direct[o + 3] > 0.5f) {

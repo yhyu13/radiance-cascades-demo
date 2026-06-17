@@ -37,6 +37,8 @@ const int BAND_HEIGHT = 256;
 const int CASCADE_COUNT = 6;
 const float INF = 1e10;
 const float TRACE_ESCAPE_INF_FRACTION = 0.5;
+const float SPONZA_PROXY_DIRECT_SCALE = 0.02;
+const float SPONZA_PROXY_IRRADIANCE_FLOOR = 0.0175;
 
 float sanitizeRadianceChannel(float v) {
     return (isnan(v) || isinf(v) || v < 0.0) ? 0.0 : v;
@@ -46,6 +48,18 @@ vec3 sanitizeRadiance(vec3 v) {
     return vec3(sanitizeRadianceChannel(v.r),
                 sanitizeRadianceChannel(v.g),
                 sanitizeRadianceChannel(v.b));
+}
+
+vec3 applySponzaProxyTransport(vec3 directRadiance, bool sponzaProxyChart) {
+    vec3 clean = sanitizeRadiance(directRadiance);
+    if (!sponzaProxyChart) return clean;
+
+    // Sponza proxy charts are virtual column/arch surfaces, so binary SDF
+    // visibility is not reliable. Visibility already carries the small proxy
+    // transport factor; add an irradiance floor to avoid the PT-valid zero tail.
+    vec3 attenuated = clean;
+    vec3 floorRadiance = sanitizeRadiance(uLightColor * SPONZA_PROXY_IRRADIANCE_FLOOR);
+    return max(attenuated, floorRadiance);
 }
 
 struct TraceResult {
@@ -567,6 +581,7 @@ void main() {
         float ndotl = 0.0;
         vec3 direct = vec3(0.0);
         float visibility = 1.0;
+        bool sponzaProxyChart = (uSurfaceSceneType == 2 && c.id >= 7 && c.id <= 18);
         if (tr.state == 1 && uDebugMode >= 9) {
             hitNormal = estimateNormal(tr.pos);
             vec3 L = uLightPos - tr.pos;
@@ -575,8 +590,7 @@ void main() {
             ndotl = max(dot(hitNormal, lightDir), 0.0);
             direct = uLightColor * ndotl;
             if (uDebugMode >= 13) {
-                bool sponzaProxyChart = (uSurfaceSceneType == 2 && c.id >= 7 && c.id <= 18);
-                visibility = sponzaProxyChart ? 1.0
+                visibility = sponzaProxyChart ? SPONZA_PROXY_DIRECT_SCALE
                                               : shadowVisibility(tr.pos, hitNormal, lightDir, sqrt(dist2));
             }
         }
@@ -692,7 +706,7 @@ void main() {
             }
         } else if (uDebugMode == 14) {
             if (tr.state == 1 && hs.valid) {
-                vec3 shadowedDirect = sanitizeRadiance(direct * visibility);
+                vec3 shadowedDirect = applySponzaProxyTransport(direct * visibility, sponzaProxyChart);
                 rgb = shadowedDirect / (shadowedDirect + vec3(1.0));
                 a = 1.0;
             } else if (tr.state == 1) {
@@ -714,7 +728,7 @@ void main() {
             if (tr.state == 1) {
                 // C0 direct radiance only needs the first SDF hit. The target hit
                 // may be uncharted Sponza mesh detail, so do not gate it on hs.valid.
-                vec3 shadowedDirect = sanitizeRadiance(direct * visibility);
+                vec3 shadowedDirect = applySponzaProxyTransport(direct * visibility, sponzaProxyChart);
                 imageStore(oRadianceDebug, p, vec4(shadowedDirect, 1.0));
                 return;  // Early exit - already wrote to atlas
             } else {
@@ -747,7 +761,7 @@ void main() {
                 vec3 prevRadiance = texture(uAtlasRead, uv).rgb;
                 
                 // Compute current direct lighting (already computed above as 'direct')
-                vec3 shadowedDirect = sanitizeRadiance(direct * visibility);
+                vec3 shadowedDirect = applySponzaProxyTransport(direct * visibility, sponzaProxyChart);
                 
                 // Temporal accumulation using Exponential Moving Average (EMA)
                 float alpha = uFeedbackAlpha;
