@@ -144,6 +144,8 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     VERSION_MINOR=${PROJECT_VERSION_MINOR}
     VERSION_PATCH=${PROJECT_VERSION_PATCH}
     BUILD_3D_VERSION
+    RC3D_SOURCE_ROOT="${PROJECT_SOURCE_DIR}"
+    RC3D_SHADER_ROOT="${PROJECT_SOURCE_DIR}/res/shaders"
     $<$<CONFIG:Debug>:DEBUG>
     $<$<CONFIG:Debug>:GL_DEBUG>
 )
@@ -166,15 +168,17 @@ else()
     set_source_files_properties(lib/tinyexr/miniz.c PROPERTIES COMPILE_FLAGS "-w")
 endif()
 
-# Copy shaders to build directory
-file(COPY ${PROJECT_SOURCE_DIR}/res/shaders 
-     DESTINATION ${PROJECT_BINARY_DIR}/res)
-
-# Also copy from parent res directory if needed
-if(EXISTS ${PROJECT_SOURCE_DIR}/../res/shaders)
-    file(COPY ${PROJECT_SOURCE_DIR}/../res/shaders 
-         DESTINATION ${PROJECT_BINARY_DIR}/res)
-endif()
+# Developer and validation runs load shaders directly from RC3D_SHADER_ROOT.
+# Keep a synchronized build-tree copy for packaging and manual inspection, but
+# never mix the parent 2D shaders into the 3D runtime namespace.
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${PROJECT_BINARY_DIR}/res/shaders"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/res"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${PROJECT_SOURCE_DIR}/res/shaders"
+            "${PROJECT_BINARY_DIR}/res/shaders"
+    COMMENT "Synchronizing 3D shader resources"
+)
 
 # =============================================================================
 # Build Configuration

@@ -38,6 +38,9 @@ tools/frame_*.md
 **/tools/__pycache__/
 **/tools/.env
 
+# Phase 0 reproducible baseline scratch runs
+/3d/tools/10_refactor/phase0_baseline/runs/
+
 # IDE and agent config
 .agent/
 .claude/

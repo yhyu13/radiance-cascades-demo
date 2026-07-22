@@ -134,15 +134,20 @@ Cascade 4: 32³ probes, 32.0 unit cells (coarsest, far-field)
 
 ### Build Commands
 
-```bash
-cd build
-cmake ..
-make -j4
-cd ..
-./radiance_cascades_3d
+```powershell
+.\build.ps1
+.\build\RadianceCascades3D.exe
 ```
 
-**Note**: Must run from project root directory to load shaders from `3d/res/shaders/` correctly.
+Runtime shaders are loaded from the canonical source directory configured by CMake. The build also synchronizes a packaging copy under `build/res/shaders`.
+
+### Phase 0 Baseline
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\10_refactor\phase0_baseline\run_phase0_baseline.ps1
+```
+
+This command builds Release, captures a deterministic legacy-volumetric smoke frame, verifies shader compile/hash integrity, and writes a machine-readable G0 report under `tools/10_refactor/phase0_baseline/runs/`. This is baseline evidence only and does not claim surface radiance-cascade parity.
 
 ## Usage
 

@@ -18,10 +18,42 @@
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace gl {
+
+struct ShaderSourceRecord {
+    std::string logicalName;
+    std::string resolvedPath;
+    std::string sourceHash;
+    bool compiled = false;
+};
+
+/** Configure the one canonical directory used for all runtime shader reads. */
+void setShaderRoot(const std::string& root);
+
+/** Return the canonical runtime shader directory. */
+const std::string& getShaderRoot();
+
+/** Resolve one shader filename against the canonical runtime directory. */
+std::string resolveShaderPath(const std::string& shaderName);
+
+/** Return the SHA-256 of a file, or an empty string when it cannot be read. */
+std::string sha256File(const std::string& filepath);
+
+/** Clear and inspect records for the exact shader files supplied to OpenGL. */
+void clearShaderSourceRecords();
+const std::vector<ShaderSourceRecord>& getShaderSourceRecords();
+
+/** KHR_debug helpers that are no-ops when the functions are unavailable. */
+void labelObject(GLenum identifier, GLuint object, const std::string& label);
+void pushDebugGroup(const char* label);
+void popDebugGroup();
+
+/** True only when the named program passed OpenGL program validation. */
+bool validateProgram(GLuint program, const std::string& label);
 
 // =============================================================================
 // 3D Texture Management
@@ -158,7 +190,7 @@ bool checkFramebufferComplete(GLuint framebuffer);
  *   GLuint shader = loadComputeShader("res/shaders/voxelize.comp");
  *   if (shader == 0) { /* handle error *\/ }
  */
-GLuint loadComputeShader(const std::string& filepath);
+GLuint loadComputeShader(const std::string& filepath, const std::string& logicalName = {});
 
 /**
  * @brief Create compute shader program from source
@@ -168,7 +200,7 @@ GLuint loadComputeShader(const std::string& filepath);
  * @param shaderSource GLSL source code
  * @return GLuint Program object ID (0 on failure)
  */
-GLuint createComputeProgram(const std::string& shaderSource);
+GLuint createComputeProgram(const std::string& shaderSource, const std::string& sourceLabel = {});
 
 /**
  * @brief Compile a single shader stage (vertex, fragment, etc.)
@@ -180,7 +212,7 @@ GLuint createComputeProgram(const std::string& shaderSource);
  * @param filepath Path to shader file (.vert, .frag, etc.)
  * @return GLuint Shader object ID (0 on failure)
  */
-GLuint compileShader(GLenum type, const std::string& filepath);
+GLuint compileShader(GLenum type, const std::string& filepath, const std::string& logicalName = {});
 
 /**
  * @brief Dispatch compute shader with work group dimensions
@@ -346,6 +378,12 @@ void enableDebugOutput();
  * @return std::string Human-readable name
  */
 std::string getEnumString(GLenum enumValue);
+
+/** Increment the process-wide OpenGL debug error count. */
+void noteDebugError();
+
+/** Number of GL errors observed by helpers or the debug callback. */
+uint64_t getDebugErrorCount();
 
 /**
  * @brief Check for OpenGL errors

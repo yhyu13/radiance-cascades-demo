@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <vector>
 
@@ -59,6 +60,141 @@ static std::vector<glm::ivec3> parseAtlasCells(const std::string& text) {
             cells.emplace_back(x, y, z);
     }
     return cells;
+}
+
+static std::string escapeJson(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (const char c : value) {
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '"': out += "\\\""; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out += c; break;
+        }
+    }
+    return out;
+}
+
+static std::string glString(GLenum name) {
+    const GLubyte* value = glGetString(name);
+    return value ? reinterpret_cast<const char*>(value) : "unavailable";
+}
+
+static bool drainGLErrors(const char* stage) {
+    bool hadError = false;
+    for (GLenum error = glGetError(); error != GL_NO_ERROR; error = glGetError()) {
+        hadError = true;
+        gl::noteDebugError();
+        std::cerr << "[PHASE0] OpenGL error at " << stage << ": 0x"
+                  << std::hex << error << std::dec << "\n";
+    }
+    return hadError;
+}
+
+static bool writePhase0RuntimeReport(const std::string& path, const Demo3D& demo,
+                                     const std::vector<std::string>& arguments,
+                                     const std::vector<std::string>& unknownArguments,
+                                     int frameCount, bool artifactFailure,
+                                     bool allocationGlError, bool firstFrameGlError,
+                                     bool sceneLoadFailure) {
+    if (path.empty())
+        return false;
+
+    const std::filesystem::path reportPath(path);
+    std::error_code ec;
+    if (reportPath.has_parent_path())
+        std::filesystem::create_directories(reportPath.parent_path(), ec);
+    if (ec) {
+        std::cerr << "[PHASE0] Could not create report directory: " << ec.message() << "\n";
+        return false;
+    }
+
+    const auto& shaderRecords = gl::getShaderSourceRecords();
+    bool shaderHashesMatch = !shaderRecords.empty();
+    for (const auto& record : shaderRecords) {
+        if (record.sourceHash.empty() || gl::sha256File(record.resolvedPath) != record.sourceHash)
+            shaderHashesMatch = false;
+    }
+
+    const bool selectedShadersOk = demo.selectedBackendShadersOk();
+    const bool success = unknownArguments.empty() && !artifactFailure &&
+                         !allocationGlError && !firstFrameGlError &&
+                         !sceneLoadFailure && selectedShadersOk && shaderHashesMatch;
+
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) {
+        std::cerr << "[PHASE0] Could not write runtime report: " << path << "\n";
+        return false;
+    }
+
+    out << "{\n";
+    out << "  \"schema_version\": \"phase0-runtime-v1\",\n";
+    out << "  \"gate\": \"G0\",\n";
+    out << "  \"result\": \"" << (success ? "PASS" : "FAIL") << "\",\n";
+    out << "  \"source_root\": \"" << escapeJson(RC3D_SOURCE_ROOT) << "\",\n";
+    out << "  \"working_directory\": \""
+        << escapeJson(std::filesystem::current_path().string()) << "\",\n";
+    out << "  \"arguments\": [";
+    for (size_t i = 0; i < arguments.size(); ++i) {
+        if (i > 0) out << ", ";
+        out << "\"" << escapeJson(arguments[i]) << "\"";
+    }
+    out << "],\n";
+    out << "  \"unknown_arguments\": [";
+    for (size_t i = 0; i < unknownArguments.size(); ++i) {
+        if (i > 0) out << ", ";
+        out << "\"" << escapeJson(unknownArguments[i]) << "\"";
+    }
+    out << "],\n";
+    out << "  \"selection\": {\n";
+    out << "    \"backend\": \"" << escapeJson(demo.getLegacyBackendName()) << "\",\n";
+    out << "    \"render_view\": \"" << escapeJson(demo.getRenderViewName()) << "\",\n";
+    out << "    \"render_mode\": " << demo.getRenderMode() << ",\n";
+    out << "    \"scene\": \"" << escapeJson(demo.getSceneLabel()) << "\",\n";
+    out << "    \"scene_revision\": " << demo.getSceneRevision() << ",\n";
+    out << "    \"shader_revision\": " << demo.getShaderRevision() << "\n";
+    out << "  },\n";
+    out << "  \"gpu\": {\n";
+    out << "    \"vendor\": \"" << escapeJson(glString(GL_VENDOR)) << "\",\n";
+    out << "    \"renderer\": \"" << escapeJson(glString(GL_RENDERER)) << "\",\n";
+    out << "    \"opengl_version\": \"" << escapeJson(glString(GL_VERSION)) << "\",\n";
+    out << "    \"glsl_version\": \"" << escapeJson(glString(GL_SHADING_LANGUAGE_VERSION)) << "\"\n";
+    out << "  },\n";
+    out << "  \"runtime\": {\n";
+    out << "    \"frames\": " << frameCount << ",\n";
+    out << "    \"artifact_failure\": " << (artifactFailure ? "true" : "false") << ",\n";
+    out << "    \"scene_load_failure\": " << (sceneLoadFailure ? "true" : "false") << ",\n";
+    out << "    \"allocation_gl_error\": " << (allocationGlError ? "true" : "false") << ",\n";
+    out << "    \"first_frame_gl_error\": " << (firstFrameGlError ? "true" : "false") << "\n";
+    out << "  },\n";
+    out << "  \"shaders\": [\n";
+    for (size_t i = 0; i < shaderRecords.size(); ++i) {
+        const auto& record = shaderRecords[i];
+        const std::string runtimeHash = gl::sha256File(record.resolvedPath);
+        out << "    {\"name\": \"" << escapeJson(record.logicalName)
+            << "\", \"path\": \"" << escapeJson(record.resolvedPath)
+            << "\", \"compiled\": " << (record.compiled ? "true" : "false")
+            << ", \"compiled_sha256\": \"" << record.sourceHash
+            << "\", \"runtime_sha256\": \"" << runtimeHash
+            << "\", \"hash_match\": "
+            << (!record.sourceHash.empty() && runtimeHash == record.sourceHash ? "true" : "false") << "}";
+        if (i + 1 < shaderRecords.size()) out << ",";
+        out << "\n";
+    }
+    out << "  ],\n";
+    out << "  \"gates\": {\n";
+    out << "    \"required_shaders_compile_and_link\": \"" << (selectedShadersOk ? "PASS" : "FAIL") << "\",\n";
+    out << "    \"runtime_hashes_match_compiled_sources\": \"" << (shaderHashesMatch ? "PASS" : "FAIL") << "\",\n";
+    out << "    \"no_gl_error_allocation_or_first_frame\": \""
+        << (!allocationGlError && !firstFrameGlError ? "PASS" : "FAIL") << "\",\n";
+    out << "    \"backend_and_scene_revision_logged\": \"PASS\",\n";
+    out << "    \"requested_artifacts_written\": \"" << (!artifactFailure ? "PASS" : "FAIL") << "\"\n";
+    out << "  }\n";
+    out << "}\n";
+    return out.good() && success;
 }
 
 // =============================================================================
@@ -105,6 +241,7 @@ bool g_cacheHitTest = false;
 // codex 04 F2 verify: toggle GPU SDF off after load to exercise the
 // CPU-mirror-preserved transition.
 bool g_toggleGpuSdfOffAfterLoad = false;
+bool g_phase0Validation = false;
 // 2026-05-28 Stage 11c: remember CLI --light-direction= so it can be
 // re-applied after loadOBJMesh clobbers useDirectionalLight from the scene kind.
 bool g_cliLightDirSet = false;
@@ -182,6 +319,11 @@ int main(int argc, char* argv[]) {
      * @return Exit code (0 = success)
      */
     
+    std::vector<std::string> runtimeArguments;
+    runtimeArguments.reserve(static_cast<size_t>(argc));
+    for (int i = 0; i < argc; ++i)
+        runtimeArguments.emplace_back(argv[i]);
+
     // Step 1: Verify running from correct directory, auto-fix if needed
     if (!DirectoryExists("res")) {
         // Try to find res/ directory by going up one level (common when running from build/)
@@ -225,6 +367,8 @@ int main(int argc, char* argv[]) {
     int wHeight = DEFAULT_HEIGHT;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
+        if (arg == "--phase0-baseline")
+            g_phase0Validation = true;
         if (arg.rfind("--window-size=", 0) == 0) {
             int w = 0, h = 0;
             if (std::sscanf(arg.substr(14).c_str(), "%d,%d", &w, &h) == 2 && w > 0 && h > 0) {
@@ -257,6 +401,7 @@ int main(int argc, char* argv[]) {
     
     // Step 5: Create demo instance
     std::cout << "[MAIN] Creating 3D demo instance..." << std::endl;
+    drainGLErrors("pre-demo cleanup");
     Demo3D* demo = new Demo3D();
 
     // --auto-analyze:  burst capture + AI analysis then exit
@@ -273,6 +418,14 @@ int main(int argc, char* argv[]) {
     std::string surfaceC0ProducerPath;
     bool        validateUVRoundTripRequested = false;
     bool        phase3ValidationFailed = false;
+    bool        phase0BaselineRequested = false;
+    bool        runtimeArtifactFailure = false;
+    bool        sceneLoadFailure = false;
+    bool        allocationGlError = false;
+    drainGLErrors("demo initialization");
+    bool        firstFrameGlError = false;
+    std::string phase0MetadataPath;
+    std::vector<std::string> unknownArguments;
     std::string phase3ValidationJsonPath = "tools/phase3_validation/uv_roundtrip_metrics.json";
     std::vector<glm::ivec3> atlasAttributionCells;
     // Continuous-shot capture inside a SINGLE session (critic 15 H2 / H3 follow-up):
@@ -308,6 +461,14 @@ int main(int argc, char* argv[]) {
         } else if (arg.rfind("--load-obj=", 0) == 0) {
             loadObjName = arg.substr(11);
             std::cout << "[MAIN] --load-obj=" << loadObjName << ": will load at startup.\n";
+        } else if (arg == "--phase0-baseline") {
+            phase0BaselineRequested = true;
+            std::cout << "[MAIN] --phase0-baseline: strict Phase 0 validation enabled.\n";
+        } else if (arg.rfind("--metadata-json=", 0) == 0) {
+            phase0MetadataPath = arg.substr(16);
+            std::cout << "[MAIN] --metadata-json=" << phase0MetadataPath << "\n";
+        } else if (arg.rfind("--window-size=", 0) == 0) {
+            // Parsed before window initialization.
         } else if (arg.rfind("--exit-frames=", 0) == 0) {
             exitAfterFrames = std::atoi(arg.substr(14).c_str());
             std::cout << "[MAIN] --exit-frames=" << exitAfterFrames << ": will quit after N frames.\n";
@@ -512,6 +673,10 @@ int main(int argc, char* argv[]) {
             int v = std::atoi(arg.substr(17).c_str());
             demo->setUseCascadeGI(v != 0);
             std::cout << "[MAIN] --use-cascade-gi=" << v << "\n";
+        } else if (arg.rfind("--use-gi-blur=", 0) == 0) {
+            int v = std::atoi(arg.substr(14).c_str());
+            demo->setUseGIBlur(v != 0);
+            std::cout << "[MAIN] --use-gi-blur=" << v << "\n";
         } else if (arg.rfind("--use-surface-rc=", 0) == 0) {
             int v = std::atoi(arg.substr(17).c_str());
             demo->setUseSurfaceRC(v != 0);
@@ -769,7 +934,23 @@ int main(int argc, char* argv[]) {
             measurementCameraToApply = std::atoi(arg.substr(21).c_str());
             std::cout << "[MAIN] --measurement-camera=" << measurementCameraToApply
                       << " (will apply after scene load)\n";
+        } else {
+            unknownArguments.push_back(arg);
+            std::cerr << "[MAIN] WARN: unknown argument: " << arg << "\n";
         }
+    }
+
+    if (phase0BaselineRequested) {
+        if (phase0MetadataPath.empty()) {
+            std::cerr << "[PHASE0] --metadata-json is required with --phase0-baseline.\n";
+            runtimeArtifactFailure = true;
+        }
+        if (!unknownArguments.empty()) {
+            std::cerr << "[PHASE0] Unknown arguments are fatal in strict validation mode.\n";
+            runtimeArtifactFailure = true;
+        }
+        if (exitAfterFrames <= 0)
+            exitAfterFrames = 2;
     }
 
     if (!loadObjName.empty()) {
@@ -788,6 +969,9 @@ int main(int argc, char* argv[]) {
         }
         if (!demo->loadOBJMesh(path)) {
             std::cerr << "[MAIN] --load-obj failed for " << path << "\n";
+            sceneLoadFailure = true;
+            if (phase0BaselineRequested)
+                exitAfterFrames = 1;
         }
         // Step 9 Phase 2 verify (--cache-hit-test): re-invoke the same load
         // immediately so the second call hits the cache populated by the first.
@@ -885,6 +1069,14 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    std::cout << "[BACKEND] name=" << demo->getLegacyBackendName()
+              << " view=" << demo->getRenderViewName()
+              << " mode=" << demo->getRenderMode()
+              << " scene=" << demo->getSceneLabel()
+              << " sceneRevision=" << demo->getSceneRevision()
+              << " shaderRevision=" << demo->getShaderRevision() << "\n";
+    const uint64_t glErrorsBeforeFirstFrame = gl::getDebugErrorCount();
+
     int frameCounter = 0;
 
     // Step 6: Main rendering loop
@@ -903,6 +1095,8 @@ int main(int argc, char* argv[]) {
 
         // Update simulation
         demo->update();
+        if (frameCounter == 0)
+            firstFrameGlError |= drainGLErrors("first-frame update");
 
         // codex 09 F4: capture --screenshot on the LAST frame, BEFORE the UI is
         // drawn, so the saved image is a clean 3D-only frame instead of having
@@ -918,6 +1112,8 @@ int main(int argc, char* argv[]) {
             BeginMode3D(demo->getRaylibCamera());
                 demo->render();
             EndMode3D();
+            if (frameCounter == 0)
+                firstFrameGlError |= drainGLErrors("first-frame render");
 
             // Phase 6a: capture after 3D, before ImGui (clean 3D-only frame)
             demo->takeScreenshot(/*launchAiAnalysis=*/true);
@@ -927,12 +1123,12 @@ int main(int argc, char* argv[]) {
                 if (demo->getExrCapture()) {
                     std::filesystem::path p(screenshotPath);
                     p.replace_extension();
-                    demo->dumpScreenshotEXRs(p.string());
+                    runtimeArtifactFailure |= !demo->dumpScreenshotEXRs(p.string());
                 }
                 if (!probeStatsPath.empty())
-                    demo->dumpProbeStatsJson(probeStatsPath);
+                    runtimeArtifactFailure |= !demo->dumpProbeStatsJson(probeStatsPath);
                 if (!surfaceC0ProducerPath.empty())
-                    demo->dumpSurfaceC0ProducerJson(surfaceC0ProducerPath);
+                    runtimeArtifactFailure |= !demo->dumpSurfaceC0ProducerJson(surfaceC0ProducerPath);
                 if (!atlasAttributionPath.empty()) {
                     if (atlasAttributionCells.empty()) {
                         atlasAttributionCells = {
@@ -941,7 +1137,7 @@ int main(int argc, char* argv[]) {
                             glm::ivec3(6, 4, 4)
                         };
                     }
-                    demo->dumpAtlasAttributionJson(atlasAttributionPath, atlasAttributionCells);
+                    runtimeArtifactFailure |= !demo->dumpAtlasAttributionJson(atlasAttributionPath, atlasAttributionCells);
                 }
                 std::filesystem::path requestedScreenshotPath(screenshotPath);
                 std::filesystem::path raylibBasenamePath;
@@ -968,6 +1164,11 @@ int main(int argc, char* argv[]) {
                         if (!ec)
                             std::filesystem::remove(raylibBasenamePath, ec);
                     }
+                }
+                if (!std::filesystem::exists(requestedScreenshotPath)) {
+                    std::cerr << "[MAIN] ERROR: requested screenshot was not written: "
+                              << screenshotPath << "\n";
+                    runtimeArtifactFailure = true;
                 }
                 std::cout << "[MAIN] --screenshot saved (clean 3D, no UI): "
                           << screenshotPath << "\n";
@@ -1015,6 +1216,11 @@ int main(int argc, char* argv[]) {
 
         EndDrawing();
 
+        if (frameCounter == 0)
+            firstFrameGlError |= drainGLErrors("first-frame end-drawing");
+        if (frameCounter == 0)
+            firstFrameGlError |= gl::getDebugErrorCount() > glErrorsBeforeFirstFrame;
+
         // Always advance frameCounter so --shots-after / --shots-count can use it
         // even when --exit-frames was not specified.
         ++frameCounter;
@@ -1036,6 +1242,7 @@ int main(int argc, char* argv[]) {
                   << "Either cascade never became ready (check --load-obj), or "
                   << "--exit-frames was too short for the convergence wait "
                   << "(default 240 frames). Increase --exit-frames and re-run.\n";
+        runtimeArtifactFailure = true;
     }
 
     // Step 7: Cleanup
@@ -1045,7 +1252,7 @@ int main(int argc, char* argv[]) {
     // failed to load. The banner in stderr already made the failure visible
     // mid-session; this propagates the failure to the exit code so any
     // orchestrator (CI, test scripts) can detect it.
-    bool exitNonzeroForShaderFail = !demo->allCriticalShadersOk();
+    bool exitNonzeroForShaderFail = !demo->selectedBackendShadersOk();
     if (exitNonzeroForShaderFail) {
         std::cerr << "[MAIN] EXIT NONZERO: at least one critical shader failed to load this run.\n"
                   << "  See the banner above for which shader. Output is likely WRONG.\n";
@@ -1053,13 +1260,23 @@ int main(int argc, char* argv[]) {
     if (phase3ValidationFailed) {
         std::cerr << "[MAIN] EXIT NONZERO: Phase 3 validation failed.\n";
     }
+    bool phase0ReportFailed = false;
+    if (phase0BaselineRequested) {
+        phase0ReportFailed = !writePhase0RuntimeReport(
+            phase0MetadataPath, *demo, runtimeArguments, unknownArguments,
+            frameCounter, runtimeArtifactFailure, allocationGlError,
+            firstFrameGlError, sceneLoadFailure);
+        std::cout << "[PHASE0] runtime report=" << phase0MetadataPath
+                  << " result=" << (phase0ReportFailed ? "FAIL" : "PASS") << "\n";
+    }
 
     delete demo;
 
     rlImGuiShutdown();
     CloseWindow();
 
-    if (exitNonzeroForShaderFail || phase3ValidationFailed) {
+    if (exitNonzeroForShaderFail || phase3ValidationFailed || runtimeArtifactFailure ||
+        sceneLoadFailure || phase0ReportFailed) {
         std::cerr << "[MAIN] Application terminated with validation/runtime failure (exit 1)." << std::endl;
         return 1;
     }
@@ -1164,6 +1381,8 @@ void configureOpenGLState() {
     int height = GetScreenHeight();
     glViewport(0, 0, width, height);
     
+    // Enable debug output for Debug builds and strict Phase 0 validation.
+    extern bool g_phase0Validation;
     // Enable debug output (if supported)
     #ifdef DEBUG
     if (glewIsSupported("GL_KHR_debug")) {

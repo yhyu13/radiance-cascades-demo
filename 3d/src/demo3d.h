@@ -615,6 +615,14 @@ public:
     // code signals "this run produced wrong output" to any orchestrator.
     bool criticalShaderLoadOk    = true;
     bool allCriticalShadersOk() const { return criticalShaderLoadOk; }
+    bool selectedBackendShadersOk() const;
+
+    std::string getLegacyBackendName() const;
+    std::string getRenderViewName() const;
+    std::string getSceneLabel() const;
+    uint64_t getSceneRevision() const { return sceneRevision; }
+    uint64_t getShaderRevision() const { return shaderRevision; }
+    int getRenderMode() const { return raymarchRenderMode; }
 
     // Phase 2.5d critic-10 W4: scene-validation accessor for the
     // --cam-preset=NAME flag in main3d.cpp. Returns the current OBJ key
@@ -812,7 +820,7 @@ public:
                   << " (mode 17 screenshot dumps cascade_gi/pt_full/pt_direct EXRs)\n";
     }
     bool getExrCapture() const { return exrCapture; }
-    void dumpScreenshotEXRs(const std::string& stem);
+    bool dumpScreenshotEXRs(const std::string& stem);
     bool dumpProbeStatsJson(const std::string& path) const;
     bool dumpAtlasAttributionJson(const std::string& path, const std::vector<glm::ivec3>& cells) const;
     bool dumpSurfaceC0ProducerJson(const std::string& path) const;
@@ -909,6 +917,7 @@ public:
     
     // Phase 2F: Raymarch integration controls
     void setUseCascadeGI(bool v) { useCascadeGI = v; }
+    void setUseGIBlur(bool v) { useGIBlur = v; }
     bool getEnableSurfaceRCInRaymarch() const { return enableSurfaceRCInRaymarch; }
     void setEnableSurfaceRCInRaymarch(bool v) {
         enableSurfaceRCInRaymarch = v;
@@ -1053,6 +1062,12 @@ private:
     
     /** Whether scene has been modified */
     bool sceneDirty;
+
+    /** Monotonic successful scene commit revision for Phase 0 evidence. */
+    uint64_t sceneRevision = 0;
+
+    /** Monotonic completed shader load generation. */
+    uint64_t shaderRevision = 0;
     
     /** Time accumulator for animations */
     float time;

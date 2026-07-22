@@ -15,6 +15,7 @@
 
 #include "demo3d.h"
 #include "exr_writer.h"
+#include "config.h"
 // Note: <windows.h> is intentionally NOT included here — it conflicts with raylib.h
 // via winuser.h (CloseWindow / ShowCursor overload clash). Windows API calls for
 // RenderDoc DLL loading are isolated in rdoc_helper.cpp.
@@ -40,6 +41,8 @@
 #include "external/stb_image_write.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+extern bool g_phase0Validation;
 
 // Phase 9b: Halton low-discrepancy sequence for probe jitter.
 // Maps index → [0,1) in the given base (van der Corput sequence).
@@ -407,6 +410,9 @@ Demo3D::Demo3D()
     
     // Step 4: Load shaders (minimal set for quick start)
     std::cout << "\n[Demo3D] Loading shaders..." << std::endl;
+    gl::setShaderRoot(RC3D_SHADER_ROOT);
+    gl::clearShaderSourceRecords();
+    std::cout << "[Demo3D] Canonical shader root: " << gl::getShaderRoot() << std::endl;
     // Step 8: sdf_3d.comp re-enabled (was disabled in the Step 7 cleanup).
     // Step 9: voxelize.comp re-enabled, rewritten as a 3-pass GPU triangle
     // voxelizer (init / atomicMin owner-index / resolve owner->color).
@@ -448,6 +454,7 @@ Demo3D::Demo3D()
     loadShader("cascade_upsample.comp");
     
     criticalShaderLoadOk = ok;
+    ++shaderRevision;
     
     // Step 5: Initialize cascades
     initCascades();
@@ -1380,20 +1387,30 @@ void Demo3D::render() {
     {
         double t0 = GetTime();
         raymarchPass();
+        if (g_phase0Validation)
+            gl::checkGLError("raymarchPass", 0);
         if (useGIBlur && (raymarchRenderMode == 0 || raymarchRenderMode == 3 || raymarchRenderMode == 6)) giBlurPass();
+        if (g_phase0Validation)
+            gl::checkGLError("giBlurPass", 0);
         raymarchTimeMs = (GetTime() - t0) * 1000.0;
     }
 
     // Pass 5: SDF Debug Visualization (Phase 0)
     renderSDFDebug();
+    if (g_phase0Validation)
+        gl::checkGLError("renderSDFDebug", 0);
 
     // Pass 6: Radiance Cascade Slice Viewer (Phase 1)
     renderRadianceDebug();
+    if (g_phase0Validation)
+        gl::checkGLError("renderRadianceDebug", 0);
 
     if (surfaceRC) {
         auto sit = shaders.find("surface_debug.frag");
         if (sit != shaders.end())
             surfaceRC->renderDebug(sit->second, debugQuadVAO);
+        if (g_phase0Validation)
+            gl::checkGLError("surfaceRC renderDebug", 0);
     }
 
     // Phase 2.5a.1: bake-leak baseline measurement. Triggered by --bake-leak-test=path.
@@ -2223,7 +2240,7 @@ bool Demo3D::generateMeshSDFGPU() {
     // attributes errors to THIS call only.
     while (glGetError() != GL_NO_ERROR) { /* drain */ }
 
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "GPU JFA SDF");
+    gl::pushDebugGroup("GPU JFA SDF");
 
     // codex 01 F8: real GPU-side timing via GL_TIME_ELAPSED query.
     GLuint timer = 0;
@@ -2275,7 +2292,7 @@ bool Demo3D::generateMeshSDFGPU() {
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
     glEndQuery(GL_TIME_ELAPSED);
-    glPopDebugGroup();
+    gl::popDebugGroup();
 
     // codex 02 F4: check for GL errors accumulated during the dispatch
     // sequence (bad bindings, lost context, etc). Report and return false so
@@ -2340,7 +2357,7 @@ bool Demo3D::voxelizeOBJ_GPU() {
     // Drain pre-existing GL errors (Step 8 codex 02 F4 pattern).
     while (glGetError() != GL_NO_ERROR) { /* drain */ }
 
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "GPU triangle voxelize");
+    gl::pushDebugGroup("GPU triangle voxelize");
 
     GLuint timer = 0;
     glGenQueries(1, &timer);
@@ -2373,7 +2390,7 @@ bool Demo3D::voxelizeOBJ_GPU() {
                   << " uVoxelHalfDiag=" << uHalfDiagLoc
                   << ") -- shader contract changed?\n";
         glDeleteQueries(1, &timer);
-        glPopDebugGroup();
+        gl::popDebugGroup();
         return false;
     }
 
@@ -2413,7 +2430,7 @@ bool Demo3D::voxelizeOBJ_GPU() {
                   | GL_TEXTURE_FETCH_BARRIER_BIT);
 
     glEndQuery(GL_TIME_ELAPSED);
-    glPopDebugGroup();
+    gl::popDebugGroup();
 
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
@@ -2526,10 +2543,10 @@ bool Demo3D::sdfGenerationPass() {
         // Dispatch compute shader
         glm::ivec3 workGroups = calculateWorkGroups(
             volumeResolution, volumeResolution, volumeResolution, 8);
-        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "sdf_analytic");
+        gl::pushDebugGroup("sdf_analytic");
         glDispatchCompute(workGroups.x, workGroups.y, workGroups.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-        glPopDebugGroup();
+        gl::popDebugGroup();
 
         std::cout << "[Demo3D] Analytic SDF generation complete." << std::endl;
     } else {
@@ -2755,10 +2772,10 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
     glBindImageTexture(0, c.probeAtlasTexture, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 
     glm::ivec3 wg = calculateWorkGroups(c.resolution, c.resolution, c.resolution, 4);
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "radiance_3d");
+    gl::pushDebugGroup("radiance_3d");
     glDispatchCompute(wg.x, wg.y, wg.z);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-    glPopDebugGroup();
+    gl::popDebugGroup();
 
     // Phase 5b-1: reduction — average D² atlas bins per probe → isotropic probeGridTexture
     // This keeps raymarch.frag's display path (texture(uRadiance, uvw).rgb) valid.
@@ -2776,10 +2793,10 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
 
         // Phase 10: local_size changed to 8x8x4=256 threads; use matching workgroup counts.
         glm::ivec3 wgRed((c.resolution + 7) / 8, (c.resolution + 7) / 8, (c.resolution + 3) / 4);
-        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "reduction_3d");
+        gl::pushDebugGroup("reduction_3d");
         glDispatchCompute(wgRed.x, wgRed.y, wgRed.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-        glPopDebugGroup();
+        gl::popDebugGroup();
     }
 
     // Phase 10: temporal history update — two paths depending on fused EMA flag.
@@ -2818,20 +2835,20 @@ void Demo3D::updateSingleCascade(int cascadeIndex) {
         glBindImageTexture(0, c.probeAtlasHistory, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
         glBindImageTexture(1, c.probeAtlasTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA16F);
         glm::ivec3 wgA = calculateWorkGroups(axyz, axyz, c.resolution, 4);
-        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "temporal_blend");
+        gl::pushDebugGroup("temporal_blend");
         glDispatchCompute(wgA.x, wgA.y, wgA.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-        glPopDebugGroup();
+        gl::popDebugGroup();
 
         // Blend isotropic grid — uDirRes = 0 (cardinal 3D neighborhood)
         glUniform3i(glGetUniformLocation(tbProg, "uSize"),   c.resolution, c.resolution, c.resolution);
         glUniform1i(glGetUniformLocation(tbProg, "uDirRes"), 0);
         glBindImageTexture(0, c.probeGridHistory, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
         glBindImageTexture(1, c.probeGridTexture, 0, GL_TRUE, 0, GL_READ_ONLY,  GL_RGBA16F);
-        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "temporal_blend");
+        gl::pushDebugGroup("temporal_blend");
         glDispatchCompute(wg.x, wg.y, wg.z);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-        glPopDebugGroup();
+        gl::popDebugGroup();
 
         if (cascadeIndex == 0) ++temporalRebuildCount;
     }
@@ -2921,6 +2938,12 @@ void Demo3D::raymarchPass() {
 
     GLuint prog = it->second;
     glUseProgram(prog);
+    auto phase0GlCheck = [](const char* stage) {
+        if (g_phase0Validation)
+            gl::checkGLError(stage, 0);
+    };
+    if (g_phase0Validation)
+        gl::validateProgram(prog, "raymarch.frag");
 
     // Build camera matrices
     glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
@@ -2963,6 +2986,7 @@ void Demo3D::raymarchPass() {
     glUniform1f(glGetUniformLocation(prog, "uLeakHeatmapDivisor"), leakHeatmapDivisor);
     // 2026-05-19: cascade-vs-PT delta heatmap (mode 18) sensitivity divisor.
     glUniform1f(glGetUniformLocation(prog, "uDeltaHeatmapDivisor"), deltaHeatmapDivisor);
+    phase0GlCheck("raymarch uniforms core");
     // SDF texture (sampler binding 0)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, sdfTexture);
@@ -3030,6 +3054,7 @@ void Demo3D::raymarchPass() {
         atlasAvailable = true;
     }
     glUniform1i(glGetUniformLocation(prog, "uUseDirectionalGI"), (useDirectionalGI && atlasAvailable) ? 1 : 0);
+    phase0GlCheck("raymarch uniforms volumetric");
 
     // Phase 7 (PT reference): bind ptAccumTexture for mode 16/18/19. Use TEXTURE4
     // for full PT, TEXTURE6 for direct-only PT (Mode 19's PT_GI = full - direct).
@@ -3043,6 +3068,8 @@ void Demo3D::raymarchPass() {
         glUniform1i(glGetUniformLocation(prog, "uPtDirectAccum"), 6);
         glUniform1i(glGetUniformLocation(prog, "uPtAccumValid"), 1);
     } else {
+        glUniform1i(glGetUniformLocation(prog, "uPtAccum"), 4);
+        glUniform1i(glGetUniformLocation(prog, "uPtDirectAccum"), 6);
         glUniform1i(glGetUniformLocation(prog, "uPtAccumValid"), 0);
     }
 
@@ -3055,6 +3082,7 @@ void Demo3D::raymarchPass() {
         glUniform1i(glGetUniformLocation(prog, "uHybridAccum"), 7);
         glUniform1i(glGetUniformLocation(prog, "uHybridAccumValid"), 1);
     } else {
+        glUniform1i(glGetUniformLocation(prog, "uHybridAccum"), 7);
         glUniform1i(glGetUniformLocation(prog, "uHybridAccumValid"), 0);
     }
     glUniform1i(glGetUniformLocation(prog, "uHybridCorrection"), useHybrid ? 1 : 0);
@@ -3064,6 +3092,7 @@ void Demo3D::raymarchPass() {
     glUniform1f(glGetUniformLocation(prog, "uHybridCascadeVariance"), hybridCascadeVariance);
     glUniform1i(glGetUniformLocation(prog, "uHybridSampleCount"), hybridSampleCount);
     glUniform1i(glGetUniformLocation(prog, "uHybridConfidenceSamples"), hybridConfidenceSamples);
+    phase0GlCheck("raymarch uniforms optional");
 
     // Phase 2F: Surface RC cascade bridge into the final raymarch shader.
     // This integration gate consumes the surface atlas through scene-keyed chart
@@ -3127,15 +3156,26 @@ void Demo3D::raymarchPass() {
                       << " cascadeCount=" << (surfaceRC ? surfaceRC->getCascadeCount() : 0) << "\n";
         }
         int resolutions[5] = {32, 16, 8, 4, 2};
+        constexpr int kSurfaceCascadeBaseUnit = 10;
+        for (int i = 0; i < 5; ++i) {
+            const std::string samplerName = "uCascadeAtlases[" + std::to_string(i) + "]";
+            glUniform1i(glGetUniformLocation(prog, samplerName.c_str()), kSurfaceCascadeBaseUnit + i);
+        }
         glUniform1iv(glGetUniformLocation(prog, "uCascadeResolutions"), 5, resolutions);
         glUniform1i(glGetUniformLocation(prog, "uSurfaceSceneType"), 0);
         glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMin"), 1, glm::value_ptr(volumeOrigin));
         glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMax"), 1, glm::value_ptr(volumeMax));
+        const glm::vec3 inactiveProxy(0.0f);
+        glUniform3fv(glGetUniformLocation(prog, "uShortBoxMin"), 1, glm::value_ptr(inactiveProxy));
+        glUniform3fv(glGetUniformLocation(prog, "uShortBoxMax"), 1, glm::value_ptr(inactiveProxy));
+        glUniform3fv(glGetUniformLocation(prog, "uTallBoxMin"), 1, glm::value_ptr(inactiveProxy));
+        glUniform3fv(glGetUniformLocation(prog, "uTallBoxMax"), 1, glm::value_ptr(inactiveProxy));
         glUniform1f(glGetUniformLocation(prog, "uSurfaceGIScale"), surfaceGIScale);
         glUniform1i(glGetUniformLocation(prog, "uEnableSurfaceRC"), 0);
         glUniform1i(glGetUniformLocation(prog, "uBlendWithVolumetric"), blendWithVolumetric ? 1 : 0);
         glUniform1f(glGetUniformLocation(prog, "uBlendFactor"), blendFactor);
     }
+    phase0GlCheck("raymarch uniforms surface");
 
     // GI blur: redirect mode-0/3/6 render to 3-attachment FBO (direct / gbuffer / indirect).
     // Modes 3 and 6 are pure-indirect views so direct=black and blur applies to full output.
@@ -3160,18 +3200,36 @@ void Demo3D::raymarchPass() {
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
         }
+    } else {
+        const GLenum drawBuffer = GL_BACK;
+        glDrawBuffers(1, &drawBuffer);
     }
 
     // Reuse the existing fullscreen quad VAO
     glBindVertexArray(debugQuadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, debugQuadVBO);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "raymarch");
+    if (g_phase0Validation) {
+        const GLenum framebufferStatus = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+        if (framebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
+            std::cerr << "[GL Error] raymarch draw framebuffer incomplete: 0x"
+                      << std::hex << framebufferStatus << std::dec << "\n";
+        }
+    }
+    phase0GlCheck("raymarch pre-draw");
+    gl::pushDebugGroup("raymarch");
+    phase0GlCheck("raymarch push group");
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    glPopDebugGroup();
+    phase0GlCheck("raymarch draw arrays");
+    gl::popDebugGroup();
+    phase0GlCheck("raymarch pop group");
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
+    phase0GlCheck("raymarch draw");
 
     // Restore default framebuffer; giBlurPass() will composite to screen in render()
     if (giBlurActive && giFBO != 0) {
@@ -3280,9 +3338,9 @@ void Demo3D::giBlurPass() {
     glBindVertexArray(debugQuadVAO);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "gi_blur");
+    gl::pushDebugGroup("gi_blur");
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    glPopDebugGroup();
+    gl::popDebugGroup();
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
@@ -3428,10 +3486,10 @@ void Demo3D::ptDispatchReference() {
     // Dispatch 1: FULL PT (uPtMaxBounces = ptMaxBounces). Writes ptAccumTexture.
     glUniform1i(maxBouncesLoc, ptMaxBounces);
     glBindImageTexture(0, ptAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "pt_reference_full");
+    gl::pushDebugGroup("pt_reference_full");
     glDispatchCompute(groupsX, groupsY, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-    glPopDebugGroup();
+    gl::popDebugGroup();
 
     // Dispatch 2: DIRECT-ONLY PT (uPtMaxBounces = 1). Writes ptDirectAccumTexture.
     // Mode 19 computes PT_GI = ptAccumTexture - ptDirectAccumTexture per pixel.
@@ -3440,10 +3498,10 @@ void Demo3D::ptDispatchReference() {
             (exrCapture && raymarchRenderMode == 17)) {
         glUniform1i(maxBouncesLoc, 1);
         glBindImageTexture(0, ptDirectAccumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "pt_reference_direct");
+        gl::pushDebugGroup("pt_reference_direct");
         glDispatchCompute(groupsX, groupsY, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-        glPopDebugGroup();
+        gl::popDebugGroup();
     }
 
     ptSampleCount += ptRaysPerFrame;
@@ -3794,10 +3852,10 @@ void Demo3D::hybridDispatchCorrection() {
 
     int groupsX = (hybridAccumWidth  + 7) / 8;
     int groupsY = (hybridAccumHeight + 7) / 8;
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "hybrid_correction");
+    gl::pushDebugGroup("hybrid_correction");
     glDispatchCompute(groupsX, groupsY, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-    glPopDebugGroup();
+    gl::popDebugGroup();
 
     hybridSampleCount += hybridRaysPerFrame;
     hybridFrameSeed++;
@@ -3826,10 +3884,10 @@ void Demo3D::hybridDispatchCorrection() {
         glUniform2f(glGetUniformLocation(blurProg, "uHybridAccumSize"),
                     float(hybridAccumWidth), float(hybridAccumHeight));
         glBindImageTexture(0, hybridFilteredTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
-        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "hybrid_blur");
+        gl::pushDebugGroup("hybrid_blur");
         glDispatchCompute(groupsX, groupsY, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-        glPopDebugGroup();
+        gl::popDebugGroup();
         // Reset active unit back to TEXTURE0 (raymarchPass will re-glActiveTexture, but
         // belt-and-suspenders).
         glActiveTexture(GL_TEXTURE0);
@@ -3850,7 +3908,7 @@ bool Demo3D::loadShader(const std::string& shaderName) {
      */
     
     // Determine shader path
-    std::string shaderPath = "res/shaders/" + shaderName;
+    std::string shaderPath = gl::resolveShaderPath(shaderName);
     
     std::cout << "[Demo3D] Loading shader: " << shaderPath << std::endl;
     
@@ -3859,22 +3917,23 @@ bool Demo3D::loadShader(const std::string& shaderName) {
     // Check if it's a compute shader (.comp) or fragment shader (.frag)
     if (shaderName.find(".comp") != std::string::npos) {
         // Compute shader
-        program = gl::loadComputeShader(shaderPath);
+        program = gl::loadComputeShader(shaderPath, shaderName);
     } else if (shaderName.find(".frag") != std::string::npos) {
         // Fragment shader - need corresponding vertex shader
         // Extract base name (e.g., "sdf_debug" from "sdf_debug.frag")
         std::string baseName = shaderName.substr(0, shaderName.find(".frag"));
-        std::string vertPath = "res/shaders/" + baseName + ".vert";
+        const std::string vertName = baseName + ".vert";
+        std::string vertPath = gl::resolveShaderPath(vertName);
         
         // Load and compile vertex shader
-        GLuint vertShader = gl::compileShader(GL_VERTEX_SHADER, vertPath);
+        GLuint vertShader = gl::compileShader(GL_VERTEX_SHADER, vertPath, vertName);
         if (vertShader == 0) {
             std::cerr << "[ERROR] Failed to compile vertex shader: " << vertPath << std::endl;
             return false;
         }
         
         // Load and compile fragment shader
-        GLuint fragShader = gl::compileShader(GL_FRAGMENT_SHADER, shaderPath);
+        GLuint fragShader = gl::compileShader(GL_FRAGMENT_SHADER, shaderPath, shaderName);
         if (fragShader == 0) {
             std::cerr << "[ERROR] Failed to compile fragment shader: " << shaderPath << std::endl;
             glDeleteShader(vertShader);
@@ -3891,9 +3950,12 @@ bool Demo3D::loadShader(const std::string& shaderName) {
         GLint success;
         glGetProgramiv(program, GL_LINK_STATUS, &success);
         if (!success) {
-            GLchar infoLog[1024];
-            glGetProgramInfoLog(program, sizeof(infoLog), nullptr, infoLog);
-            std::cerr << "[ERROR] Shader program link failed:\n" << infoLog << std::endl;
+            GLint logLength = 0;
+            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
+            std::vector<GLchar> infoLog(static_cast<size_t>(std::max(logLength, 1)));
+            glGetProgramInfoLog(program, static_cast<GLsizei>(infoLog.size()), nullptr, infoLog.data());
+            std::cerr << "[ERROR] Shader program link failed (" << shaderName
+                      << "):\n" << infoLog.data() << std::endl;
             glDeleteProgram(program);
             glDeleteShader(vertShader);
             glDeleteShader(fragShader);
@@ -3932,7 +3994,7 @@ bool Demo3D::loadShader(const std::string& shaderName) {
     }
     
     // Phase 6b: label program for RenderDoc dispatch identification
-    glObjectLabel(GL_PROGRAM, program, -1, shaderName.c_str());
+    gl::labelObject(GL_PROGRAM, program, shaderName);
 
     shaders[shaderName] = program;
     std::cout << "[Demo3D] Shader loaded successfully: " << shaderName << std::endl;
@@ -3950,29 +4012,93 @@ void Demo3D::reloadShaders() {
         glDeleteProgram(program);
     }
     shaders.clear();
+    gl::clearShaderSourceRecords();
 
     // Step 8/9: see startup-load comment.
     loadShader("sdf_3d.comp");
-    loadShader("voxelize.comp");
-    loadShader("sdf_analytic.comp");
-    loadShader("radiance_3d.comp");
-    loadShader("reduction_3d.comp");
-    loadShader("temporal_blend.comp");
-    loadShader("inject_radiance.comp");
-    loadShader("sdf_debug.frag");
-    loadShader("radiance_debug.frag");
-    loadShader("lighting_debug.frag");
-    loadShader("raymarch.frag");
-    loadShader("gi_blur.frag");
-    loadShader("pt_reference.comp");
-    loadShader("hybrid_correction.comp");
-    loadShader("hybrid_blur.comp");
+    bool ok = true;
+    ok &= loadShader("voxelize.comp");
+    ok &= loadShader("sdf_analytic.comp");
+    ok &= loadShader("radiance_3d.comp");
+    ok &= loadShader("reduction_3d.comp");
+    ok &= loadShader("temporal_blend.comp");
+    ok &= loadShader("inject_radiance.comp");
+    ok &= loadShader("sdf_debug.frag");
+    ok &= loadShader("radiance_debug.frag");
+    ok &= loadShader("lighting_debug.frag");
+    ok &= loadShader("raymarch.frag");
+    ok &= loadShader("gi_blur.frag");
+    ok &= loadShader("pt_reference.comp");
+    ok &= loadShader("hybrid_correction.comp");
+    ok &= loadShader("hybrid_blur.comp");
     loadShader("surface_cornell_debug.comp");
     loadShader("surface_ring_debug.comp");
     loadShader("surface_radiance_debug.comp");
     loadShader("surface_debug.frag");
+    loadShader("cascade_downsample.comp");
+    loadShader("cascade_upsample.comp");
 
-    std::cout << "[Demo3D] Shaders reloaded" << std::endl;
+    criticalShaderLoadOk = ok;
+    ++shaderRevision;
+    std::cout << "[Demo3D] Shaders reloaded: " << (ok ? "PASS" : "FAIL") << std::endl;
+}
+
+bool Demo3D::selectedBackendShadersOk() const {
+    if (!criticalShaderLoadOk)
+        return false;
+    const auto hasShader = [this](const char* name) {
+        const auto it = shaders.find(name);
+        return it != shaders.end() && it->second != 0;
+    };
+    if (getUseSurfaceRC() || enableSurfaceRCInRaymarch) {
+        return hasShader("surface_cornell_debug.comp") &&
+               hasShader("surface_ring_debug.comp") &&
+               hasShader("surface_radiance_debug.comp") &&
+               hasShader("surface_debug.frag") &&
+               hasShader("cascade_downsample.comp") &&
+               hasShader("cascade_upsample.comp");
+    }
+    if (useHybrid)
+        return hasShader("hybrid_correction.comp") && hasShader("hybrid_blur.comp");
+    if (raymarchRenderMode == 16 || raymarchRenderMode == 18 || raymarchRenderMode == 19)
+        return hasShader("pt_reference.comp");
+    return true;
+}
+
+std::string Demo3D::getLegacyBackendName() const {
+    if (getUseSurfaceRC() || enableSurfaceRCInRaymarch) {
+        return blendWithVolumetric
+            ? "legacy-surface-experimental-nonparity+volumetric"
+            : "legacy-surface-experimental-nonparity";
+    }
+    if (useHybrid)
+        return "legacy-volumetric-hybrid";
+    if (raymarchRenderMode == 16)
+        return "legacy-path-traced-reference";
+    if (useCascadeGI)
+        return "legacy-volumetric";
+    return "legacy-direct-only";
+}
+
+std::string Demo3D::getRenderViewName() const {
+    switch (raymarchRenderMode) {
+        case 0: return "final-composite";
+        case 16: return "path-traced-reference";
+        case 17: return "quality-comparison";
+        case 18: return "cascade-vs-pt-delta";
+        case 19: return "indirect-comparison";
+        case 20: return "legacy-surface-debug";
+        case 21: return "legacy-surface-gi-only";
+        case 22: return "legacy-surface-chart-classification";
+        case 23: return "legacy-surface-c0-raw";
+        default: return "legacy-debug-mode-" + std::to_string(raymarchRenderMode);
+    }
+}
+
+std::string Demo3D::getSceneLabel() const {
+    if (useOBJMesh)
+        return currentOBJPath.empty() ? "obj:unknown" : "obj:" + currentOBJPath;
+    return "analytic:" + std::to_string(currentScene);
 }
 
 void Demo3D::createVolumeBuffers() {
@@ -4070,19 +4196,19 @@ void Demo3D::createVolumeBuffers() {
     glGenBuffers(1, &triangleSSBO);   // empty until first GPU voxelize
 
     // Phase 6b: label volume textures for RenderDoc resource identification
-    glObjectLabel(GL_TEXTURE, voxelGridTexture,        -1, "voxelGridTexture");
-    glObjectLabel(GL_TEXTURE, sdfTexture,              -1, "sdfTexture");
-    glObjectLabel(GL_TEXTURE, albedoTexture,           -1, "albedoTexture");
+    gl::labelObject(GL_TEXTURE, voxelGridTexture,       "voxelGridTexture");
+    gl::labelObject(GL_TEXTURE, sdfTexture,             "sdfTexture");
+    gl::labelObject(GL_TEXTURE, albedoTexture,          "albedoTexture");
     if (roughnessTexture)
-        glObjectLabel(GL_TEXTURE, roughnessTexture,    -1, "roughnessTexture");
-    glObjectLabel(GL_TEXTURE, directLightingTexture,   -1, "directLightingTexture");
-    glObjectLabel(GL_TEXTURE, prevFrameTexture,        -1, "prevFrameTexture");
-    glObjectLabel(GL_TEXTURE, currentRadianceTexture,  -1, "currentRadianceTexture");
-    glObjectLabel(GL_TEXTURE, voronoiTextureA,         -1, "voronoiTextureA");
-    glObjectLabel(GL_TEXTURE, voronoiTextureB,         -1, "voronoiTextureB");
-    glObjectLabel(GL_TEXTURE, meshVoxelBaseTexture,    -1, "meshVoxelBaseTexture");
-    if (voxelOwnerTexture) glObjectLabel(GL_TEXTURE, voxelOwnerTexture, -1, "voxelOwnerTexture");
-    if (triangleSSBO)      glObjectLabel(GL_BUFFER,  triangleSSBO,      -1, "triangleSSBO");
+        gl::labelObject(GL_TEXTURE, roughnessTexture,   "roughnessTexture");
+    gl::labelObject(GL_TEXTURE, directLightingTexture,  "directLightingTexture");
+    gl::labelObject(GL_TEXTURE, prevFrameTexture,       "prevFrameTexture");
+    gl::labelObject(GL_TEXTURE, currentRadianceTexture, "currentRadianceTexture");
+    gl::labelObject(GL_TEXTURE, voronoiTextureA,        "voronoiTextureA");
+    gl::labelObject(GL_TEXTURE, voronoiTextureB,        "voronoiTextureB");
+    gl::labelObject(GL_TEXTURE, meshVoxelBaseTexture,   "meshVoxelBaseTexture");
+    gl::labelObject(GL_TEXTURE, voxelOwnerTexture,      "voxelOwnerTexture");
+    gl::labelObject(GL_BUFFER, triangleSSBO,            "triangleSSBO");
 
     // Create framebuffers (minimal - we'll use compute shaders mostly)
     glGenFramebuffers(1, &voxelizationFBO);
@@ -4191,10 +4317,10 @@ void Demo3D::initCascades() {
 
         // Phase 6b: label cascade textures for RenderDoc identification
         std::string pfx = "cascade" + std::to_string(i);
-        glObjectLabel(GL_TEXTURE, cascades[i].probeAtlasTexture,  -1, (pfx + "_probeAtlas").c_str());
-        glObjectLabel(GL_TEXTURE, cascades[i].probeAtlasHistory,  -1, (pfx + "_probeAtlasHistory").c_str());
-        glObjectLabel(GL_TEXTURE, cascades[i].probeGridTexture,   -1, (pfx + "_probeGrid").c_str());
-        glObjectLabel(GL_TEXTURE, cascades[i].probeGridHistory,   -1, (pfx + "_probeGridHistory").c_str());
+        gl::labelObject(GL_TEXTURE, cascades[i].probeAtlasTexture, pfx + "_probeAtlas");
+        gl::labelObject(GL_TEXTURE, cascades[i].probeAtlasHistory, pfx + "_probeAtlasHistory");
+        gl::labelObject(GL_TEXTURE, cascades[i].probeGridTexture,  pfx + "_probeGrid");
+        gl::labelObject(GL_TEXTURE, cascades[i].probeGridHistory,  pfx + "_probeGridHistory");
 
         std::cout << "[Demo3D] Cascade " << i << ": " << probeRes
                   << "^3 probes, D=" << cascD << ", cellSize=" << cellSz
@@ -4236,6 +4362,7 @@ void Demo3D::setScene(int sceneType) {
     sceneDirty = true;
     useOBJMesh = false;
     currentOBJPath.clear();
+    ++sceneRevision;
 
     // Step 3 (3c): clear mesh state — no implied cache, the only caller is loadOBJMesh
     // which always re-reads the file. shrink_to_fit reclaims the ~8 MB voxel buffer.
@@ -6812,21 +6939,22 @@ void Demo3D::initToolsPaths() {
     std::cout << "[6a] Tools path: " << tools << std::endl;
 }
 
-void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
-    if (!exrCapture) return;
+bool Demo3D::dumpScreenshotEXRs(const std::string& stem) {
+    if (!exrCapture) return false;
     if (raymarchRenderMode != 17) {
         std::cerr << "[hdr-exr] --screenshot-exr currently expects render-mode 17; got "
                   << raymarchRenderMode << "\n";
-        return;
+        return false;
     }
     if (giIndirectTex == 0 || ptAccumTexture == 0 || ptDirectAccumTexture == 0) {
         std::cerr << "[hdr-exr] missing capture textures (gi=" << giIndirectTex
                   << " ptFull=" << ptAccumTexture
                   << " ptDirect=" << ptDirectAccumTexture << ")\n";
-        return;
+        return false;
     }
 
-    auto readTexRGB = [](GLuint tex, int& w, int& h) -> std::vector<float> {
+    bool success = true;
+    auto readTexRGB = [&success](GLuint tex, int& w, int& h) -> std::vector<float> {
         glBindTexture(GL_TEXTURE_2D, tex);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,  &w);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
@@ -6836,6 +6964,7 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
         if (e != GL_NO_ERROR) {
             std::cerr << "[hdr-exr] glGetTexImage err=0x" << std::hex << e
                       << std::dec << " tex=" << tex << "\n";
+            success = false;
         }
         glBindTexture(GL_TEXTURE_2D, 0);
         return buf;
@@ -6852,7 +6981,7 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
         }
         return exrw::save_rgb32f_exr(path.c_str(), flipped.data(), w, h);
     };
-    auto readTexRGBA = [](GLuint tex, int& w, int& h) -> std::vector<float> {
+    auto readTexRGBA = [&success](GLuint tex, int& w, int& h) -> std::vector<float> {
         glBindTexture(GL_TEXTURE_2D, tex);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,  &w);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
@@ -6862,6 +6991,7 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
         if (e != GL_NO_ERROR) {
             std::cerr << "[hdr-exr] glGetTexImage RGBA err=0x" << std::hex << e
                       << std::dec << " tex=" << tex << "\n";
+            success = false;
         }
         glBindTexture(GL_TEXTURE_2D, 0);
         return buf;
@@ -6880,38 +7010,38 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
 
     int giW = 0, giH = 0;
     std::vector<float> gi = readTexRGB(giIndirectTex, giW, giH);
-    saveExrRGB(stem + "_cascade_gi.exr", gi, giW, giH);
+    success &= saveExrRGB(stem + "_cascade_gi.exr", gi, giW, giH);
 
     int ptW = 0, ptH = 0;
     std::vector<float> ptFull = readTexRGB(ptAccumTexture, ptW, ptH);
-    saveExrRGB(stem + "_pt_full.exr", ptFull, ptW, ptH);
+    success &= saveExrRGB(stem + "_pt_full.exr", ptFull, ptW, ptH);
 
     int pdW = 0, pdH = 0;
     std::vector<float> ptDirect = readTexRGB(ptDirectAccumTexture, pdW, pdH);
-    saveExrRGB(stem + "_pt_direct.exr", ptDirect, pdW, pdH);
+    success &= saveExrRGB(stem + "_pt_direct.exr", ptDirect, pdW, pdH);
 
     int gbW = 0, gbH = 0;
     if (giGBufferTex != 0) {
         std::vector<float> gbuffer = readTexRGBA(giGBufferTex, gbW, gbH);
-        saveExrRGBA(stem + "_gbuffer.exr", gbuffer, gbW, gbH);
+        success &= saveExrRGBA(stem + "_gbuffer.exr", gbuffer, gbW, gbH);
     }
 
     int diagW = 0, diagH = 0;
     if (giProbeDiagTex != 0) {
         std::vector<float> probeDiag = readTexRGBA(giProbeDiagTex, diagW, diagH);
-        saveExrRGBA(stem + "_probe_diag.exr", probeDiag, diagW, diagH);
+        success &= saveExrRGBA(stem + "_probe_diag.exr", probeDiag, diagW, diagH);
     }
 
     int contribW = 0, contribH = 0;
     if (giProbeContribTex != 0) {
         std::vector<float> probeContrib = readTexRGBA(giProbeContribTex, contribW, contribH);
-        saveExrRGBA(stem + "_probe_contrib.exr", probeContrib, contribW, contribH);
+        success &= saveExrRGBA(stem + "_probe_contrib.exr", probeContrib, contribW, contribH);
     }
 
     int binW = 0, binH = 0;
     if (giProbeBinTex != 0) {
         std::vector<float> probeBin = readTexRGBA(giProbeBinTex, binW, binH);
-        saveExrRGBA(stem + "_probe_bin.exr", probeBin, binW, binH);
+        success &= saveExrRGBA(stem + "_probe_bin.exr", probeBin, binW, binH);
     }
 
     std::cout << "[hdr-exr] dumped stem=" << stem
@@ -6934,6 +7064,7 @@ void Demo3D::dumpScreenshotEXRs(const std::string& stem) {
                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
+    return success;
 }
 
 bool Demo3D::dumpProbeStatsJson(const std::string& path) const {
@@ -7917,6 +8048,7 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
                   || filename.find("Sponza") != std::string::npos)                     objKey = "sponza";
             else                                                                       objKey = "cornell";
             currentOBJPath = objKey;
+            ++sceneRevision;
             applyOBJViewPreset();
             const double loadMs = std::chrono::duration<double, std::milli>(
                 std::chrono::high_resolution_clock::now() - loadT0).count();
@@ -8095,6 +8227,8 @@ bool Demo3D::loadOBJMesh(const std::string& filename) {
             return false;
         }
     }
+
+    ++sceneRevision;
 
     std::cout << "[Demo3D] OBJ committed (" << currentOBJPath
               << "); SDF will be baked next frame\n";

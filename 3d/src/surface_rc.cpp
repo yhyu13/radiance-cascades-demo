@@ -1,4 +1,5 @@
 #include "surface_rc.h"
+#include "gl_helpers.h"
 
 #include <algorithm>
 #include <cmath>
@@ -733,10 +734,10 @@ void SurfaceRC::dispatchDebug(GLuint computeProgram) {
 
     const GLuint groupsX = static_cast<GLuint>((atlasWidth + 7) / 8);
     const GLuint groupsY = static_cast<GLuint>((atlasHeight + 7) / 8);
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "surface_cornell_debug");
+    gl::pushDebugGroup("surface_cornell_debug");
     glDispatchCompute(groupsX, groupsY, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-    glPopDebugGroup();
+    gl::popDebugGroup();
 }
 
 void SurfaceRC::dispatchRingDebug(GLuint computeProgram) {
@@ -762,10 +763,10 @@ void SurfaceRC::dispatchRingDebug(GLuint computeProgram) {
 
     const GLuint groupsX = static_cast<GLuint>((ringAtlasWidth + 7) / 8);
     const GLuint groupsY = static_cast<GLuint>((ringAtlasHeight + 7) / 8);
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "surface_ring_debug");
+    gl::pushDebugGroup("surface_ring_debug");
     glDispatchCompute(groupsX, groupsY, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-    glPopDebugGroup();
+    gl::popDebugGroup();
 }
 
 void SurfaceRC::dispatchRadianceDebug(GLuint computeProgram,
@@ -823,10 +824,10 @@ void SurfaceRC::dispatchRadianceDebug(GLuint computeProgram,
             glBindImageTexture(0, getCurrentWriteAtlas(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
             const GLuint groupsX = static_cast<GLuint>((ringAtlasWidth + 7) / 8);
             const GLuint groupsY = static_cast<GLuint>((ringAtlasHeight + 7) / 8);
-            glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "surface_feedback_write");
+            gl::pushDebugGroup("surface_feedback_write");
             glDispatchCompute(groupsX, groupsY, 1);
             glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-            glPopDebugGroup();
+            gl::popDebugGroup();
             return;  // Early exit - already dispatched
         }
         // Mode 18: will use radianceDebugTexture for visualization below
@@ -842,10 +843,10 @@ void SurfaceRC::dispatchRadianceDebug(GLuint computeProgram,
 
     const GLuint groupsX = static_cast<GLuint>((ringAtlasWidth + 7) / 8);
     const GLuint groupsY = static_cast<GLuint>((ringAtlasHeight + 7) / 8);
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "surface_radiance_debug");
+    gl::pushDebugGroup("surface_radiance_debug");
     glDispatchCompute(groupsX, groupsY, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-    glPopDebugGroup();
+    gl::popDebugGroup();
 }
 
 void SurfaceRC::renderDebug(GLuint fragmentProgram, GLuint quadVAO) const {

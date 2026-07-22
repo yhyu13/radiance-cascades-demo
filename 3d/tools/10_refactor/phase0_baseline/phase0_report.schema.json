@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phase0-report-v1",
+  "title": "Radiance Cascades 3D Phase 0 Baseline Report",
+  "type": "object",
+  "required": ["schema_version", "gate", "run_id", "created_utc", "result", "repository", "build", "runtime", "source_shaders", "artifacts"],
+  "properties": {
+    "schema_version": { "const": "phase0-report-v1" },
+    "gate": { "const": "G0" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "created_utc": { "type": "string", "format": "date-time" },
+    "result": { "enum": ["PASS", "FAIL", "INCOMPLETE"] },
+    "claim": { "type": "string" },
+    "repository": { "type": "object" },
+    "build": { "type": "object" },
+    "runtime": { "type": "object" },
+    "source_shaders": { "type": "array" },
+    "artifacts": { "type": "array" }
+  },
+  "additionalProperties": true
+}
