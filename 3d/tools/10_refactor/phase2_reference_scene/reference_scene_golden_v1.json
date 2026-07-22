@@ -1,0 +1,34 @@
+{
+  "schema_version": "reference-cornell-scene-golden-v1",
+  "source": {
+    "common": "shader_toy/Common.glsl",
+    "cube": "shader_toy/CubeA.glsl"
+  },
+  "reference_time": 0.0,
+  "precision": "IEEE-754 binary32",
+  "epsilon": 0.00001,
+  "logical_domain": [1024, 3072],
+  "charts": [
+    {"id": 1, "name": "floor", "origin": [0,0,0], "tangent": [1,0,0], "bitangent": [0,0,1], "normal": [0,1,0], "extent": [1,1], "resolution": [256,256], "base": [0,0], "handedness": -1},
+    {"id": 2, "name": "ceiling", "origin": [0,0.5,0], "tangent": [1,0,0], "bitangent": [0,0,1], "normal": [0,-1,0], "extent": [1,1], "resolution": [256,256], "base": [256,0], "handedness": 1},
+    {"id": 3, "name": "wall_x0", "origin": [0,0,0], "tangent": [0,1,0], "bitangent": [0,0,1], "normal": [1,0,0], "extent": [0.5,1], "resolution": [128,256], "base": [512,0], "handedness": 1},
+    {"id": 4, "name": "wall_x1", "origin": [1,0,0], "tangent": [0,1,0], "bitangent": [0,0,1], "normal": [-1,0,0], "extent": [0.5,1], "resolution": [128,256], "base": [640,0], "handedness": -1},
+    {"id": 5, "name": "wall_z0", "origin": [0,0,0], "tangent": [0,1,0], "bitangent": [1,0,0], "normal": [0,0,1], "extent": [0.5,1], "resolution": [128,256], "base": [768,0], "handedness": -1},
+    {"id": 6, "name": "wall_z1", "origin": [0,0,1], "tangent": [0,1,0], "bitangent": [1,0,0], "normal": [0,0,-1], "extent": [0.5,1], "resolution": [128,256], "base": [896,0], "handedness": 1},
+    {"id": 7, "name": "interior_front", "origin": [0,0,0.46609375], "tangent": [0,1,0], "bitangent": [1,0,0], "normal": [0,0,-1], "extent": [0.5,1], "resolution": [128,256], "base": [0,1536], "handedness": 1},
+    {"id": 8, "name": "interior_back", "origin": [0,0,0.52609375], "tangent": [0,1,0], "bitangent": [1,0,0], "normal": [0,0,1], "extent": [0.5,1], "resolution": [128,256], "base": [128,1536], "handedness": -1}
+  ],
+  "trace_fixtures": [
+    {"name": "floor", "origin": [0.25,0.25,0.25], "direction": [0,-1,0], "distance": 0.25, "chart": 1},
+    {"name": "ceiling", "origin": [0.25,0.25,0.25], "direction": [0,1,0], "distance": 0.25, "chart": 2},
+    {"name": "mirror_sphere", "origin": [0.15,0.1005,0], "direction": [0,0,1], "distance": 0.2, "material_kind": 2},
+    {"name": "mirror_box", "origin": [0.86,0.14,0.5], "direction": [0,0,1], "distance": 0.28, "material_kind": 2}
+  ],
+  "gpu_contract": {
+    "schema": 1,
+    "bytes": 2368,
+    "materials_offset": 176,
+    "charts_offset": 560,
+    "primitives_offset": 1328
+  }
+}

@@ -41,6 +41,7 @@ tools/frame_*.md
 # Phase 0 reproducible baseline scratch runs
 /3d/tools/10_refactor/phase0_baseline/runs/
 /3d/tools/10_refactor/phase1_shell/runs/
+/3d/tools/10_refactor/phase2_reference_scene/runs/
 
 # IDE and agent config
 .agent/

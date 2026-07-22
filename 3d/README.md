@@ -157,6 +157,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\10_refactor\phase1_s
 
 The legacy shell remains the default. Use `--runtime-shell=app3d` to run the same legacy implementation through the new opaque `Demo3DBackend` seam.
 
+### Phase 2 Reference Scene
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\10_refactor\phase2_reference_scene\run_phase2_reference_scene.ps1
+```
+
+This CPU-only validation freezes the independent ShaderToy Cornell scene and chart contract. It does not alter legacy rendering or claim transport parity.
+
 ## Usage
 
 ### Keyboard Controls

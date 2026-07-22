@@ -58,6 +58,7 @@ endif()
 set(SOURCES_3D
     src/main3d.cpp
     src/app3d.cpp
+    src/reference_cornell_scene.cpp
     src/demo3d.cpp
     src/surface_rc.cpp
     src/validation_helpers.cpp
@@ -71,6 +72,7 @@ set(SOURCES_3D
 set(HEADERS_3D
     src/app3d.h
     src/legacy_demo3d_runtime.h
+    src/reference_cornell_scene.h
     src/demo3d.h
     src/surface_rc.h
     src/analytic_sdf.h  # Analytic SDF header
