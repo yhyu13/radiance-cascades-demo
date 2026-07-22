@@ -12,6 +12,8 @@
  * - Higher default resolution for volume rendering
  */
 
+#include "app3d.h"
+#include "legacy_demo3d_runtime.h"
 #include "demo3d.h"  // This includes raylib.h
 #include <iostream>
 #include <cstdlib>
@@ -95,6 +97,7 @@ static bool drainGLErrors(const char* stage) {
 }
 
 static bool writePhase0RuntimeReport(const std::string& path, const Demo3D& demo,
+                                     const LegacyRuntimeLaunch& launch,
                                      const std::vector<std::string>& arguments,
                                      const std::vector<std::string>& unknownArguments,
                                      int frameCount, bool artifactFailure,
@@ -150,6 +153,9 @@ static bool writePhase0RuntimeReport(const std::string& path, const Demo3D& demo
     }
     out << "],\n";
     out << "  \"selection\": {\n";
+    out << "    \"shell\": \"" << escapeJson(std::string(launch.shellName)) << "\",\n";
+    out << "    \"runtime_backend\": \""
+        << escapeJson(std::string(launch.runtimeBackendName)) << "\",\n";
     out << "    \"backend\": \"" << escapeJson(demo.getLegacyBackendName()) << "\",\n";
     out << "    \"render_view\": \"" << escapeJson(demo.getRenderViewName()) << "\",\n";
     out << "    \"render_mode\": " << demo.getRenderMode() << ",\n";
@@ -304,6 +310,10 @@ static int loadMeasurementCamerasJson(Demo3D* demo, const std::string& path) {
 }
 
 int main(int argc, char* argv[]) {
+    return App3D{}.run(argc, argv);
+}
+
+int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& launch) {
     /**
      * @brief Application entry point
      * 
@@ -467,6 +477,8 @@ int main(int argc, char* argv[]) {
         } else if (arg.rfind("--metadata-json=", 0) == 0) {
             phase0MetadataPath = arg.substr(16);
             std::cout << "[MAIN] --metadata-json=" << phase0MetadataPath << "\n";
+        } else if (arg.rfind("--runtime-shell=", 0) == 0) {
+            // Parsed and validated by App3D before entering this legacy runtime.
         } else if (arg.rfind("--window-size=", 0) == 0) {
             // Parsed before window initialization.
         } else if (arg.rfind("--exit-frames=", 0) == 0) {
@@ -1069,7 +1081,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "[BACKEND] name=" << demo->getLegacyBackendName()
+    std::cout << "[BACKEND] shell=" << launch.shellName
+              << " runtimeBackend=" << launch.runtimeBackendName
+              << " name=" << demo->getLegacyBackendName()
               << " view=" << demo->getRenderViewName()
               << " mode=" << demo->getRenderMode()
               << " scene=" << demo->getSceneLabel()
@@ -1263,7 +1277,7 @@ int main(int argc, char* argv[]) {
     bool phase0ReportFailed = false;
     if (phase0BaselineRequested) {
         phase0ReportFailed = !writePhase0RuntimeReport(
-            phase0MetadataPath, *demo, runtimeArguments, unknownArguments,
+            phase0MetadataPath, *demo, launch, runtimeArguments, unknownArguments,
             frameCounter, runtimeArtifactFailure, allocationGlError,
             firstFrameGlError, sceneLoadFailure);
         std::cout << "[PHASE0] runtime report=" << phase0MetadataPath

@@ -149,6 +149,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\10_refactor\phase0_b
 
 This command builds Release, captures a deterministic legacy-volumetric smoke frame, verifies shader compile/hash integrity, and writes a machine-readable G0 report under `tools/10_refactor/phase0_baseline/runs/`. This is baseline evidence only and does not claim surface radiance-cascade parity.
 
+### Phase 1 Shell Parity
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\10_refactor\phase1_shell\run_phase1_shell_parity.ps1
+```
+
+The legacy shell remains the default. Use `--runtime-shell=app3d` to run the same legacy implementation through the new opaque `Demo3DBackend` seam.
+
 ## Usage
 
 ### Keyboard Controls
