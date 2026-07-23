@@ -43,6 +43,7 @@ tools/frame_*.md
 /3d/tools/10_refactor/phase1_shell/runs/
 /3d/tools/10_refactor/phase3_layout/runs/
 /3d/tools/10_refactor/phase4_transport/runs/
+/3d/tools/10_refactor/phase5_merge/runs/
 /3d/tools/10_refactor/phase2_reference_scene/runs/
 
 # IDE and agent config
