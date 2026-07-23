@@ -1,0 +1,166 @@
+#version 430
+
+// Phase 3 parity layout kernel diagnostic (G2/G3/G4 support).
+// Ports the exact layout decode from shader_toy/CubeA.glsl:62-152:
+// hardcoded chart selection, probe coupling, square-ring hemisphere mapping,
+// solid-angle/Lambert weights, and interval limits. Diagnostic direction and
+// interval outputs only: no radiance, feedback, or merge code is enabled.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+struct LayoutRecord {
+    vec4 probePos;   // xyz = world probe position, w = probeSize
+    vec4 probeDir;   // xyz = square-ring direction, w = max trace distance
+    vec4 angles;     // x = thetaIndex, y = theta, z = phi, w = active (1/0)
+    vec4 weights;    // x = solidAngleWeight, y = lambertWeight, z = chartId, w = materialId
+    vec4 misc;       // x = physicalU, y = physicalV, z = binCount, w = binIndex
+};
+
+layout(std430, binding = 0) readonly  buffer Requests { vec2 requestUv[]; };
+layout(std430, binding = 1) writeonly buffer Records  { LayoutRecord records[]; };
+layout(rgba32f, binding = 2) uniform writeonly image2D uBandImage;
+
+uniform int uMode;         // 0 = decode request SSBO, 1 = write band marker texture
+uniform int uCascade;      // band mode: target cascade 0..5
+uniform int uRequestCount; // mode 0: number of requests
+
+const float THETA_PI = 3.14192653; // reference literal (CubeA.glsl:135)
+const float PI       = 3.141592653;
+const float C5_REACH = 10000.0;
+
+struct ChartInfo {
+    vec3 gPos, gTan, gBit, gNor;
+    vec2 gRes;
+    float chartId;
+    float materialId;
+};
+
+bool selectChart(vec2 uv, out ChartInfo c) {
+    c.chartId = 0.0;
+    if (uv.x < 0.0 || uv.x >= 1024.0 || uv.y < 0.0 || uv.y >= 3072.0)
+        return false;
+    if (uv.y < 1536.0) {
+        if (uv.x < 256.0) {
+            c = ChartInfo(vec3(0.,0.,0.), vec3(1.,0.,0.), vec3(0.,0.,1.), vec3(0.,1.,0.), vec2(256.), 1.0, 1.0);
+        } else if (uv.x < 512.0) {
+            c = ChartInfo(vec3(0.,.5,0.), vec3(1.,0.,0.), vec3(0.,0.,1.), vec3(0.,-1.,0.), vec2(256.), 2.0, 1.0);
+        } else if (uv.x < 640.0) {
+            c = ChartInfo(vec3(0.,0.,0.), vec3(0.,1.,0.), vec3(0.,0.,1.), vec3(1.,0.,0.), vec2(128.,256.), 3.0, 2.0);
+        } else if (uv.x < 768.0) {
+            c = ChartInfo(vec3(1.,0.,0.), vec3(0.,1.,0.), vec3(0.,0.,1.), vec3(-1.,0.,0.), vec2(128.,256.), 4.0, 3.0);
+        } else if (uv.x < 896.0) {
+            c = ChartInfo(vec3(0.,0.,0.), vec3(0.,1.,0.), vec3(1.,0.,0.), vec3(0.,0.,1.), vec2(128.,256.), 5.0, 1.0);
+        } else {
+            c = ChartInfo(vec3(0.,0.,1.), vec3(0.,1.,0.), vec3(1.,0.,0.), vec3(0.,0.,-1.), vec2(128.,256.), 6.0, 1.0);
+        }
+        return true;
+    }
+    if (uv.x < 128.0) {
+        c = ChartInfo(vec3(0.,0.,0.47 - 1./256.), vec3(0.,1.,0.), vec3(1.,0.,0.), vec3(0.,0.,-1.), vec2(128.,256.), 7.0, 4.0);
+        return true;
+    }
+    if (uv.x < 256.0) {
+        c = ChartInfo(vec3(0.,0.,0.53 - 1./256.), vec3(0.,1.,0.), vec3(1.,0.,0.), vec3(0.,0.,1.), vec2(128.,256.), 8.0, 4.0);
+        return true;
+    }
+    return false;
+}
+
+float piecewisePhi(vec2 rel, float thetai) {
+    // CubeA.glsl:137-145 exact branch conditions.
+    float phi = 0.0;
+    if (rel.x + 0.5 > thetai && rel.y - 0.5 > -thetai) {
+        phi = rel.x - rel.y;
+    } else if (rel.y - 0.5 < -thetai && rel.x - 0.5 > -thetai) {
+        phi = thetai*2. - rel.y - rel.x;
+    } else if (rel.x - 0.5 < -thetai && rel.y + 0.5 < thetai) {
+        phi = thetai*4. - rel.x + rel.y;
+    } else if (rel.y + 0.5 > thetai && rel.x + 0.5 < thetai) {
+        phi = thetai*8. - (rel.y - rel.x);
+    }
+    return phi;
+}
+
+void decodeLayout(vec2 uv, out LayoutRecord rec) {
+    rec.probePos = vec4(0.0);
+    rec.probeDir = vec4(0.0);
+    rec.angles   = vec4(0.0);
+    rec.weights  = vec4(0.0);
+    rec.misc     = vec4(-1.0, -1.0, 0.0, -1.0);
+
+    ChartInfo c;
+    if (!selectChart(uv, c))
+        return;
+
+    float probeCascade = floor(mod(uv.y, 1536.0) / 256.0);
+    float probeSize = pow(2.0, probeCascade + 1.0);
+    vec2 modUV = mod(uv, c.gRes);
+    vec2 probePositions = c.gRes / probeSize;
+    vec3 probePos = c.gPos + mod(modUV.x, probePositions.x)*probeSize/256.*c.gTan
+                             + mod(modUV.y, probePositions.y)*probeSize/256.*c.gBit;
+    vec2 probeUV = floor(modUV / probePositions) + 0.5;
+    vec2 probeRel = probeUV - probeSize*0.5;
+    float probeThetai = max(abs(probeRel.x), abs(probeRel.y));
+    float probeTheta = probeThetai/probeSize*THETA_PI;
+    float phiU = piecewisePhi(probeRel, probeThetai);
+    float binCount = 4. + 8.*floor(probeThetai);
+    float probePhi = phiU*PI*2./binCount;
+    vec3 localDir = vec3(vec2(sin(probePhi), cos(probePhi))*sin(probeTheta), cos(probeTheta));
+    vec3 probeDir = localDir.x*c.gTan + localDir.y*c.gBit + localDir.z*c.gNor;
+
+    float tInterval = (1./64.)*probeSize*2.;
+    if (probeCascade > 4.5) tInterval = C5_REACH;
+
+    float saw = (cos(probeTheta - PI/probeSize) - cos(probeTheta + PI/probeSize))/binCount;
+    float lw = cos(probeTheta);
+
+    // Plan Section 7.3 global -> physical mapping (continuous coordinates).
+    // 256 + y - (1536 + 256c) == y - (1280 + 256c); the folded constant keeps
+    // CPU and GPU float evaluation bit-identical (no reassociation hazard).
+    float bandY0 = 256.0*probeCascade;
+    vec2 physical = vec2(-1.0);
+    if (uv.y >= bandY0 && uv.y < bandY0 + 256.0) {
+        physical = vec2(uv.x, uv.y - bandY0);
+    } else if (uv.y >= 1536.0 + bandY0 && uv.y < 1536.0 + bandY0 + 256.0) {
+        physical = vec2(uv.x, uv.y - (1280.0 + bandY0));
+    }
+
+    int binIndex = int(round(phiU));
+    rec.probePos = vec4(probePos, probeSize);
+    rec.probeDir = vec4(probeDir, tInterval);
+    rec.angles   = vec4(probeThetai, probeTheta, probePhi, 1.0);
+    rec.weights  = vec4(saw, lw, c.chartId, c.materialId);
+    rec.misc     = vec4(physical, binCount, float(binIndex - (binIndex/int(binCount))*int(binCount)));
+}
+
+void main() {
+    if (uMode == 0) {
+        uint idx = gl_GlobalInvocationID.y * 8u + gl_GlobalInvocationID.x;
+        if (int(idx) >= uRequestCount)
+            return;
+        LayoutRecord rec;
+        decodeLayout(requestUv[idx], rec);
+        records[idx] = rec;
+        return;
+    }
+
+    // Band marker mode: physical texel -> global -> layout decode -> diagnostic
+    // direction (RGB, remapped) and interval (A) outputs. Inactive texels are
+    // written as RGB zero, alpha -1. No radiance is produced.
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    if (texel.x >= 1024 || texel.y >= 512)
+        return;
+    float bandY0 = 256.0*float(uCascade);
+    vec2 globalUv = (texel.y < 256)
+        ? vec2(float(texel.x), float(texel.y) + bandY0)
+        : vec2(float(texel.x), float(texel.y) + (1280.0 + bandY0));
+    globalUv += 0.5;
+
+    LayoutRecord rec;
+    decodeLayout(globalUv, rec);
+    if (rec.angles.w < 0.5) {
+        imageStore(uBandImage, texel, vec4(0.0, 0.0, 0.0, -1.0));
+        return;
+    }
+    imageStore(uBandImage, texel, vec4(rec.probeDir.xyz*0.5 + 0.5, rec.probeDir.w));
+}

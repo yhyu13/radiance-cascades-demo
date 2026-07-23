@@ -1,6 +1,7 @@
 #include "app3d.h"
 #include "legacy_demo3d_runtime.h"
 #include "reference_cornell_scene.h"
+#include "reference_layout_validation.h"
 
 #include <iostream>
 #include <memory>
@@ -17,7 +18,9 @@ struct StartupConfig {
     RuntimeShell shell = RuntimeShell::Legacy;
     bool valid = true;
     bool validateReferenceScene = false;
+    bool validateReferenceLayout = false;
     std::string_view referenceSceneReport;
+    std::string_view referenceLayoutReport;
 };
 
 class RuntimeBackend {
@@ -49,9 +52,18 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
             config.validateReferenceScene = true;
             continue;
         }
+        if (argument == "--validate-reference-layout") {
+            config.validateReferenceLayout = true;
+            continue;
+        }
         constexpr std::string_view reportPrefix = "--reference-scene-report=";
         if (argument.starts_with(reportPrefix)) {
             config.referenceSceneReport = argument.substr(reportPrefix.size());
+            continue;
+        }
+        constexpr std::string_view layoutReportPrefix = "--reference-layout-report=";
+        if (argument.starts_with(layoutReportPrefix)) {
+            config.referenceLayoutReport = argument.substr(layoutReportPrefix.size());
             continue;
         }
         constexpr std::string_view prefix = "--runtime-shell=";
@@ -100,6 +112,20 @@ int App3D::run(int argc, char* argv[]) {
         const bool passed = scene.validateAndWriteReport(std::string(config.referenceSceneReport));
         std::cout << "[PHASE2] reference scene report=" << config.referenceSceneReport
                   << " result=" << (passed ? "PASS" : "FAIL") << "\n";
+        return passed ? 0 : 1;
+    }
+
+    if (config.validateReferenceLayout) {
+        if (config.shell != RuntimeShell::App3D) {
+            std::cerr << "[APP3D] Reference layout validation requires --runtime-shell=app3d.\n";
+            return 2;
+        }
+        if (config.referenceLayoutReport.empty()) {
+            std::cerr << "[APP3D] --reference-layout-report is required for validation.\n";
+            return 2;
+        }
+        const bool passed =
+            runReferenceLayoutValidation(std::string(config.referenceLayoutReport));
         return passed ? 0 : 1;
     }
 
