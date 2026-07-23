@@ -52,13 +52,28 @@ layout(std430, binding = 3) readonly buffer SceneData {
     GpuPrimitive primitives[13];
 } scene;
 
-uniform int uMode;             // 0 = request evaluation, 1 = band transport
+uniform int uMode;             // 0 = request, 1 = band transport, 2 = final view
 uniform int uCascade;          // band mode: target cascade 0..5
 uniform int uRequestCount;     // mode 0: number of requests
 uniform sampler2D uUpperCascade;   // band mode: same-frame write[cascade+1]
 uniform int uEnableUpperMerge;     // band mode: 1 = merge with upper cascade
-uniform sampler2D uFeedbackC0;     // band mode: previous-generation read[C0]
+uniform sampler2D uFeedbackC0;     // feedback/final: completed read[C0] view
 uniform int uHistoryValid;         // band mode: 1 = feedback lookup allowed
+
+// Mode 2 final consumer (G9): declared native display policy - exact four-bin
+// reconstruction from the completed C0 read view, visible-surface albedo
+// applied, no 1/pi, direct light composited separately per pixel.
+uniform int uRefEnabled;       // final mode: 0 = baseline (sky + direct only)
+uniform int uWidth;
+uniform int uHeight;
+uniform vec3 uCamPos;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform float uCamTan;         // tan(fovY/2)
+uniform float uAspect;
+uniform float uExposure;       // display-only (default 1; validated path uses 1)
+uniform float uInvGamma;       // display-only (default 1; validated path uses 1)
 
 // Plan Section 7.3 global -> physical texel mapping (integer coordinates).
 ivec2 globalToPhysicalTexel(int cascade, vec2 globalUv) {
@@ -512,7 +527,50 @@ ProbeDecode decodeProbe(vec2 uv, ChartInfo c) {
 
 // ---------------------------------------------------------------------------
 
+// Final consumer (Phase 7): camera ray -> trace -> exact four-bin C0 read
+// view + separately composited direct. Baseline mode disables the four-bin
+// read (sky + direct only) for the G9 disabled-reference equivalence check.
+vec3 shadeFinalView(vec3 origin, vec3 dir, float time) {
+    TraceHit h = traceScene(origin, dir, 10000.0, time);
+    if (!h.hit)
+        return getSkyLight(dir);
+    if (h.materialKind == MAT_REFLECTIVE || h.materialKind == MAT_BLACK)
+        return vec3(0.0);
+    if (h.materialKind == MAT_EMISSIVE)
+        return h.emission;
+    vec3 n = h.normal;
+    if (dot(n, dir) >= 0.0)
+        n = -n;  // view-side normal for back-facing charts
+    vec3 irradiance = vec3(0.0);
+    if (uRefEnabled != 0)
+        irradiance = feedbackB(h);  // exact four-bin reconstruction, read[C0]
+    vec3 direct = vec3(0.0);
+    float ndl = dot(n, scene.sunDirection.xyz);
+    if (ndl > 0.0) {
+        vec3 sPos = h.position + n*0.001;
+        TraceHit shadow = traceScene(sPos, scene.sunDirection.xyz, 10000.0, time);
+        if (!shadow.hit)
+            direct = scene.sunRadiance.xyz * ndl;
+    }
+    return h.response * (irradiance + direct);
+}
+
 void main() {
+    if (uMode == 2) {
+        ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+        if (pixel.x >= uWidth || pixel.y >= uHeight)
+            return;
+        vec2 ndc = (vec2(pixel) + 0.5)/vec2(float(uWidth), float(uHeight))*2.0 - 1.0;
+        vec3 dir = normalize(uCamFwd + uCamRight*(ndc.x*uAspect*uCamTan) +
+                             uCamUp*(ndc.y*uCamTan));
+        float time = scene.referenceConstants.x;
+        vec3 color = shadeFinalView(uCamPos, dir, time);
+        // Display-only mapping for human viewing; validation passes 1/1 so
+        // the measured pixels stay linear.
+        color = pow(max(color * uExposure, vec3(0.0)), vec3(uInvGamma));
+        imageStore(uBandImage, pixel, vec4(color, 1.0));
+        return;
+    }
     if (uMode == 0) {
         uint idx = gl_GlobalInvocationID.y * 8u + gl_GlobalInvocationID.x;
         if (int(idx) >= uRequestCount)

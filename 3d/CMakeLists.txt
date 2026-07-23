@@ -64,6 +64,10 @@ set(SOURCES_3D
     src/reference_rc_atlases.cpp
     src/reference_merge_validation.cpp
     src/reference_feedback_validation.cpp
+    src/reference_camera.cpp
+    src/reference_final.cpp
+    src/reference_final_validation.cpp
+    src/reference_pipeline.cpp
     src/reference_transport.cpp
     src/reference_transport_validation.cpp
     src/demo3d.cpp
@@ -85,6 +89,10 @@ set(HEADERS_3D
     src/reference_rc_atlases.h
     src/reference_merge_validation.h
     src/reference_feedback_validation.h
+    src/reference_camera.h
+    src/reference_final.h
+    src/reference_final_validation.h
+    src/reference_pipeline.h
     src/reference_transport.h
     src/reference_transport_validation.h
     src/demo3d.h
