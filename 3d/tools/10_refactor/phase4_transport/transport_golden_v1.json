@@ -1,0 +1,425 @@
+{
+ "schema_version": "reference-transport-golden-v1",
+ "payload_schema": "ReferenceSurfaceTexelV1",
+ "derivation": {
+  "common": "shader_toy/Common.glsl:43-205",
+  "cube": "shader_toy/CubeA.glsl:150-192",
+  "phase_scope": "local transport only: B(hit)=0, no upper merge"
+ },
+ "constants": {
+  "reference_time": 0.0,
+  "sun_direction": [
+   -0.4776245954095521,
+   0.7071067811865475,
+   0.5214160966635587
+  ],
+  "sun_radiance": [
+   2.5,
+   2.25,
+   1.625
+  ],
+  "sky_base": [
+   0.7,
+   0.8,
+   1.0
+  ],
+  "sky_y_scale": 0.5,
+  "theta_pi_literal": 3.14192653,
+  "pi_literal": 3.141592653,
+  "shadow_bias": 0.001,
+  "shadow_max_distance": 10000.0
+ },
+ "tolerances": {
+  "ids": "exact",
+  "alpha_distance": 0.0001,
+  "rgb_absolute": 0.0005
+ },
+ "fixtures": [
+  {
+   "name": "sky_miss_short_interval",
+   "type": "trace",
+   "origin": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "direction": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "maxT": 0.1,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "sky",
+    "rgb": [
+     0.2624999963422771,
+     0.29999999581974535,
+     0.37499999477468166
+    ],
+    "alpha": -1.0,
+    "W": 0.24999999651645444,
+    "chart": 0,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "floor_frontface_lit",
+   "type": "trace",
+   "origin": [
+    0.975,
+    0.4,
+    0.325
+   ],
+   "direction": [
+    0,
+    -1,
+    0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "diffuse_frontface",
+    "rgb": [
+     0.3977475588751459,
+     0.35797280298763134,
+     0.25853591326884484
+    ],
+    "alpha": 0.4,
+    "W": 0.24999999651645444,
+    "chart": 1,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "floor_frontface_occluded",
+   "type": "trace",
+   "origin": [
+    0.025,
+    0.4,
+    0.025
+   ],
+   "direction": [
+    0,
+    -1,
+    0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "diffuse_frontface",
+    "rgb": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "alpha": 0.4,
+    "W": 0.24999999651645444,
+    "chart": 1,
+    "sunOccluded": true
+   }
+  },
+  {
+   "name": "wall_x1_green_identity_lit",
+   "type": "trace",
+   "origin": [
+    0.6,
+    0.025,
+    0.325
+   ],
+   "direction": [
+    1,
+    0,
+    0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "diffuse_frontface",
+    "rgb": [
+     0.014925768398570126,
+     0.25523063961554904,
+     0.019403498918141162
+    ],
+    "alpha": 0.4,
+    "W": 0.24999999651645444,
+    "chart": 4,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "wall_x0_red_unlit",
+   "type": "trace",
+   "origin": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "direction": [
+    -1,
+    0,
+    0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "diffuse_frontface",
+    "rgb": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "alpha": 0.25,
+    "W": 0.24999999651645444,
+    "chart": 3,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "floor_backface",
+   "type": "trace",
+   "origin": [
+    0.25,
+    -0.25,
+    0.25
+   ],
+   "direction": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "diffuse_backface",
+    "rgb": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "alpha": 0.25,
+    "W": 0.24999999651645444,
+    "chart": 1,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "interior_front_backface",
+   "type": "trace",
+   "origin": [
+    0.25,
+    0.25,
+    0.49609375
+   ],
+   "direction": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "diffuse_backface",
+    "rgb": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "alpha": 0.030000000000000027,
+    "W": 0.24999999651645444,
+    "chart": 7,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "black_cylinder_hits",
+   "type": "trace",
+   "origin": [
+    0.3,
+    0.1,
+    0.496
+   ],
+   "direction": [
+    1,
+    0,
+    0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "black_uncharted",
+    "rgb": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "alpha": 0.42912878474779204,
+    "W": 0.24999999651645444,
+    "chart": 0,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "reflective_sphere",
+   "type": "trace",
+   "origin": [
+    0.15,
+    0.1005,
+    0.0
+   ],
+   "direction": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "reflective",
+    "rgb": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "alpha": 0.19999999999999996,
+    "W": 0.24999999651645444,
+    "chart": 0,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "reflective_box",
+   "type": "trace",
+   "origin": [
+    0.86,
+    0.14,
+    0.5
+   ],
+   "direction": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "reflective",
+    "rgb": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "alpha": 0.27999999999999997,
+    "W": 0.24999999651645444,
+    "chart": 0,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "floor_lit_w_ps4_t15",
+   "type": "trace",
+   "origin": [
+    0.975,
+    0.4,
+    0.325
+   ],
+   "direction": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 1.5,
+   "probeSize": 4,
+   "expect": {
+    "category": "diffuse_frontface",
+    "rgb": [
+     0.06627465883216058,
+     0.059647192948944515,
+     0.04307852824090437
+    ],
+    "alpha": 0.4,
+    "W": 0.041656231716485026,
+    "chart": 1,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "floor_lit_w_ps8_t35",
+   "type": "trace",
+   "origin": [
+    0.975,
+    0.4,
+    0.325
+   ],
+   "direction": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "maxT": 1.0,
+   "thetaIndex": 3.5,
+   "probeSize": 8,
+   "expect": {
+    "category": "diffuse_frontface",
+    "rgb": [
+     0.008315385323479007,
+     0.007483846791131107,
+     0.005405000460261355
+    ],
+    "alpha": 0.4,
+    "W": 0.0052265469781432,
+    "chart": 1,
+    "sunOccluded": false
+   }
+  },
+  {
+   "name": "emissive_synthetic",
+   "type": "synthetic",
+   "hit": {
+    "distance": 0.3,
+    "normal": [
+     0,
+     1,
+     0
+    ],
+    "materialKind": 3,
+    "response": [
+     2.0,
+     1.5,
+     1.0
+    ],
+    "chart": 0
+   },
+   "direction": [
+    0,
+    -1,
+    0
+   ],
+   "thetaIndex": 0.5,
+   "probeSize": 2,
+   "expect": {
+    "category": "emissive",
+    "rgb": [
+     0.4999999930329089,
+     0.37499999477468166,
+     0.24999999651645444
+    ],
+    "alpha": 0.3,
+    "W": 0.24999999651645444,
+    "chart": 0,
+    "sunOccluded": false
+   }
+  }
+ ]
+}

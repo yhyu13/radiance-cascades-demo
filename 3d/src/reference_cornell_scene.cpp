@@ -293,6 +293,11 @@ ReferenceCornellScene::ReferenceCornellScene() {
     };
 }
 
+glm::vec3 ReferenceCornellScene::getSkyLight(const glm::vec3& direction) const {
+    // Common.glsl:44-47: direction-dependent environment radiance.
+    return glm::vec3(0.7f, 0.8f, 1.0f) * (1.0f - direction.y * 0.5f);
+}
+
 ReferenceTraceHit ReferenceCornellScene::trace(const glm::vec3& origin,
                                                 const glm::vec3& direction,
                                                 float maxDistance) const {

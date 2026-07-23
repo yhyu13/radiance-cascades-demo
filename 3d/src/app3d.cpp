@@ -2,6 +2,7 @@
 #include "legacy_demo3d_runtime.h"
 #include "reference_cornell_scene.h"
 #include "reference_layout_validation.h"
+#include "reference_transport_validation.h"
 
 #include <iostream>
 #include <memory>
@@ -19,8 +20,10 @@ struct StartupConfig {
     bool valid = true;
     bool validateReferenceScene = false;
     bool validateReferenceLayout = false;
+    bool validateReferenceTransport = false;
     std::string_view referenceSceneReport;
     std::string_view referenceLayoutReport;
+    std::string_view referenceTransportReport;
 };
 
 class RuntimeBackend {
@@ -56,6 +59,10 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
             config.validateReferenceLayout = true;
             continue;
         }
+        if (argument == "--validate-reference-transport") {
+            config.validateReferenceTransport = true;
+            continue;
+        }
         constexpr std::string_view reportPrefix = "--reference-scene-report=";
         if (argument.starts_with(reportPrefix)) {
             config.referenceSceneReport = argument.substr(reportPrefix.size());
@@ -64,6 +71,11 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
         constexpr std::string_view layoutReportPrefix = "--reference-layout-report=";
         if (argument.starts_with(layoutReportPrefix)) {
             config.referenceLayoutReport = argument.substr(layoutReportPrefix.size());
+            continue;
+        }
+        constexpr std::string_view transportReportPrefix = "--reference-transport-report=";
+        if (argument.starts_with(transportReportPrefix)) {
+            config.referenceTransportReport = argument.substr(transportReportPrefix.size());
             continue;
         }
         constexpr std::string_view prefix = "--runtime-shell=";
@@ -126,6 +138,20 @@ int App3D::run(int argc, char* argv[]) {
         }
         const bool passed =
             runReferenceLayoutValidation(std::string(config.referenceLayoutReport));
+        return passed ? 0 : 1;
+    }
+
+    if (config.validateReferenceTransport) {
+        if (config.shell != RuntimeShell::App3D) {
+            std::cerr << "[APP3D] Reference transport validation requires --runtime-shell=app3d.\n";
+            return 2;
+        }
+        if (config.referenceTransportReport.empty()) {
+            std::cerr << "[APP3D] --reference-transport-report is required for validation.\n";
+            return 2;
+        }
+        const bool passed =
+            runReferenceTransportValidation(std::string(config.referenceTransportReport));
         return passed ? 0 : 1;
     }
 

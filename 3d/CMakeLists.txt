@@ -62,6 +62,8 @@ set(SOURCES_3D
     src/reference_layout.cpp
     src/reference_layout_validation.cpp
     src/reference_rc_atlases.cpp
+    src/reference_transport.cpp
+    src/reference_transport_validation.cpp
     src/demo3d.cpp
     src/surface_rc.cpp
     src/validation_helpers.cpp
@@ -79,6 +81,8 @@ set(HEADERS_3D
     src/reference_layout.h
     src/reference_layout_validation.h
     src/reference_rc_atlases.h
+    src/reference_transport.h
+    src/reference_transport_validation.h
     src/demo3d.h
     src/surface_rc.h
     src/analytic_sdf.h  # Analytic SDF header

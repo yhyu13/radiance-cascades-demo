@@ -138,6 +138,12 @@ public:
                             float maxDistance) const;
     bool validateAndWriteReport(const std::string& path) const;
 
+    // Environment contract from shader_toy/Common.glsl:43-59 at fixed time.
+    glm::vec3 getSkyLight(const glm::vec3& direction) const;
+    const glm::vec3& sunDirection() const { return snapshot_.parityScene.sunDirection; }
+    const glm::vec3& sunRadiance() const { return snapshot_.parityScene.sunRadiance; }
+    float referenceTime() const { return snapshot_.parityScene.referenceTime; }
+
 private:
     ReferenceSceneSnapshot snapshot_;
     ReferenceSceneGpuData gpuData_;
