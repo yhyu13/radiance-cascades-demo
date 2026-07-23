@@ -31,10 +31,28 @@ struct LocalSample {
 float weight(float thetaIndex, uint32_t probeSize);
 
 // Shade an already-traced hit (also covers the synthetic emissive category).
+// bounce is B(hit) from temporal feedback; zero when history is invalid.
 LocalSample shadeHit(const ReferenceCornellScene& scene,
                      const ReferenceTraceHit& hit,
                      const glm::vec3& probeDirection,
-                     float thetaIndex, uint32_t probeSize);
+                     float thetaIndex, uint32_t probeSize,
+                     const glm::vec3& bounce = glm::vec3(0.0f));
+
+// Temporal hit-chart feedback (Phase 6): reconstructs the exact four
+// previous-frame C0 direction bins addressed by CubeA.glsl:166-170.
+struct FeedbackAddress {
+    glm::vec2 suv{0.0f};  // global C0 address of the hit probe cell center
+    std::array<glm::vec2, 4> binsGlobal{};
+    std::array<glm::vec2, 4> binsPhysical{};
+};
+FeedbackAddress feedbackAddress(uint32_t chartId, const glm::vec2& chartUv);
+
+using C0Fetch = std::function<glm::vec4(const glm::ivec2&)>;
+
+// Sum of the exact four previous-frame C0 directional values at the hit.
+// Returns zero for non-charted hits (reflective, black uncharted) and for
+// charts without a valid chartUv.
+glm::vec3 feedbackB(const ReferenceTraceHit& hit, const C0Fetch& fetchC0);
 
 // Trace the locked scene and shade the result.
 LocalSample traceAndShade(const ReferenceCornellScene& scene,

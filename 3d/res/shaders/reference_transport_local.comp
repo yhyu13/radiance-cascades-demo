@@ -52,9 +52,23 @@ layout(std430, binding = 3) readonly buffer SceneData {
     GpuPrimitive primitives[13];
 } scene;
 
-uniform int uMode;         // 0 = request evaluation, 1 = band transport
-uniform int uCascade;      // band mode: target cascade 0..5
-uniform int uRequestCount; // mode 0: number of requests
+uniform int uMode;             // 0 = request evaluation, 1 = band transport
+uniform int uCascade;          // band mode: target cascade 0..5
+uniform int uRequestCount;     // mode 0: number of requests
+uniform sampler2D uUpperCascade;   // band mode: same-frame write[cascade+1]
+uniform int uEnableUpperMerge;     // band mode: 1 = merge with upper cascade
+uniform sampler2D uFeedbackC0;     // band mode: previous-generation read[C0]
+uniform int uHistoryValid;         // band mode: 1 = feedback lookup allowed
+
+// Plan Section 7.3 global -> physical texel mapping (integer coordinates).
+ivec2 globalToPhysicalTexel(int cascade, vec2 globalUv) {
+    float bandY0 = 256.0*float(cascade);
+    if (globalUv.y >= bandY0 && globalUv.y < bandY0 + 256.0)
+        return ivec2(int(globalUv.x), int(globalUv.y - bandY0));
+    if (globalUv.y >= 1536.0 + bandY0 && globalUv.y < 1536.0 + bandY0 + 256.0)
+        return ivec2(int(globalUv.x), int(globalUv.y - (1280.0 + bandY0)));
+    return ivec2(-1);
+}
 
 const float THETA_PI = 3.14192653; // reference literal (CubeA.glsl:135)
 const float PI       = 3.141592653;
@@ -278,6 +292,13 @@ TraceHit traceScene(vec3 origin, vec3 dir, float maxt, float time) {
 // CubeA.glsl:150-192 local shading (B=0, no upper merge)
 // ---------------------------------------------------------------------------
 
+struct ChartInfo {
+    vec3 gPos, gTan, gBit, gNor;
+    vec2 gRes;
+    float chartId;
+    float materialId;
+};
+
 float transportWeight(float thetaIndex, float probeSize) {
     float theta = thetaIndex/probeSize*THETA_PI;
     float binCount = 4.0 + 8.0*floor(thetaIndex);
@@ -285,7 +306,31 @@ float transportWeight(float thetaIndex, float probeSize) {
     return saw*cos(theta);
 }
 
-vec4 shadeLocal(TraceHit h, vec3 probeDir, float thetaIndex, float probeSize) {
+// Temporal hit-chart feedback (Phase 6): sum of the exact four
+// previous-generation C0 directional values addressed by CubeA.glsl:166-170.
+vec3 feedbackB(TraceHit h) {
+    if (!h.hit || h.chartId == 0 || h.chartUv.x < 0.0)
+        return vec3(0.0);
+    vec2 res;
+    vec2 base;
+    if (h.chartId == 1)      { res = vec2(256.0,256.0); base = vec2(0.0,0.0); }
+    else if (h.chartId == 2) { res = vec2(256.0,256.0); base = vec2(256.0,0.0); }
+    else if (h.chartId == 3) { res = vec2(128.0,256.0); base = vec2(512.0,0.0); }
+    else if (h.chartId == 4) { res = vec2(128.0,256.0); base = vec2(640.0,0.0); }
+    else if (h.chartId == 5) { res = vec2(128.0,256.0); base = vec2(768.0,0.0); }
+    else if (h.chartId == 6) { res = vec2(128.0,256.0); base = vec2(896.0,0.0); }
+    else if (h.chartId == 7) { res = vec2(128.0,256.0); base = vec2(0.0,1536.0); }
+    else                     { res = vec2(128.0,256.0); base = vec2(128.0,1536.0); }
+    vec2 halfRes = res*0.5;
+    vec2 suv = clamp(h.chartUv*halfRes, vec2(0.5), halfRes - 0.5) + base;
+    return texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv), 0).rgb
+         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + vec2(halfRes.x, 0.0)), 0).rgb
+         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + vec2(0.0, halfRes.y)), 0).rgb
+         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + halfRes), 0).rgb;
+}
+
+vec4 shadeLocal(TraceHit h, vec3 probeDir, float thetaIndex, float probeSize,
+                vec3 bounce) {
     float w = transportWeight(thetaIndex, probeSize);
     vec3 rgb;
     float alpha;
@@ -306,24 +351,76 @@ vec4 shadeLocal(TraceHit h, vec3 probeDir, float thetaIndex, float probeSize) {
                                              scene.referenceConstants.x);
                 if (!shadow.hit) direct = scene.sunRadiance.xyz * ndl;
             }
-            // B(hit) = 0: temporal feedback is disabled in Phase 4.
-            rgb = direct * h.response;
+            // B(hit) from previous-generation C0; zero while history invalid.
+            rgb = (bounce + direct) * h.response;
         }
     }
     return vec4(rgb * w, alpha);
+}
+
+// Upper-cascade weighted merge (Phase 5/6): CubeA.glsl:21-41,195-218 with the
+// approved chart-edge policy (candidates clamped before look-back and
+// radiance addressing). Alpha for visibility comes only from the distinct
+// look-back direction address; C5 performs no upper read.
+vec3 mergeUpper(vec2 uv, ChartInfo c, float probeCascade, vec3 probePos,
+                float localT, vec3 localRgb) {
+    float probeSize = pow(2.0, probeCascade + 1.0);
+    float upperProbeSize = probeSize*2.0;
+    vec2 probePositions = c.gRes/probeSize;
+    vec2 uvo = probePositions*0.5;
+    vec2 modUV = mod(uv, c.gRes);
+    vec2 luvo = floor(uv/c.gRes)*c.gRes + vec2(0.0, c.gRes.y);
+    vec2 luvd = floor(modUV/probePositions)*probePositions;
+    vec2 p = clamp(mod(modUV, probePositions)*0.5, vec2(0.5), uvo - 0.5);
+    vec2 f = fract(p - 0.5);
+    vec2 base = floor(p - 0.5) + 0.5;
+    vec2 offs[4] = vec2[4](vec2(0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0));
+    float ws[4] = float[4]((1.0-f.x)*(1.0-f.y), f.x*(1.0-f.y),
+                           (1.0-f.x)*f.y, f.x*f.y);
+    int uc = int(probeCascade) + 1;
+    vec3 numerator = vec3(0.0);
+    float vw = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        vec2 q = clamp(base + offs[i], vec2(0.5), uvo - 0.5);
+        vec3 wp = c.gPos + c.gTan*(q.x*upperProbeSize/256.0) +
+                  c.gBit*(q.y*upperProbeSize/256.0);
+        vec3 rel = probePos - wp;
+        float theta = (upperProbeSize*0.5 - 0.5)/(upperProbeSize*0.5)*PI*0.5;
+        float cone = cos(PI*0.5 - theta);
+        float phi = atan(-dot(rel, c.gTan), -dot(rel, c.gBit));
+        float count = 4.0 + 8.0*(upperProbeSize*0.5 - 1.0);
+        float phiI = floor((phi/PI*0.5 + 0.5)*count) + 0.5;
+        float phiLen = upperProbeSize - 1.0;
+        vec2 phiUv;
+        if (phiI < phiLen) phiUv = vec2(upperProbeSize-0.5, upperProbeSize-phiI);
+        else if (phiI < phiLen*2.0) phiUv = vec2(upperProbeSize-(phiI-phiLen), 0.5);
+        else if (phiI < phiLen*3.0) phiUv = vec2(0.5, phiI-phiLen*2.0);
+        else phiUv = vec2(phiI-phiLen*3.0, upperProbeSize-0.5);
+        vec2 lookG = luvo + luvd + floor(phiUv)*uvo + q;
+        float dist = texelFetch(uUpperCascade, globalToPhysicalTexel(uc, lookG), 0).a;
+        bool visible = dist < -0.5 || length(rel) < dist*cone + 0.01;
+        if (visible) {
+            vec2 radBase = luvo + luvd + q;
+            vec3 sum = texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase), 0).rgb
+                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + vec2(uvo.x, 0.0)), 0).rgb
+                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + vec2(0.0, uvo.y)), 0).rgb
+                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + uvo), 0).rgb;
+            numerator += sum*ws[i];
+            vw += ws[i];
+        }
+    }
+    vec3 upper = numerator / max(0.01, vw);
+    float baseT = (1.0/256.0)*probeSize*1.5;
+    float mn = probeCascade < 0.5 ? 0.0 : baseT;
+    float interval = probeCascade < 0.5 ? baseT*2.0 : baseT;
+    float l = 1.0 - clamp((localT - mn)/interval, 0.0, 1.0);
+    return localRgb*l + upper*(1.0 - l);
 }
 
 // ---------------------------------------------------------------------------
 // Layout decode (identical to reference_layout_diag.comp; validated against
 // the same golden fixtures in Phase 3).
 // ---------------------------------------------------------------------------
-
-struct ChartInfo {
-    vec3 gPos, gTan, gBit, gNor;
-    vec2 gRes;
-    float chartId;
-    float materialId;
-};
 
 bool selectChart(vec2 uv, out ChartInfo c) {
     c.chartId = 0.0;
@@ -379,7 +476,7 @@ struct ProbeDecode {
     float interval;
 };
 
-ProbeDecode decodeProbe(vec2 uv) {
+ProbeDecode decodeProbe(vec2 uv, ChartInfo c) {
     ProbeDecode p;
     p.isActive = false;
     p.probePos = vec3(0.0);
@@ -387,9 +484,6 @@ ProbeDecode decodeProbe(vec2 uv) {
     p.thetaIndex = 0.0;
     p.probeSize = 0.0;
     p.interval = 0.0;
-    ChartInfo c;
-    if (!selectChart(uv, c))
-        return p;
     float probeCascade = floor(mod(uv.y, 1536.0) / 256.0);
     float probeSize = pow(2.0, probeCascade + 1.0);
     vec2 modUV = mod(uv, c.gRes);
@@ -438,18 +532,21 @@ void main() {
             h.response = req.hit1.xyz;
             h.emission = req.hit1.xyz;
             h.hit = true;
-            outRgba = shadeLocal(h, normalize(req.ray.xyz), req.misc.x, req.misc.y);
+            outRgba = shadeLocal(h, normalize(req.ray.xyz), req.misc.x, req.misc.y,
+                                   vec3(0.0));
         } else {
             float time = scene.referenceConstants.x;
             TraceHit h = traceScene(req.origin.xyz, normalize(req.ray.xyz),
                                     req.ray.w, time);
-            outRgba = shadeLocal(h, normalize(req.ray.xyz), req.misc.x, req.misc.y);
+            outRgba = shadeLocal(h, normalize(req.ray.xyz), req.misc.x, req.misc.y,
+                                   vec3(0.0));
         }
         records[idx] = outRgba;
         return;
     }
 
-    // Band transport: physical texel -> layout -> trace -> local shading.
+    // Band transport: physical texel -> layout -> trace -> local shading ->
+    // optional previous-generation feedback -> optional upper merge.
     // Inactive texels retain the cleared-state payload (0,0,0,-1).
     ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
     if (texel.x >= 1024 || texel.y >= 512)
@@ -460,26 +557,21 @@ void main() {
         : vec2(float(texel.x), float(texel.y) + (1280.0 + bandY0));
     globalUv += 0.5;
 
-    ProbeDecode probe = decodeProbe(globalUv);
-    if (!probe.isActive) {
+    ChartInfo chart;
+    if (!selectChart(globalUv, chart)) {
         imageStore(uBandImage, texel, vec4(0.0, 0.0, 0.0, -1.0));
         return;
     }
+    ProbeDecode probe = decodeProbe(globalUv, chart);
     float time = scene.referenceConstants.x;
-    // Ray origin bias along the chart normal, from CubeA.glsl:153.
-    vec3 chartNormal;
-    if (globalUv.y < 1536.0) {
-        if (globalUv.x < 256.0) chartNormal = vec3(0.,1.,0.);
-        else if (globalUv.x < 512.0) chartNormal = vec3(0.,-1.,0.);
-        else if (globalUv.x < 640.0) chartNormal = vec3(1.,0.,0.);
-        else if (globalUv.x < 768.0) chartNormal = vec3(-1.,0.,0.);
-        else if (globalUv.x < 896.0) chartNormal = vec3(0.,0.,1.);
-        else chartNormal = vec3(0.,0.,-1.);
-    } else {
-        chartNormal = (globalUv.x < 128.0) ? vec3(0.,0.,-1.) : vec3(0.,0.,1.);
-    }
-    vec3 origin = probe.probePos + chartNormal*0.001;
+    vec3 origin = probe.probePos + chart.gNor*0.001;
     TraceHit h = traceScene(origin, probe.probeDir, probe.interval, time);
-    imageStore(uBandImage, texel,
-               shadeLocal(h, probe.probeDir, probe.thetaIndex, probe.probeSize));
+    vec3 bounce = (uHistoryValid != 0) ? feedbackB(h) : vec3(0.0);
+    vec4 payload = shadeLocal(h, probe.probeDir, probe.thetaIndex, probe.probeSize,
+                              bounce);
+    vec3 rgb = payload.rgb;
+    if (uEnableUpperMerge != 0 && uCascade < 5) {
+        rgb = mergeUpper(globalUv, chart, float(uCascade), probe.probePos, h.t, rgb);
+    }
+    imageStore(uBandImage, texel, vec4(rgb, payload.a));
 }

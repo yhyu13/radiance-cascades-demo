@@ -19,7 +19,8 @@ float weight(float thetaIndex, uint32_t probeSize) {
 LocalSample shadeHit(const ReferenceCornellScene& scene,
                      const ReferenceTraceHit& hit,
                      const glm::vec3& probeDirection,
-                     float thetaIndex, uint32_t probeSize) {
+                     float thetaIndex, uint32_t probeSize,
+                     const glm::vec3& bounce) {
     const float w = weight(thetaIndex, probeSize);
     LocalSample out;
 
@@ -51,8 +52,9 @@ LocalSample shadeHit(const ReferenceCornellScene& scene,
                     if (!shadow.hit)
                         direct = scene.sunRadiance() * ndl;
                 }
-                // B(hit) = 0: temporal feedback is disabled in Phase 4.
-                rgb = direct * hit.reflectanceOrEmission;
+                // B(hit) comes from previous-generation C0 feedback; zero
+                // while history is invalid (Phase 4 semantics are bounce=0).
+                rgb = (bounce + direct) * hit.reflectanceOrEmission;
             }
             break;
         }
@@ -70,6 +72,37 @@ LocalSample traceAndShade(const ReferenceCornellScene& scene,
                           float maxDistance, float thetaIndex, uint32_t probeSize) {
     const ReferenceTraceHit hit = scene.trace(origin, direction, maxDistance);
     return shadeHit(scene, hit, glm::normalize(direction), thetaIndex, probeSize);
+}
+
+FeedbackAddress feedbackAddress(uint32_t chartId, const glm::vec2& chartUv) {
+    const auto& ch = reflayout::chart(chartId);
+    const glm::vec2 halfRes = ch.resolution * 0.5f;
+    FeedbackAddress out;
+    const glm::vec2 suvLocal = glm::clamp(chartUv * halfRes, glm::vec2(0.5f),
+                                          halfRes - 0.5f);
+    out.suv = suvLocal + ch.logicalBase;
+    const std::array<glm::vec2, 4> offsets = {
+        glm::vec2(0, 0), glm::vec2(halfRes.x, 0.0f),
+        glm::vec2(0.0f, halfRes.y), halfRes};
+    for (size_t i = 0; i < 4; ++i) {
+        out.binsGlobal[i] = out.suv + offsets[i];
+        out.binsPhysical[i] = reflayout::globalToPhysical(0, out.binsGlobal[i]);
+    }
+    return out;
+}
+
+glm::vec3 feedbackB(const ReferenceTraceHit& hit, const C0Fetch& fetchC0) {
+    if (!hit.hit || hit.chartId == ReferenceChartId::Invalid || hit.chartUv.x < 0.0f)
+        return glm::vec3(0.0f);
+    const FeedbackAddress address =
+        feedbackAddress(static_cast<uint32_t>(hit.chartId), hit.chartUv);
+    glm::vec3 bounce(0.0f);
+    for (size_t i = 0; i < 4; ++i) {
+        const glm::ivec2 texel(static_cast<int>(std::floor(address.binsPhysical[i].x)),
+                               static_cast<int>(std::floor(address.binsPhysical[i].y)));
+        bounce += glm::vec3(fetchC0(texel));
+    }
+    return bounce;
 }
 
 namespace {

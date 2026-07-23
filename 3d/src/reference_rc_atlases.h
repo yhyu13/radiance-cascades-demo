@@ -32,6 +32,17 @@ public:
     void setHistoryValid(bool value) { historyValid_ = value; }
     uint64_t historyGeneration() const { return historyGeneration_; }
 
+    // Temporal contract (plan 7.6): the swap occurs only after all six
+    // current-frame cascades complete; a failed or skipped pass does not swap.
+    // After the swap, read[C] exposes the just-completed generation and the
+    // history generation increments exactly once.
+    void swap();
+
+    // Reset and revision invalidation: the read set returns to the locked
+    // cleared state (RGB zero, alpha -1), history is invalid, and the
+    // generation counter is preserved (it never advances without a swap).
+    void invalidateHistory();
+
     // Cleared-state contract: RGB zero, alpha -1 (negative miss sentinel).
     bool verifyClearedState(uint32_t cascade, bool readSide) const;
 

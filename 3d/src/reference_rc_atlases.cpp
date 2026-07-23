@@ -24,6 +24,27 @@ void ReferenceRcAtlases::reset() noexcept {
     historyGeneration_ = 0;
 }
 
+namespace {
+void clearTextureToSentinel(GLuint texture) {
+    if (texture == 0)
+        return;
+    if (GLEW_ARB_clear_texture && glClearTexImage) {
+        const float clearValue[4] = {0.0f, 0.0f, 0.0f, -1.0f};
+        glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, clearValue);
+    } else {
+        std::vector<float> clearData(static_cast<size_t>(reflayout::kPhysicalWidth) *
+                                     reflayout::kPhysicalHeight * 4);
+        for (size_t i = 3; i < clearData.size(); i += 4)
+            clearData[i] = -1.0f;
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+                        reflayout::kPhysicalWidth, reflayout::kPhysicalHeight,
+                        GL_RGBA, GL_FLOAT, clearData.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+}
+}  // namespace
+
 bool ReferenceRcAtlases::allocate() {
     reset();
     for (uint32_t c = 0; c < reflayout::kCascadeCount; ++c) {
@@ -45,19 +66,7 @@ bool ReferenceRcAtlases::allocate() {
                          0, GL_RGBA, GL_FLOAT, nullptr);
 
             // Cleared-state contract: RGB zero, alpha -1 (negative miss sentinel).
-            if (GLEW_ARB_clear_texture && glClearTexImage) {
-                const float clearValue[4] = {0.0f, 0.0f, 0.0f, -1.0f};
-                glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, clearValue);
-            } else {
-                std::vector<float> clearData(
-                    static_cast<size_t>(reflayout::kPhysicalWidth) *
-                    reflayout::kPhysicalHeight * 4);
-                for (size_t i = 3; i < clearData.size(); i += 4)
-                    clearData[i] = -1.0f;
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
-                                reflayout::kPhysicalWidth, reflayout::kPhysicalHeight,
-                                GL_RGBA, GL_FLOAT, clearData.data());
-            }
+            clearTextureToSentinel(texture);
 
             const std::string label = "ReferenceRC.C" + std::to_string(c) +
                                       (side == 0 ? ".read" : ".write");
@@ -73,6 +82,20 @@ bool ReferenceRcAtlases::allocate() {
     }
     valid_ = true;
     return true;
+}
+
+void ReferenceRcAtlases::swap() {
+    for (auto& pair : pairs_)
+        std::swap(pair.read, pair.write);
+    historyValid_ = true;
+    ++historyGeneration_;
+}
+
+void ReferenceRcAtlases::invalidateHistory() {
+    for (const auto& pair : pairs_)
+        clearTextureToSentinel(pair.read);
+    historyValid_ = false;
+    // Generation is preserved: it advances only through a completed swap.
 }
 
 bool ReferenceRcAtlases::verifyClearedState(uint32_t cascade, bool readSide) const {

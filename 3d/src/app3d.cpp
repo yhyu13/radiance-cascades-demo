@@ -3,6 +3,7 @@
 #include "reference_cornell_scene.h"
 #include "reference_layout_validation.h"
 #include "reference_merge_validation.h"
+#include "reference_feedback_validation.h"
 #include "reference_transport_validation.h"
 
 #include <iostream>
@@ -23,10 +24,12 @@ struct StartupConfig {
     bool validateReferenceLayout = false;
     bool validateReferenceTransport = false;
     bool validateReferenceMerge = false;
+    bool validateReferenceFeedback = false;
     std::string_view referenceSceneReport;
     std::string_view referenceLayoutReport;
     std::string_view referenceTransportReport;
     std::string_view referenceMergeReport;
+    std::string_view referenceFeedbackReport;
 };
 
 class RuntimeBackend {
@@ -70,6 +73,10 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
             config.validateReferenceMerge = true;
             continue;
         }
+        if (argument == "--validate-reference-feedback") {
+            config.validateReferenceFeedback = true;
+            continue;
+        }
         constexpr std::string_view reportPrefix = "--reference-scene-report=";
         if (argument.starts_with(reportPrefix)) {
             config.referenceSceneReport = argument.substr(reportPrefix.size());
@@ -88,6 +95,11 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
         constexpr std::string_view mergeReportPrefix = "--reference-merge-report=";
         if (argument.starts_with(mergeReportPrefix)) {
             config.referenceMergeReport = argument.substr(mergeReportPrefix.size());
+            continue;
+        }
+        constexpr std::string_view feedbackReportPrefix = "--reference-feedback-report=";
+        if (argument.starts_with(feedbackReportPrefix)) {
+            config.referenceFeedbackReport = argument.substr(feedbackReportPrefix.size());
             continue;
         }
         constexpr std::string_view prefix = "--runtime-shell=";
@@ -173,6 +185,14 @@ int App3D::run(int argc, char* argv[]) {
             return 2;
         }
         return runReferenceMergeValidation(std::string(config.referenceMergeReport)) ? 0 : 1;
+    }
+
+    if (config.validateReferenceFeedback) {
+        if (config.shell != RuntimeShell::App3D || config.referenceFeedbackReport.empty()) {
+            std::cerr << "[APP3D] Reference feedback validation requires app3d shell and report path.\n";
+            return 2;
+        }
+        return runReferenceFeedbackValidation(std::string(config.referenceFeedbackReport)) ? 0 : 1;
     }
 
     if (config.shell == RuntimeShell::Legacy) {
