@@ -16,9 +16,9 @@ sys.path.insert(0, os.path.join(HERE, "..", "phase4_transport"))
 import generate_transport_golden as t4  # noqa: E402  (independent trace port)
 
 # Native display camera (must match src/reference_camera.cpp exactly).
-CAM_POS = (0.5, 0.22, 0.55)
-CAM_TARGET = (0.35, 0.2, 0.1)
-FOV_Y = 80.0
+CAM_POS = (0.5, 0.25, 0.97)
+CAM_TARGET = (0.5, 0.25, 0.0)
+FOV_Y = 60.0
 ASPECT = 4.0 / 3.0
 
 def vsub(a, b): return (a[0]-b[0], a[1]-b[1], a[2]-b[2])

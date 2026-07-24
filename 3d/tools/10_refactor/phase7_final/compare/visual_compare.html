@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Radiance Cascades 3D — Same-Scene Comparison: Old RC vs New RC vs PT (Legacy Cornell)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; background: #14171c; color: #d7dde5; margin: 24px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; color: #8fd0ff; }
+  .sub { color: #8b95a3; font-size: 13px; margin-bottom: 20px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .card { background: #1c2129; border: 1px solid #2b323d; border-radius: 8px; padding: 12px; width: 660px; }
+  .card h3 { margin: 0 0 6px; font-size: 15px; }
+  .card img { width: 640px; height: 480px; image-rendering: pixelated; background: #000; display: block; }
+  .card.small img { width: 320px; height: 240px; }
+  .card.small { width: 340px; }
+  .meta { font-size: 12px; color: #9aa5b3; margin-top: 8px; line-height: 1.5; }
+  table { border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
+  th, td { border: 1px solid #333c47; padding: 4px 9px; text-align: right; }
+  th { background: #232a34; text-align: left; }
+  td:first-child { text-align: left; }
+  .note { background: #1d2631; border-left: 3px solid #8fd0ff; padding: 10px 14px; font-size: 13px; margin: 14px 0; max-width: 1340px; line-height: 1.55; }
+  .warn { border-left-color: #ffb86b; }
+  .goodbox { border-left-color: #7ee787; }
+  code { background: #262d38; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .good { color: #7ee787; } .mid { color: #ffb86b; }
+</style>
+</head>
+<body>
+<h1>Old RC vs New RC vs PT — Same Scene (Legacy Cornell Box)</h1>
+<div class="sub">Captured 2026-07-24 · branch 3d_v4.0 · NVIDIA RTX 2080 SUPER · <b>same scene, same camera, different GI algorithm</b></div>
+
+<div class="note goodbox">
+<b>Controlled setup.</b> All three images render the legacy Cornell box (red/green walls, white walls, tall/short boxes, ceiling light) from the legacy camera (0,0,4)→(0,0,0) fovy 60, 640×480. NEW and PT use the <i>identical</i> emissive ceiling quad light; OLD uses the legacy renderer's point light. This capture is after three fixes: PT vertical flip, a capture-path corruption that produced garish color blobs (raylib <code>LoadImageFromTexture</code> on RGBA32F textures), and the merge upper-band offset for small charts.
+</div>
+
+<h2>Three-way comparison</h2>
+<div class="row">
+  <div class="card">
+    <h3>OLD — legacy volumetric RC <span class="mid">(current app visual)</span></h3>
+    <img src="old_legacy_gi.png" alt="legacy volumetric GI">
+    <div class="meta">Demo3D cascade GI, 180 frames, point light · luminance mean <b>63.03</b> (own light calibration)</div>
+  </div>
+  <div class="card">
+    <h3>NEW — reference surface RC on legacy Cornell <span class="good">(this work)</span></h3>
+    <img src="legacy_new_rc.png" alt="new RC on legacy Cornell">
+    <div class="meta">Six cascades, weighted merge, four-bin feedback, 24 frames, emissive ceiling quad · luminance mean <b>7.33</b></div>
+  </div>
+  <div class="card">
+    <h3>PT — path tracer, same scene <span class="good">(quality reference)</span></h3>
+    <img src="legacy_pt.png" alt="PT legacy Cornell">
+    <div class="meta">Deterministic CPU PT, 64 spp × 5 bounces, same emissive quad · luminance mean <b>5.11</b></div>
+  </div>
+</div>
+
+<h2>What's correct, what's limited</h2>
+<div class="note goodbox">
+<b>Correct and matching PT:</b> red/green wall color bleeding, white-wall and floor illumination, the bright spot under the ceiling light, box shadows on the floor, and overall wall/ceiling energy (left/right/top regions match PT within ~10%). The earlier garish blobs were a <b>capture-path corruption</b> (<code>LoadImageFromTexture</code> inflating the blue channel and zeroing patches on RGBA32F textures) — not an algorithm bug — and are now gone after reading with <code>glGetTexImage</code> directly.
+</div>
+<div class="note warn">
+<b>Limitation — dark boxes (diagnosed, not a bug):</b> the two boxes are black in NEW while PT shows lit tops and dim sides. Three compounding reasons, all honest:
+<ul>
+<li><b>No direct-light path for an emissive source.</b> The kernel's direct term <i>D</i> is directional-sun only (disabled here). The ceiling light is an emissive quad, so box tops receive light only through bounce feedback — they must wait for light to arrive via the cascade hierarchy and temporal feedback.</li>
+<li><b>Conservative merge visibility on small box geometry.</b> The weighted merge rejects look-back candidates whose rays cross the small box rims, so upper-cascade light (present at C3–C5 on the box tops) does not propagate down to the C0/C1 box-top bins the final view reads. Large walls receive light easily; small elevated box tops do not. This is the technique's own trade-off, not a port error (CPU and GPU agree).</li>
+<li><b>Box sides are uncharted</b> in this integration (they get direct light and cast shadows but no bounce), so sides are darker than PT. Box <i>tops</i> are charted.</li>
+</ul>
+Charting all box faces and relaxing nothing else is the honest next step to lift the boxes toward PT, tracked for the scene-generalization phase.
+</div>
+
+<h2>Measured statistics (linear luminance)</h2>
+<table>
+<tr><th>region</th><th>NEW</th><th>PT</th><th>ratio</th><th>reading</th></tr>
+<tr><td>whole image</td><td>7.33</td><td>5.11</td><td>1.43</td><td class="mid">NEW brighter (small-light coarse-bin aliasing, documented)</td></tr>
+<tr><td>left (red wall)</td><td>0.73</td><td>0.83</td><td>0.88</td><td class="good">match</td></tr>
+<tr><td>center (back wall + light)</td><td>19.70</td><td>13.02</td><td>1.51</td><td class="mid">coarse-bin small-light aliasing</td></tr>
+<tr><td>right (green wall)</td><td>1.60</td><td>1.49</td><td>1.07</td><td class="good">match</td></tr>
+<tr><td>top (ceiling)</td><td>3.48</td><td>3.71</td><td>0.94</td><td class="good">match</td></tr>
+<tr><td>bottom (floor)</td><td>11.19</td><td>6.50</td><td>1.72</td><td class="mid">coarse-bin small-light aliasing</td></tr>
+</table>
+
+<h2>Parity-scene context (different scene)</h2>
+<div class="row">
+  <div class="card small">
+    <h3>NEW on ShaderToy parity Cornell</h3>
+    <img src="new_reference.png" alt="parity scene" style="width:320px;height:240px">
+    <div class="meta">The locked parity target. Validated G0–G9; within ~13% of parity PT.</div>
+  </div>
+  <div class="card small">
+    <h3>Parity-scene PT</h3>
+    <img src="pt_parity.png" alt="parity PT" style="width:320px;height:240px">
+    <div class="meta">Same scene/camera PT of the locked parity Cornell.</div>
+  </div>
+</div>
+
+<div class="sub" style="margin-top:18px">Artifacts: this page, all PNGs, and stats live in <code>3d/tools/10_refactor/phase7_final/compare/</code>. Regenerate: <code>--legacy-render</code>, <code>--legacy-pt-shot</code>, <code>--validate-reference-legacy</code>. Gate reports: <code>tools/10_refactor/phase*/runs/</code>.</div>
+</body>
+</html>

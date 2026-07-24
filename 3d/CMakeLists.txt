@@ -68,6 +68,10 @@ set(SOURCES_3D
     src/reference_final.cpp
     src/reference_final_validation.cpp
     src/reference_pipeline.cpp
+    src/reference_pt.cpp
+    src/reference_legacy_scene.cpp
+    src/reference_legacy_pipeline.cpp
+    src/reference_legacy_validation.cpp
     src/reference_transport.cpp
     src/reference_transport_validation.cpp
     src/demo3d.cpp
@@ -93,6 +97,10 @@ set(HEADERS_3D
     src/reference_final.h
     src/reference_final_validation.h
     src/reference_pipeline.h
+    src/reference_pt.h
+    src/reference_legacy_scene.h
+    src/reference_legacy_pipeline.h
+    src/reference_legacy_validation.h
     src/reference_transport.h
     src/reference_transport_validation.h
     src/demo3d.h

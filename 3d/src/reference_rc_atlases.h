@@ -17,6 +17,9 @@
 class ReferenceRcAtlases final {
 public:
     ReferenceRcAtlases() = default;
+    // Legacy Cornell layout uses 1344x256 single-page physical storage.
+    ReferenceRcAtlases(int physicalWidth, int physicalHeight)
+        : width_(physicalWidth), height_(physicalHeight) {}
     ~ReferenceRcAtlases();
     ReferenceRcAtlases(const ReferenceRcAtlases&) = delete;
     ReferenceRcAtlases& operator=(const ReferenceRcAtlases&) = delete;
@@ -52,6 +55,8 @@ private:
         GLuint write = 0;
     };
     std::array<Pair, 6> pairs_{};
+    int width_ = 1024;
+    int height_ = 512;
     bool valid_ = false;
     bool historyValid_ = false;
     uint64_t historyGeneration_ = 0;

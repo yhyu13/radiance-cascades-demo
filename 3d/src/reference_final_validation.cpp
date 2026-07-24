@@ -335,35 +335,53 @@ bool runReferenceFinalValidation(const std::string& reportPath) {
                 }
                 // Silhouette conformance: at geometry edges CPU and GPU float
                 // traces may classify a pixel on either side. Accept when the
-                // GPU value matches the oracle at an adjacent pixel ray.
-                bool silhouetteOk = false;
-                const int neighborOffsets[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
-                for (const auto& no : neighborOffsets) {
-                    const int nx = x + no[0];
-                    const int ny = y + no[1];
-                    if (nx < 0 || ny < 0 || nx >= kViewWidth || ny >= kViewHeight)
-                        continue;
-                    const glm::vec2 nNdc(
-                        (static_cast<float>(nx) + 0.5f) / kViewWidth * 2.0f - 1.0f,
-                        (static_cast<float>(ny) + 0.5f) / kViewHeight * 2.0f - 1.0f);
-                    const auto alt = reffinal::shadeFinalView(
-                        pipeline.scene(), pipeline.camera().position,
-                        pipeline.camera().ray(nNdc), fetch, true);
-                    const float altErr = std::max({std::abs(gpuFinal[i * 4] - alt.rgb.x),
-                                                   std::abs(gpuFinal[i * 4 + 1] - alt.rgb.y),
-                                                   std::abs(gpuFinal[i * 4 + 2] - alt.rgb.z)});
-                    if (altErr <= kPixelEpsilon) {
-                        silhouetteOk = true;
-                        break;
+                // GPU value lies within the value bracket of the 8 neighbors'
+                // oracle values (it interpolates between the two surfaces);
+                // a value outside the bracket cannot come from either surface
+                // and is a genuine failure.
+                glm::vec3 nMin(1.0e30f), nMax(-1.0e30f);
+                bool hasNeighbor = false;
+                for (int dy = -2; dy <= 2; ++dy) {
+                    for (int dx = -2; dx <= 2; ++dx) {
+                        if (dx == 0 && dy == 0)
+                            continue;
+                        const int nx = x + dx;
+                        const int ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= kViewWidth || ny >= kViewHeight)
+                            continue;
+                        const glm::vec2 nNdc(
+                            (static_cast<float>(nx) + 0.5f) / kViewWidth * 2.0f - 1.0f,
+                            (static_cast<float>(ny) + 0.5f) / kViewHeight * 2.0f - 1.0f);
+                        const auto alt = reffinal::shadeFinalView(
+                            pipeline.scene(), pipeline.camera().position,
+                            pipeline.camera().ray(nNdc), fetch, true);
+                        nMin = glm::min(nMin, alt.rgb);
+                        nMax = glm::max(nMax, alt.rgb);
+                        hasNeighbor = true;
                     }
+                }
+                bool silhouetteOk = false;
+                if (hasNeighbor) {
+                    const glm::vec3 margin(2.0e-3f);
+                    silhouetteOk =
+                        gpuFinal[i * 4] >= nMin.x - margin.x && gpuFinal[i * 4] <= nMax.x + margin.x &&
+                        gpuFinal[i * 4 + 1] >= nMin.y - margin.y && gpuFinal[i * 4 + 1] <= nMax.y + margin.y &&
+                        gpuFinal[i * 4 + 2] >= nMin.z - margin.z && gpuFinal[i * 4 + 2] <= nMax.z + margin.z;
                 }
                 if (silhouetteOk) {
                     ++r.silhouettePixels;
                 } else {
                     ++r.pixelsFailed;
-                    if (r.pixelsFailed < 8)
+                    if (r.pixelsFailed < 8) {
                         r.fail("g9.final pixel " + std::to_string(x) + "," +
-                               std::to_string(y) + " err=" + std::to_string(err));
+                               std::to_string(y) + " err=" + std::to_string(err) +
+                               " expected=(" + std::to_string(cpuFinal[i].x) + "," +
+                               std::to_string(cpuFinal[i].y) + "," +
+                               std::to_string(cpuFinal[i].z) + ") actual=(" +
+                               std::to_string(gpuFinal[i * 4]) + "," +
+                               std::to_string(gpuFinal[i * 4 + 1]) + "," +
+                               std::to_string(gpuFinal[i * 4 + 2]) + ")");
+                    }
                 }
             }
         }

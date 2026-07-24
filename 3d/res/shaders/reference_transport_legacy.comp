@@ -1,0 +1,523 @@
+#version 430
+
+// Legacy Cornell box transport (new RC kernel on the old Cornell scene).
+// Same square-ring layout kernel, weighted merge, four-bin feedback, and
+// payload schema as the parity path, over the legacy Cornell chart layout
+// (texel scale 1/128, 6 charts, single page, 1344x1536 logical / 1344x256
+// physical per cascade). Sun disabled, sky is black void; the only light is
+// the emissive ceiling quad. Mirrors the CPU oracle reference_legacy_scene.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+struct LayoutRecord {
+    vec4 probePos;   // xyz, w = probeSize
+    vec4 probeDir;   // xyz, w = max trace distance
+    vec4 angles;     // x = thetaIndex, y = theta, z = phi, w = active
+    vec4 weights;    // x = saw, y = lw, z = chartId, w = materialId
+    vec4 misc;       // x = physicalU, y = physicalV, z = binCount, w = binIndex
+};
+
+layout(std430, binding = 0) readonly buffer Requests { vec2 requestUv[]; };
+layout(std430, binding = 1) writeonly buffer Records  { LayoutRecord records[]; };
+layout(rgba32f, binding = 2) uniform writeonly image2D uBandImage;
+
+struct GpuMaterial { uvec4 metadata; vec4 response; vec4 emission; };
+struct GpuChart {
+    uvec4 metadata; uvec4 resolutionAndBase;
+    vec4 originAndExtentU; vec4 tangentAndExtentV;
+    vec4 bitangentAndTexelScaleU; vec4 normalAndTexelScaleV;
+};
+struct GpuPrimitive { uvec4 metadata; vec4 data0; vec4 data1; vec4 data2; vec4 data3; };
+
+layout(std430, binding = 3) readonly buffer SceneData {
+    uvec4 identity;
+    uvec4 counts;
+    uvec4 lightIds;
+    vec4 roomBoundsMin;
+    vec4 roomBoundsMax;
+    vec4 referenceConstants; // x=time, y=texelScale
+    vec4 sunDirection;
+    vec4 sunRadiance;
+    vec4 skyParameters;
+    vec4 largeOpening;
+    vec4 smallOpening;
+    GpuMaterial materials[8];
+    GpuChart charts[8];
+    GpuPrimitive primitives[13];
+} scene;
+
+uniform int uMode;             // 0 = layout request, 1 = band transport, 2 = final view
+uniform int uCascade;
+uniform int uRequestCount;
+uniform sampler2D uUpperCascade;
+uniform int uEnableUpperMerge;
+uniform sampler2D uFeedbackC0;
+uniform int uHistoryValid;
+uniform int uRefEnabled;
+uniform int uWidth;
+uniform int uHeight;
+uniform vec3 uCamPos;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform float uCamTan;
+uniform float uAspect;
+uniform float uExposure;
+uniform float uInvGamma;
+
+const float THETA_PI = 3.14192653;
+const float PI       = 3.141592653;
+const float C5_REACH = 10000.0;
+const int MAT_DIFFUSE    = 0;
+const int MAT_BLACK      = 1;
+const int MAT_REFLECTIVE = 2;
+const int MAT_EMISSIVE   = 3;
+const int MAT_SKY        = 4;
+
+ivec2 globalToPhysicalTexel(int cascade, vec2 globalUv) {
+    float bandY0 = 256.0*float(cascade);
+    if (globalUv.y >= bandY0 && globalUv.y < bandY0 + 256.0)
+        return ivec2(int(globalUv.x), int(globalUv.y - bandY0));
+    return ivec2(-1);
+}
+
+// ---------------------------------------------------------------------------
+// Legacy trace: 6 wall/light quads + 2 diffuse boxes (from the scene SSBO)
+// ---------------------------------------------------------------------------
+
+struct TraceHit {
+    float t;
+    vec3 position;
+    vec3 normal;
+    int chartId;
+    vec2 chartUv;
+    int materialKind;
+    vec3 response;
+    vec3 emission;
+    bool hit;
+};
+
+void applyMaterial(inout TraceHit h, uint materialId) {
+    for (int m = 0; m < 8; ++m) {
+        if (scene.materials[m].metadata.x == materialId) {
+            h.materialKind = int(scene.materials[m].metadata.y);
+            h.response = scene.materials[m].response.xyz;
+            h.emission = scene.materials[m].emission.xyz;
+            return;
+        }
+    }
+    h.materialKind = MAT_DIFFUSE;
+    h.response = vec3(0.0);
+    h.emission = vec3(0.0);
+}
+
+float dfBox(vec2 p, vec2 b) {
+    vec2 d = abs(p - b*0.5) - b*0.5;
+    return min(max(d.x, d.y), 0.0) + length(max(d, vec2(0.0)));
+}
+
+TraceHit traceScene(vec3 origin, vec3 dir, float maxt) {
+    TraceHit h;
+    h.t = maxt;
+    h.position = origin + dir * maxt;
+    h.normal = vec3(0.0);
+    h.chartId = 0;
+    h.chartUv = vec2(-1.0);
+    h.materialKind = MAT_SKY;
+    h.response = vec3(0.0);
+    h.emission = vec3(0.0);
+    h.hit = false;
+
+    // Six wall/light quads (primitives 0..5). metadata.w bit 0x100 flips the
+    // one-sided intersection plane normal relative to the chart normal.
+    for (int i = 0; i < 6; ++i) {
+        GpuPrimitive prim = scene.primitives[i];
+        vec3 chartN = prim.data3.xyz;
+        vec3 planeN = (prim.metadata.w & 0x100u) != 0u ? -chartN : chartN;
+        vec3 rel = origin - prim.data0.xyz;
+        vec3 tan = prim.data1.xyz;
+        vec3 bit = prim.data2.xyz;
+        vec2 pSize = vec2(prim.data1.w, prim.data2.w);
+        float norDot = dot(planeN, dir);
+        float pDot = dot(planeN, rel);
+        if (norDot * pDot < 0.0) {
+            float t = -pDot / norDot;
+            vec3 hp = rel + dir * t;
+            vec2 hit2 = vec2(dot(hp, tan), dot(hp, bit));
+            if (dfBox(hit2, pSize) <= 0.0 && t > -0.5 && t < h.t) {
+                h.t = t;
+                h.position = origin + dir * t;
+                h.normal = chartN;
+                h.chartId = int(prim.metadata.w & 0xffu);
+                h.chartUv = hit2 / pSize;
+                applyMaterial(h, prim.metadata.z);
+                h.hit = true;
+            }
+        }
+    }
+
+    // Two diffuse boxes (primitives 10, 11): data0 = min, data1 = max.
+    for (int i = 10; i < 12; ++i) {
+        GpuPrimitive prim = scene.primitives[i];
+        vec3 bmin = prim.data0.xyz;
+        vec3 bmax = prim.data1.xyz;
+        vec3 idir = 1.0/dir;
+        vec3 t0 = (bmin - origin)*idir;
+        vec3 t1 = (bmax - origin)*idir;
+        vec3 n3 = min(t0, t1);
+        vec3 f3 = max(t0, t1);
+        float nearT = max(max(n3.x, n3.y), n3.z);
+        float farT = min(min(f3.x, f3.y), f3.z);
+        if (nearT > 0.0 && farT > nearT && nearT < h.t) {
+            vec3 normal = vec3(0.0);
+            if (n3.x > max(n3.y, n3.z)) normal.x = dir.x > 0.0 ? -1.0 : 1.0;
+            else if (n3.y > n3.z) normal.y = dir.y > 0.0 ? -1.0 : 1.0;
+            else normal.z = dir.z > 0.0 ? -1.0 : 1.0;
+            h.t = nearT;
+            h.position = origin + dir * nearT;
+            h.normal = normal;
+            h.chartId = 0;  // uncharted box: no feedback
+            h.chartUv = vec2(-1.0);
+            applyMaterial(h, prim.metadata.z);
+            h.hit = true;
+        }
+    }
+
+    // Charted box-top faces (primitives 6, 7) override the coplanar box top
+    // within a small tie margin so feedback lands on the charted surface.
+    for (int i = 6; i < 8; ++i) {
+        GpuPrimitive prim = scene.primitives[i];
+        vec3 chartN = prim.data3.xyz;
+        vec3 planeN = chartN;
+        vec3 rel = origin - prim.data0.xyz;
+        vec3 tan = prim.data1.xyz;
+        vec3 bit = prim.data2.xyz;
+        vec2 pSize = vec2(prim.data1.w, prim.data2.w);
+        float norDot = dot(planeN, dir);
+        float pDot = dot(planeN, rel);
+        if (norDot * pDot < 0.0) {
+            float t = -pDot / norDot;
+            vec3 hp = rel + dir * t;
+            vec2 hit2 = vec2(dot(hp, tan), dot(hp, bit));
+            if (dfBox(hit2, pSize) <= 0.0 && t > -0.5 && t <= h.t + 0.0005) {
+                h.t = t;
+                h.position = origin + dir * t;
+                h.normal = chartN;
+                h.chartId = int(prim.metadata.w & 0xffu);
+                h.chartUv = hit2 / pSize;
+                applyMaterial(h, prim.metadata.z);
+                h.hit = true;
+            }
+        }
+    }
+    return h;
+}
+
+// ---------------------------------------------------------------------------
+// Transport weights, feedback, merge (same semantics as the parity kernel)
+// ---------------------------------------------------------------------------
+
+float transportWeight(float thetaIndex, float probeSize) {
+    float theta = thetaIndex/probeSize*THETA_PI;
+    float binCount = 4.0 + 8.0*floor(thetaIndex);
+    float saw = (cos(theta - PI/probeSize) - cos(theta + PI/probeSize))/binCount;
+    return saw*cos(theta);
+}
+
+void chartInfo(uint chartId, out vec2 res, out vec2 base) {
+    res = vec2(0.0);
+    base = vec2(0.0);
+    for (int i = 0; i < 8; ++i) {
+        if (scene.charts[i].metadata.x == chartId) {
+            res = vec2(scene.charts[i].resolutionAndBase.xy);
+            base = vec2(scene.charts[i].resolutionAndBase.zw);
+            return;
+        }
+    }
+}
+
+vec3 feedbackB(TraceHit h) {
+    if (!h.hit || h.chartId == 0 || h.chartUv.x < 0.0)
+        return vec3(0.0);
+    vec2 res, base;
+    chartInfo(uint(h.chartId), res, base);
+    vec2 halfRes = res*0.5;
+    vec2 suv = clamp(h.chartUv*halfRes, vec2(0.5), halfRes - 0.5) + base;
+    return texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv), 0).rgb
+         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + vec2(halfRes.x, 0.0)), 0).rgb
+         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + vec2(0.0, halfRes.y)), 0).rgb
+         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + halfRes), 0).rgb;
+}
+
+vec4 shadeLocal(TraceHit h, vec3 probeDir, float thetaIndex, float probeSize,
+                vec3 bounce) {
+    float w = transportWeight(thetaIndex, probeSize);
+    vec3 rgb;
+    float alpha;
+    if (!h.hit) {
+        alpha = -1.0;
+        rgb = vec3(0.0);  // black void sky
+    } else {
+        alpha = h.t;
+        rgb = vec3(0.0);
+        if (h.materialKind == MAT_EMISSIVE) {
+            rgb = h.emission;
+        } else if (h.materialKind == MAT_DIFFUSE && dot(h.normal, probeDir) < 0.0) {
+            vec3 direct = vec3(0.0);
+            float ndl = dot(h.normal, scene.sunDirection.xyz);
+            if (ndl > 0.0) {
+                vec3 sPos = h.position + h.normal*0.001;
+                TraceHit shadow = traceScene(sPos, scene.sunDirection.xyz, 10000.0);
+                if (!shadow.hit) direct = scene.sunRadiance.xyz * ndl;
+            }
+            rgb = (bounce + direct) * h.response;
+        }
+    }
+    return vec4(rgb * w, alpha);
+}
+
+vec3 mergeUpper(vec2 uv, vec3 gPos, vec3 gTan, vec3 gBit, vec2 gRes,
+                float probeCascade, vec3 probePos, float localT, vec3 localRgb) {
+    float probeSize = pow(2.0, probeCascade + 1.0);
+    float upperProbeSize = probeSize*2.0;
+    vec2 probePositions = gRes/probeSize;
+    vec2 uvo = probePositions*0.5;
+    vec2 modUV = mod(uv, gRes);
+    // Upper-cascade band offset is the cascade band height (256), NOT the
+    // chart height gRes.y: light and box-top charts are 64 tall and would
+    // otherwise read the same band instead of the upper cascade.
+    vec2 luvo = floor(uv/gRes)*gRes + vec2(0.0, 256.0);
+    vec2 luvd = floor(modUV/probePositions)*probePositions;
+    vec2 p = clamp(mod(modUV, probePositions)*0.5, vec2(0.5), uvo - 0.5);
+    vec2 f = fract(p - 0.5);
+    vec2 base = floor(p - 0.5) + 0.5;
+    vec2 offs[4] = vec2[4](vec2(0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0));
+    float ws[4] = float[4]((1.0-f.x)*(1.0-f.y), f.x*(1.0-f.y),
+                           (1.0-f.x)*f.y, f.x*f.y);
+    int uc = int(probeCascade) + 1;
+    vec3 numerator = vec3(0.0);
+    float vw = 0.0;
+    float texelScale = scene.referenceConstants.y;
+    for (int i = 0; i < 4; ++i) {
+        vec2 q = clamp(base + offs[i], vec2(0.5), uvo - 0.5);
+        vec3 wp = gPos + gTan*(q.x*upperProbeSize*texelScale) +
+                  gBit*(q.y*upperProbeSize*texelScale);
+        vec3 rel = probePos - wp;
+        float theta = (upperProbeSize*0.5 - 0.5)/(upperProbeSize*0.5)*PI*0.5;
+        float cone = cos(PI*0.5 - theta);
+        float phi = atan(-dot(rel, gTan), -dot(rel, gBit));
+        float count = 4.0 + 8.0*(upperProbeSize*0.5 - 1.0);
+        float phiI = floor((phi/PI*0.5 + 0.5)*count) + 0.5;
+        float phiLen = upperProbeSize - 1.0;
+        vec2 phiUv;
+        if (phiI < phiLen) phiUv = vec2(upperProbeSize-0.5, upperProbeSize-phiI);
+        else if (phiI < phiLen*2.0) phiUv = vec2(upperProbeSize-(phiI-phiLen), 0.5);
+        else if (phiI < phiLen*3.0) phiUv = vec2(0.5, phiI-phiLen*2.0);
+        else phiUv = vec2(phiI-phiLen*3.0, upperProbeSize-0.5);
+        vec2 lookG = luvo + luvd + floor(phiUv)*uvo + q;
+        float dist = texelFetch(uUpperCascade, globalToPhysicalTexel(uc, lookG), 0).a;
+        bool visible = dist < -0.5 || length(rel) < dist*cone + 0.01;
+        if (visible) {
+            vec2 radBase = luvo + luvd + q;
+            vec3 sum = texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase), 0).rgb
+                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + vec2(uvo.x, 0.0)), 0).rgb
+                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + vec2(0.0, uvo.y)), 0).rgb
+                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + uvo), 0).rgb;
+            numerator += sum*ws[i];
+            vw += ws[i];
+        }
+    }
+    vec3 upper = numerator / max(0.01, vw);
+    float baseT = texelScale*probeSize*1.5;
+    float mn = probeCascade < 0.5 ? 0.0 : baseT;
+    float interval = probeCascade < 0.5 ? baseT*2.0 : baseT;
+    float l = 1.0 - clamp((localT - mn)/interval, 0.0, 1.0);
+    return localRgb*l + upper*(1.0 - l);
+}
+
+// ---------------------------------------------------------------------------
+// Layout decode (legacy chart table, data-driven from the SSBO)
+// ---------------------------------------------------------------------------
+
+bool selectChartInfo(vec2 uv, out int idx) {
+    idx = -1;
+    if (uv.x < 0.0 || uv.x >= 1472.0 || uv.y < 0.0 || uv.y >= 1536.0)
+        return false;
+    for (int i = 0; i < 8; ++i) {
+        if (scene.charts[i].metadata.x == 0u)
+            continue;
+        vec2 base = vec2(scene.charts[i].resolutionAndBase.zw);
+        vec2 res = vec2(scene.charts[i].resolutionAndBase.xy);
+        if (uv.x >= base.x && uv.x < base.x + res.x)
+        {
+            idx = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+struct ProbeDecode {
+    bool isActive;
+    vec3 probePos;
+    vec3 probeDir;
+    float thetaIndex;
+    float probeSize;
+    float interval;
+    vec3 gNor;
+    vec3 gPos;
+    vec3 gTan;
+    vec3 gBit;
+    vec2 gRes;
+};
+
+float piecewisePhi(vec2 rel, float thetai) {
+    float phi = 0.0;
+    if (rel.x + 0.5 > thetai && rel.y - 0.5 > -thetai) phi = rel.x - rel.y;
+    else if (rel.y - 0.5 < -thetai && rel.x - 0.5 > -thetai) phi = thetai*2. - rel.y - rel.x;
+    else if (rel.x - 0.5 < -thetai && rel.y + 0.5 < thetai) phi = thetai*4. - rel.x + rel.y;
+    else if (rel.y + 0.5 > thetai && rel.x + 0.5 < thetai) phi = thetai*8. - (rel.y - rel.x);
+    return phi;
+}
+
+ProbeDecode decodeProbe(vec2 uv) {
+    ProbeDecode p;
+    p.isActive = false;
+    p.probePos = vec3(0.0);
+    p.probeDir = vec3(0.0);
+    p.thetaIndex = 0.0;
+    p.probeSize = 0.0;
+    p.interval = 0.0;
+    p.gNor = vec3(0.0);
+    int ci;
+    if (!selectChartInfo(uv, ci))
+        return p;
+    GpuChart c = scene.charts[ci];
+    vec2 gRes = vec2(c.resolutionAndBase.xy);
+    vec3 gPos = c.originAndExtentU.xyz;
+    vec3 gTan = c.tangentAndExtentV.xyz;
+    vec3 gBit = c.bitangentAndTexelScaleU.xyz;
+    vec3 gNor = c.normalAndTexelScaleV.xyz;
+    float texelScale = scene.referenceConstants.y;
+    float probeCascade = floor(uv.y / 256.0);
+    float probeSize = pow(2.0, probeCascade + 1.0);
+    vec2 modUV = mod(uv, gRes);
+    vec2 probePositions = gRes / probeSize;
+    vec3 probePos = gPos + mod(modUV.x, probePositions.x)*probeSize*texelScale*gTan
+                             + mod(modUV.y, probePositions.y)*probeSize*texelScale*gBit;
+    vec2 probeUV = floor(modUV / probePositions) + 0.5;
+    vec2 probeRel = probeUV - probeSize*0.5;
+    float thetai = max(abs(probeRel.x), abs(probeRel.y));
+    float theta = thetai/probeSize*THETA_PI;
+    float phiU = piecewisePhi(probeRel, thetai);
+    float binCount = 4. + 8.*floor(thetai);
+    float phi = phiU*PI*2./binCount;
+    vec3 localDir = vec3(vec2(sin(phi), cos(phi))*sin(theta), cos(theta));
+    vec3 probeDir = localDir.x*gTan + localDir.y*gBit + localDir.z*gNor;
+    float tInterval = probeSize*8.0*texelScale;
+    if (probeCascade > 4.5) tInterval = C5_REACH;
+    p.isActive = true;
+    p.probePos = probePos;
+    p.probeDir = probeDir;
+    p.thetaIndex = thetai;
+    p.probeSize = probeSize;
+    p.interval = tInterval;
+    p.gNor = gNor;
+    p.gPos = gPos;
+    p.gTan = gTan;
+    p.gBit = gBit;
+    p.gRes = gRes;
+    return p;
+}
+
+vec3 shadeFinalView(vec3 origin, vec3 dir) {
+    TraceHit h = traceScene(origin, dir, 10000.0);
+    if (!h.hit)
+        return vec3(0.0);  // black void
+    if (h.materialKind == MAT_REFLECTIVE || h.materialKind == MAT_BLACK)
+        return vec3(0.0);
+    if (h.materialKind == MAT_EMISSIVE)
+        return h.emission;
+    vec3 n = h.normal;
+    if (dot(n, dir) >= 0.0)
+        n = -n;
+    vec3 irradiance = vec3(0.0);
+    if (uRefEnabled != 0)
+        irradiance = feedbackB(h);
+    vec3 direct = vec3(0.0);
+    float ndl = dot(n, scene.sunDirection.xyz);
+    if (ndl > 0.0) {
+        vec3 sPos = h.position + n*0.001;
+        TraceHit shadow = traceScene(sPos, scene.sunDirection.xyz, 10000.0);
+        if (!shadow.hit) direct = scene.sunRadiance.xyz * ndl;
+    }
+    return h.response * (irradiance + direct);
+}
+
+void main() {
+    if (uMode == 2) {
+        ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+        if (pixel.x >= uWidth || pixel.y >= uHeight)
+            return;
+        vec2 ndc = (vec2(pixel) + 0.5)/vec2(float(uWidth), float(uHeight))*2.0 - 1.0;
+        vec3 dir = normalize(uCamFwd + uCamRight*(ndc.x*uAspect*uCamTan) +
+                             uCamUp*(ndc.y*uCamTan));
+        vec3 color = shadeFinalView(uCamPos, dir);
+        color = pow(max(color * uExposure, vec3(0.0)), vec3(uInvGamma));
+        imageStore(uBandImage, pixel, vec4(color, 1.0));
+        return;
+    }
+    if (uMode == 0) {
+        uint idx = gl_GlobalInvocationID.y * 8u + gl_GlobalInvocationID.x;
+        if (int(idx) >= uRequestCount)
+            return;
+        vec2 uv = requestUv[idx];
+        LayoutRecord rec;
+        rec.probePos = vec4(0.0);
+        rec.probeDir = vec4(0.0);
+        rec.angles = vec4(0.0);
+        rec.weights = vec4(0.0);
+        rec.misc = vec4(-1.0, -1.0, 0.0, -1.0);
+        ProbeDecode p = decodeProbe(uv);
+        if (p.isActive) {
+            float theta = p.thetaIndex/p.probeSize*THETA_PI;
+            float binCount = 4. + 8.*floor(p.thetaIndex);
+            float saw = (cos(theta - PI/p.probeSize) - cos(theta + PI/p.probeSize))/binCount;
+            float lw = cos(theta);
+            int ci;
+            selectChartInfo(uv, ci);
+            float bandY0 = 256.0*floor(uv.y/256.0);
+            vec2 physical = vec2(uv.x, uv.y - bandY0);
+            rec.probePos = vec4(p.probePos, p.probeSize);
+            rec.probeDir = vec4(p.probeDir, p.interval);
+            rec.angles = vec4(p.thetaIndex, theta, 0.0, 1.0);
+            rec.weights = vec4(saw, lw, float(scene.charts[ci].metadata.x),
+                               float(scene.charts[ci].metadata.y));
+            rec.misc = vec4(physical, binCount, 0.0);
+        }
+        records[idx] = rec;
+        return;
+    }
+
+    // Band transport.
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    if (texel.x >= 1472 || texel.y >= 256)
+        return;
+    vec2 globalUv = vec2(float(texel.x), float(texel.y) + 256.0*float(uCascade)) + 0.5;
+    ProbeDecode probe = decodeProbe(globalUv);
+    if (!probe.isActive) {
+        imageStore(uBandImage, texel, vec4(0.0, 0.0, 0.0, -1.0));
+        return;
+    }
+    vec3 origin = probe.probePos + probe.gNor*0.001;
+    TraceHit h = traceScene(origin, probe.probeDir, probe.interval);
+    vec3 bounce = (uHistoryValid != 0) ? feedbackB(h) : vec3(0.0);
+    vec4 payload = shadeLocal(h, probe.probeDir, probe.thetaIndex, probe.probeSize,
+                              bounce);
+    vec3 rgb = payload.rgb;
+    if (uEnableUpperMerge != 0 && uCascade < 5) {
+        rgb = mergeUpper(globalUv, probe.gPos, probe.gTan, probe.gBit, probe.gRes,
+                         float(uCascade), probe.probePos, h.t, rgb);
+    }
+    imageStore(uBandImage, texel, vec4(rgb, payload.a));
+}

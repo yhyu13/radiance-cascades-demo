@@ -25,20 +25,19 @@ void ReferenceRcAtlases::reset() noexcept {
 }
 
 namespace {
-void clearTextureToSentinel(GLuint texture) {
+void clearTextureToSentinel(GLuint texture, int width, int height) {
     if (texture == 0)
         return;
     if (GLEW_ARB_clear_texture && glClearTexImage) {
         const float clearValue[4] = {0.0f, 0.0f, 0.0f, -1.0f};
         glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, clearValue);
     } else {
-        std::vector<float> clearData(static_cast<size_t>(reflayout::kPhysicalWidth) *
-                                     reflayout::kPhysicalHeight * 4);
+        std::vector<float> clearData(static_cast<size_t>(width) * height * 4);
         for (size_t i = 3; i < clearData.size(); i += 4)
             clearData[i] = -1.0f;
         glBindTexture(GL_TEXTURE_2D, texture);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
-                        reflayout::kPhysicalWidth, reflayout::kPhysicalHeight,
+                        width, height,
                         GL_RGBA, GL_FLOAT, clearData.data());
         glBindTexture(GL_TEXTURE_2D, 0);
     }
@@ -62,11 +61,11 @@ bool ReferenceRcAtlases::allocate() {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F,
-                         reflayout::kPhysicalWidth, reflayout::kPhysicalHeight,
+                         width_, height_,
                          0, GL_RGBA, GL_FLOAT, nullptr);
 
             // Cleared-state contract: RGB zero, alpha -1 (negative miss sentinel).
-            clearTextureToSentinel(texture);
+            clearTextureToSentinel(texture, width_, height_);
 
             const std::string label = "ReferenceRC.C" + std::to_string(c) +
                                       (side == 0 ? ".read" : ".write");
@@ -93,7 +92,7 @@ void ReferenceRcAtlases::swap() {
 
 void ReferenceRcAtlases::invalidateHistory() {
     for (const auto& pair : pairs_)
-        clearTextureToSentinel(pair.read);
+        clearTextureToSentinel(pair.read, width_, height_);
     historyValid_ = false;
     // Generation is preserved: it advances only through a completed swap.
 }
@@ -103,7 +102,7 @@ bool ReferenceRcAtlases::verifyClearedState(uint32_t cascade, bool readSide) con
     if (texture == 0)
         return false;
     glBindTexture(GL_TEXTURE_2D, texture);
-    std::vector<float> data(reflayout::kPhysicalWidth * reflayout::kPhysicalHeight * 4);
+    std::vector<float> data(static_cast<size_t>(width_) * height_ * 4);
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, data.data());
     glBindTexture(GL_TEXTURE_2D, 0);
     for (size_t i = 0; i < data.size(); i += 4) {
