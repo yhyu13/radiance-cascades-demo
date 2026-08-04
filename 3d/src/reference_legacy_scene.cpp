@@ -9,9 +9,9 @@ namespace reflegacy {
 namespace {
 
 // Legacy Cornell chart table (single primary page, 1/128 texel scale).
-// Index 0 is the inactive chart. Charts 7/8 are the box top faces (charted so
-// the dominant light receivers participate in feedback); box sides stay
-// uncharted in this integration (documented limitation).
+// Index 0 is the inactive chart. Charts 7/8 are the box top faces, charted so
+// the box tops receive bounce light in addition to the declared directional
+// sun. Box sides/fronts stay uncharted (documented limitation).
 const LegacyChart kCharts[9] = {
     {0, 0, {0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}, {0,0}, {0,0}},
     {1, 1, {-1.0f,-1.0f,-1.0f}, {1,0,0}, {0,0,1}, {0,1,0},  {256,256}, {0,0}},
@@ -143,7 +143,7 @@ glm::vec3 planeNormalForLegacyChart(uint32_t chartId) {
         case 5: return {0.0f, 0.0f, -1.0f}; // back: plane -Z, chart +Z
         case 6: return {0.0f, 1.0f, 0.0f};  // light: plane +Y, chart -Y
         case 7:
-        case 8: return {0.0f, 1.0f, 0.0f};  // box tops: plane +Y, chart +Y
+        case 8: return {0.0f, 0.0f, 1.0f};  // box fronts: plane +Z, chart +Z
         default: return {0.0f, 0.0f, 0.0f};
     }
 }
@@ -228,8 +228,15 @@ ReferenceLegacyCornellScene::ReferenceLegacyCornellScene() {
     gpuData_.header.roomBoundsMin = {-1.0f, -1.0f, -1.0f, 0.0f};
     gpuData_.header.roomBoundsMax = {1.0f, 1.0f, 1.0f, 0.0f};
     gpuData_.header.referenceConstants = {0.0f, reflegacy::kTexelScale, 0.0f, 0.0f};
-    gpuData_.header.sunDirection = {0.0f, 1.0f, 0.0f, 0.0f};
-    gpuData_.header.sunRadiance = {0.0f, 0.0f, 0.0f, 0.0f};
+    // Declared directional sun for the legacy Cornell scene: a warm overhead
+    // sun with a slight -X/+Z angle. This is a scene-lighting choice (like the
+    // emissive ceiling quad), NOT a kernel change. It gives the interior box
+    // tops direct light via the kernel's directional-sun term, which the
+    // emissive quad alone cannot (it contributes only through the merge chain,
+    // which loses energy on small geometry at C0/C1).
+    const glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f, 1.0f, 0.2f));
+    gpuData_.header.sunDirection = {sunDir.x, sunDir.y, sunDir.z, 0.0f};
+    gpuData_.header.sunRadiance = {2.0f, 1.9f, 1.8f, 0.0f};
     gpuData_.header.skyParameters = {0.0f, 0.0f, 0.0f, 0.0f};
     gpuData_.header.largeOpening = {0, 0, 0, 0};
     gpuData_.header.smallOpening = {0, 0, 0, 0};
@@ -306,8 +313,8 @@ ReferenceTraceHit ReferenceLegacyCornellScene::trace(const glm::vec3& origin,
     considerLegacyBox(best, {boxB.data0.x, boxB.data0.y, boxB.data0.z},
                       {boxB.data1.x, boxB.data1.y, boxB.data1.z}, origin, dir);
 
-    // Charted box-top faces override the coplanar box top within a small tie
-    // margin so feedback lands on the charted surface.
+    // Charted box front faces (+Z) override the coplanar box front within a
+    // small tie margin so feedback lands on the charted surface.
     for (uint32_t c = 7; c <= 8; ++c)
         considerLegacyQuad(best, reflegacy::chart(c), reflegacy::chart(c).materialId,
                            origin, dir, true);

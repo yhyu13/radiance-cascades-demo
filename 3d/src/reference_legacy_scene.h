@@ -20,8 +20,8 @@
 //   texel scale:    1/128 world units (coarser than parity's locked 1/256;
 //                   per-scene choice to fit atlas memory)
 //   charts:         6 (floor, ceiling, red, green, back, light), single page
-//   logical domain: 1344 x 1536 (6 cascade bands of 256 rows)
-//   physical:       1344 x 256 per cascade (single page, no interior page)
+//   logical domain: 1472 x 1536 (6 cascade bands of 256 rows)
+//   physical:       1472 x 256 per cascade (single page, no interior page)
 //   cascades:       6, probeSize = 2^(c+1), reach = probeSize*8/128 world,
 //                   C5 = 10000
 
@@ -85,8 +85,13 @@ public:
     ReferenceTraceHit trace(const glm::vec3& origin, const glm::vec3& direction,
                             float maxDistance) const;
     glm::vec3 getSkyLight(const glm::vec3& direction) const;  // black void
-    glm::vec3 sunDirection() const { return {0.0f, 1.0f, 0.0f}; }
-    glm::vec3 sunRadiance() const { return glm::vec3(0.0f); }  // disabled
+    // Declared directional sun (scene-lighting choice): warm overhead sun with
+    // a slight -X/+Z angle. Lights box tops directly via the kernel's sun term.
+    glm::vec3 sunDirection() const {
+        const glm::vec3 d(-0.3f, 1.0f, 0.2f);
+        return glm::normalize(d);
+    }
+    glm::vec3 sunRadiance() const { return glm::vec3(2.0f, 1.9f, 1.8f); }
     float referenceTime() const { return 0.0f; }
 
     const ReferenceSceneGpuData& gpuData() const { return gpuData_; }

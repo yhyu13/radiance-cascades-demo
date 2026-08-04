@@ -17,7 +17,7 @@
 class ReferenceRcAtlases final {
 public:
     ReferenceRcAtlases() = default;
-    // Legacy Cornell layout uses 1344x256 single-page physical storage.
+    // Legacy Cornell layout uses 1472x256 single-page physical storage.
     ReferenceRcAtlases(int physicalWidth, int physicalHeight)
         : width_(physicalWidth), height_(physicalHeight) {}
     ~ReferenceRcAtlases();

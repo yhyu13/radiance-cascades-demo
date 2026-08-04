@@ -3,7 +3,7 @@
 // Legacy Cornell box transport (new RC kernel on the old Cornell scene).
 // Same square-ring layout kernel, weighted merge, four-bin feedback, and
 // payload schema as the parity path, over the legacy Cornell chart layout
-// (texel scale 1/128, 6 charts, single page, 1344x1536 logical / 1344x256
+// (texel scale 1/128, 6 charts, single page, 1472x1536 logical / 1472x256
 // physical per cascade). Sun disabled, sky is black void; the only light is
 // the emissive ceiling quad. Mirrors the CPU oracle reference_legacy_scene.
 
@@ -190,7 +190,7 @@ TraceHit traceScene(vec3 origin, vec3 dir, float maxt) {
         }
     }
 
-    // Charted box-top faces (primitives 6, 7) override the coplanar box top
+    // Charted box top faces (primitives 6, 7) override the coplanar box top
     // within a small tie margin so feedback lands on the charted surface.
     for (int i = 6; i < 8; ++i) {
         GpuPrimitive prim = scene.primitives[i];
@@ -295,7 +295,7 @@ vec3 mergeUpper(vec2 uv, vec3 gPos, vec3 gTan, vec3 gBit, vec2 gRes,
     vec2 uvo = probePositions*0.5;
     vec2 modUV = mod(uv, gRes);
     // Upper-cascade band offset is the cascade band height (256), NOT the
-    // chart height gRes.y: light and box-top charts are 64 tall and would
+    // chart height gRes.y: small charts would
     // otherwise read the same band instead of the upper cascade.
     vec2 luvo = floor(uv/gRes)*gRes + vec2(0.0, 256.0);
     vec2 luvd = floor(modUV/probePositions)*probePositions;

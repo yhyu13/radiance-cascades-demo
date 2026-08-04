@@ -11,7 +11,7 @@
 
 // Legacy Cornell pipeline: same frame structure as the parity pipeline
 // (C5->C0 hierarchy, previous-generation C0 feedback, atomic swap, final
-// consumer) over the legacy Cornell chart layout (1344x256 physical).
+// consumer) over the legacy Cornell chart layout (1472x256 physical).
 class ReferenceLegacyPipeline final {
 public:
     ReferenceLegacyPipeline() : atlases_(reflegacy::kPhysicalWidth,
