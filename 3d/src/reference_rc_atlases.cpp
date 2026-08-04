@@ -56,8 +56,12 @@ bool ReferenceRcAtlases::allocate() {
         for (int side = 0; side < 2; ++side) {
             const GLuint texture = textures[side];
             glBindTexture(GL_TEXTURE_2D, texture);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            // Bilinear filtering matches the original ShaderToy's cubemap
+            // textureLod with default filtering, which smooths probe-grid
+            // banding. The alpha channel is also interpolated (the original
+            // cubemap stores RGBA8 and blends all channels including distance).
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F,

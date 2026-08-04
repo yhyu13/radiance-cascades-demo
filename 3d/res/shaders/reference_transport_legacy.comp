@@ -81,6 +81,13 @@ ivec2 globalToPhysicalTexel(int cascade, vec2 globalUv) {
     return ivec2(-1);
 }
 
+vec2 globalToPhysicalF(int cascade, vec2 globalUv) {
+    float bandY0 = 256.0*float(cascade);
+    if (globalUv.y >= bandY0 && globalUv.y < bandY0 + 256.0)
+        return vec2(globalUv.x, globalUv.y - bandY0);
+    return vec2(-1.0);
+}
+
 // ---------------------------------------------------------------------------
 // Legacy trace: 6 wall/light quads + 2 diffuse boxes (from the scene SSBO)
 // ---------------------------------------------------------------------------
@@ -243,10 +250,14 @@ vec3 feedbackB(TraceHit h) {
     chartInfo(uint(h.chartId), res, base);
     vec2 halfRes = res*0.5;
     vec2 suv = clamp(h.chartUv*halfRes, vec2(0.5), halfRes - 0.5) + base;
-    return texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv), 0).rgb
-         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + vec2(halfRes.x, 0.0)), 0).rgb
-         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + vec2(0.0, halfRes.y)), 0).rgb
-         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + halfRes), 0).rgb;
+    ivec2 sz = textureSize(uFeedbackC0, 0);
+    vec2 offs[4] = vec2[4](vec2(0.0), vec2(halfRes.x, 0.0), vec2(0.0, halfRes.y), halfRes);
+    vec3 sum = vec3(0.0);
+    for (int i = 0; i < 4; ++i) {
+        vec2 phys = globalToPhysicalF(0, suv + offs[i]);
+        sum += textureLod(uFeedbackC0, phys / vec2(sz), 0.0).rgb;
+    }
+    return sum;
 }
 
 vec4 shadeLocal(TraceHit h, vec3 probeDir, float thetaIndex, float probeSize,
@@ -315,14 +326,15 @@ vec3 mergeUpper(vec2 uv, vec3 gPos, vec3 gTan, vec3 gBit, vec2 gRes,
         else if (phiI < phiLen*3.0) phiUv = vec2(0.5, phiI-phiLen*2.0);
         else phiUv = vec2(phiI-phiLen*3.0, upperProbeSize-0.5);
         vec2 lookG = luvo + luvd + floor(phiUv)*uvo + q;
-        float dist = texelFetch(uUpperCascade, globalToPhysicalTexel(uc, lookG), 0).a;
+        ivec2 sz = textureSize(uUpperCascade, 0);
+        float dist = textureLod(uUpperCascade, globalToPhysicalF(uc, lookG) / vec2(sz), 0.0).a;
         bool visible = dist < -0.5 || length(rel) < dist*cone + 0.01;
         if (visible) {
             vec2 radBase = luvo + luvd + q;
-            vec3 sum = texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase), 0).rgb
-                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + vec2(uvo.x, 0.0)), 0).rgb
-                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + vec2(0.0, uvo.y)), 0).rgb
-                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + uvo), 0).rgb;
+            vec2 radOffs[4] = vec2[4](vec2(0.0), vec2(uvo.x, 0.0), vec2(0.0, uvo.y), uvo);
+            vec3 sum = vec3(0.0);
+            for (int j = 0; j < 4; ++j)
+                sum += textureLod(uUpperCascade, globalToPhysicalF(uc, radBase + radOffs[j]) / vec2(sz), 0.0).rgb;
             numerator += sum*ws[i];
             vw += ws[i];
         }

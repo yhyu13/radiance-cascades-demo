@@ -75,7 +75,10 @@ uniform float uAspect;
 uniform float uExposure;       // display-only (default 1; validated path uses 1)
 uniform float uInvGamma;       // display-only (default 1; validated path uses 1)
 
-// Plan Section 7.3 global -> physical texel mapping (integer coordinates).
+// Plan Section 7.3 global -> physical mapping. The continuous version is
+// used for bilinear filtering (matching the original ShaderToy's cubemap
+// textureLod with default filtering).
+
 ivec2 globalToPhysicalTexel(int cascade, vec2 globalUv) {
     float bandY0 = 256.0*float(cascade);
     if (globalUv.y >= bandY0 && globalUv.y < bandY0 + 256.0)
@@ -83,6 +86,15 @@ ivec2 globalToPhysicalTexel(int cascade, vec2 globalUv) {
     if (globalUv.y >= 1536.0 + bandY0 && globalUv.y < 1536.0 + bandY0 + 256.0)
         return ivec2(int(globalUv.x), int(globalUv.y - (1280.0 + bandY0)));
     return ivec2(-1);
+}
+
+vec2 globalToPhysicalF(int cascade, vec2 globalUv) {
+    float bandY0 = 256.0*float(cascade);
+    if (globalUv.y >= bandY0 && globalUv.y < bandY0 + 256.0)
+        return vec2(globalUv.x, globalUv.y - bandY0);
+    if (globalUv.y >= 1536.0 + bandY0 && globalUv.y < 1536.0 + bandY0 + 256.0)
+        return vec2(globalUv.x, globalUv.y - (1280.0 + bandY0));
+    return vec2(-1.0);
 }
 
 const float THETA_PI = 3.14192653; // reference literal (CubeA.glsl:135)
@@ -323,6 +335,8 @@ float transportWeight(float thetaIndex, float probeSize) {
 
 // Temporal hit-chart feedback (Phase 6): sum of the exact four
 // previous-generation C0 directional values addressed by CubeA.glsl:166-170.
+// Uses bilinear filtering on the atlas (matching the original ShaderToy's
+// cubemap textureLod with default filtering).
 vec3 feedbackB(TraceHit h) {
     if (!h.hit || h.chartId == 0 || h.chartUv.x < 0.0)
         return vec3(0.0);
@@ -338,10 +352,14 @@ vec3 feedbackB(TraceHit h) {
     else                     { res = vec2(128.0,256.0); base = vec2(128.0,1536.0); }
     vec2 halfRes = res*0.5;
     vec2 suv = clamp(h.chartUv*halfRes, vec2(0.5), halfRes - 0.5) + base;
-    return texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv), 0).rgb
-         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + vec2(halfRes.x, 0.0)), 0).rgb
-         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + vec2(0.0, halfRes.y)), 0).rgb
-         + texelFetch(uFeedbackC0, globalToPhysicalTexel(0, suv + halfRes), 0).rgb;
+    ivec2 sz = textureSize(uFeedbackC0, 0);
+    vec2 offs[4] = vec2[4](vec2(0.0), vec2(halfRes.x, 0.0), vec2(0.0, halfRes.y), halfRes);
+    vec3 sum = vec3(0.0);
+    for (int i = 0; i < 4; ++i) {
+        vec2 phys = globalToPhysicalF(0, suv + offs[i]);
+        sum += textureLod(uFeedbackC0, phys / vec2(sz), 0.0).rgb;
+    }
+    return sum;
 }
 
 vec4 shadeLocal(TraceHit h, vec3 probeDir, float thetaIndex, float probeSize,
@@ -411,15 +429,17 @@ vec3 mergeUpper(vec2 uv, ChartInfo c, float probeCascade, vec3 probePos,
         else if (phiI < phiLen*2.0) phiUv = vec2(upperProbeSize-(phiI-phiLen), 0.5);
         else if (phiI < phiLen*3.0) phiUv = vec2(0.5, phiI-phiLen*2.0);
         else phiUv = vec2(phiI-phiLen*3.0, upperProbeSize-0.5);
-        vec2 lookG = luvo + luvd + floor(phiUv)*uvo + q;
-        float dist = texelFetch(uUpperCascade, globalToPhysicalTexel(uc, lookG), 0).a;
+vec2 lookG = luvo + luvd + floor(phiUv)*uvo + q;
+        ivec2 sz = textureSize(uUpperCascade, 0);
+        float dist = textureLod(uUpperCascade, globalToPhysicalF(uc, lookG) / vec2(sz), 0.0).a;
         bool visible = dist < -0.5 || length(rel) < dist*cone + 0.01;
         if (visible) {
             vec2 radBase = luvo + luvd + q;
-            vec3 sum = texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase), 0).rgb
-                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + vec2(uvo.x, 0.0)), 0).rgb
-                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + vec2(0.0, uvo.y)), 0).rgb
-                     + texelFetch(uUpperCascade, globalToPhysicalTexel(uc, radBase + uvo), 0).rgb;
+            int uc = int(probeCascade) + 1;
+            vec2 radOffs[4] = vec2[4](vec2(0.0), vec2(uvo.x, 0.0), vec2(0.0, uvo.y), uvo);
+            vec3 sum = vec3(0.0);
+            for (int j = 0; j < 4; ++j)
+                sum += textureLod(uUpperCascade, globalToPhysicalF(uc, radBase + radOffs[j]) / vec2(sz), 0.0).rgb;
             numerator += sum*ws[i];
             vw += ws[i];
         }

@@ -607,17 +607,25 @@ int runReferenceRenderInteractive(int frames, const std::string& screenshotPath)
         glBindTexture(GL_TEXTURE_2D, target);
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, mapped.data());
         glBindTexture(GL_TEXTURE_2D, 0);
+        // Manual row reversal instead of ImageFlipVertical (crashes on vector-backed Images).
         std::vector<unsigned char> mappedBytes(mapped.size());
-        for (size_t i = 0; i < mapped.size(); ++i)
-            mappedBytes[i] = static_cast<unsigned char>(
-                std::clamp(mapped[i], 0.0f, 1.0f) * 255.0f + 0.5f);
+        for (int y = 0; y < kViewHeight; ++y) {
+            const int srcY = kViewHeight - 1 - y;
+            for (int x = 0; x < kViewWidth; ++x) {
+                const size_t src = (static_cast<size_t>(srcY) * kViewWidth + x) * 4;
+                const size_t dst = (static_cast<size_t>(y) * kViewWidth + x) * 4;
+                for (int k = 0; k < 3; ++k)
+                    mappedBytes[dst + k] = static_cast<unsigned char>(
+                        std::clamp(mapped[src + k], 0.0f, 1.0f) * 255.0f + 0.5f);
+                mappedBytes[dst + 3] = 255;
+            }
+        }
         Image image;
         image.data = mappedBytes.data();
         image.width = kViewWidth;
         image.height = kViewHeight;
         image.mipmaps = 1;
         image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-        ImageFlipVertical(&image);  // GL bottom-up origin
         if (ExportImage(image, screenshotPath.c_str()))
             std::cout << "[REFERENCE] screenshot=" << screenshotPath
                       << " linear=" << linearPath << " frames=" << frame << "\n";

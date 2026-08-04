@@ -729,7 +729,7 @@ void main() {
                 // C0 direct radiance only needs the first SDF hit. The target hit
                 // may be uncharted Sponza mesh detail, so do not gate it on hs.valid.
                 vec3 shadowedDirect = applySponzaProxyTransport(direct * visibility, sponzaProxyChart);
-                imageStore(oRadianceDebug, p, vec4(shadowedDirect, 1.0));
+                imageStore(oRadianceDebug, p, vec4(shadowedDirect, tr.t));
                 return;  // Early exit - already wrote to atlas
             } else {
                 // Clear non-hit texels to black
@@ -740,7 +740,7 @@ void main() {
             // C-quality diagnostic: bypass shadow visibility but keep the same C0
             // first-hit direct lighting and atlas packing as mode 15.
             if (tr.state == 1) {
-                imageStore(oRadianceDebug, p, vec4(sanitizeRadiance(direct), 1.0));
+                imageStore(oRadianceDebug, p, vec4(sanitizeRadiance(direct), tr.t));
                 return;
             } else {
                 imageStore(oRadianceDebug, p, vec4(0.0, 0.0, 0.0, 0.0));
@@ -764,10 +764,10 @@ void main() {
                 vec3 shadowedDirect = applySponzaProxyTransport(direct * visibility, sponzaProxyChart);
                 
                 // Temporal accumulation using Exponential Moving Average (EMA)
-                float alpha = uFeedbackAlpha;
-                vec3 newRadiance = mix(prevRadiance, shadowedDirect, alpha);
+                float feedbackAlpha = uFeedbackAlpha;
+                vec3 newRadiance = mix(prevRadiance, shadowedDirect, feedbackAlpha);
                 
-                imageStore(oRadianceDebug, p, vec4(newRadiance, 1.0));
+                imageStore(oRadianceDebug, p, vec4(newRadiance, tr.t));
                 return;  // Early exit - already wrote to atlas
             } else {
                 // Clear non-hit texels to black (don't accumulate on misses)

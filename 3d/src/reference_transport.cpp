@@ -91,6 +91,37 @@ FeedbackAddress feedbackAddress(uint32_t chartId, const glm::vec2& chartUv) {
     return out;
 }
 
+// Bilinear fetch matching the GPU's textureLod with GL_LINEAR filtering.
+// Reads 4 texels around the continuous coordinate and blends RGB channels.
+// The alpha channel is also interpolated (matching the original ShaderToy's
+// cubemap textureLod which blends all channels).
+namespace {
+glm::vec4 sampleBilinear(const C0Fetch& fetch, int width, int height,
+                          const glm::vec2& coord) {
+    // GPU textureLod at normalized coord/size computes:
+    //   texel index = floor(coord), fractional = coord - floor(coord)
+    // Do NOT subtract 0.5 — that would push to the texel center and lose the
+    // fractional part that the GPU uses for GL_LINEAR interpolation.
+    const float x = coord.x;
+    const float y = coord.y;
+    const int ix = static_cast<int>(std::floor(x));
+    const int iy = static_cast<int>(std::floor(y));
+    const float fx = x - static_cast<float>(ix);
+    const float fy = y - static_cast<float>(iy);
+    const int ix0 = std::clamp(ix, 0, width - 1);
+    const int iy0 = std::clamp(iy, 0, height - 1);
+    const int ix1 = std::clamp(ix + 1, 0, width - 1);
+    const int iy1 = std::clamp(iy + 1, 0, height - 1);
+    const auto c00 = fetch({ix0, iy0});
+    const auto c10 = fetch({ix1, iy0});
+    const auto c01 = fetch({ix0, iy1});
+    const auto c11 = fetch({ix1, iy1});
+    const auto row0 = c00 * (1.0f - fx) + c10 * fx;
+    const auto row1 = c01 * (1.0f - fx) + c11 * fx;
+    return row0 * (1.0f - fy) + row1 * fy;
+}
+}  // namespace
+
 glm::vec3 feedbackB(const ReferenceTraceHit& hit, const C0Fetch& fetchC0) {
     if (!hit.hit || hit.chartId == ReferenceChartId::Invalid || hit.chartUv.x < 0.0f)
         return glm::vec3(0.0f);
@@ -98,9 +129,10 @@ glm::vec3 feedbackB(const ReferenceTraceHit& hit, const C0Fetch& fetchC0) {
         feedbackAddress(static_cast<uint32_t>(hit.chartId), hit.chartUv);
     glm::vec3 bounce(0.0f);
     for (size_t i = 0; i < 4; ++i) {
-        const glm::ivec2 texel(static_cast<int>(std::floor(address.binsPhysical[i].x)),
-                               static_cast<int>(std::floor(address.binsPhysical[i].y)));
-        bounce += glm::vec3(fetchC0(texel));
+        const auto sample = sampleBilinear(fetchC0, reflayout::kPhysicalWidth,
+                                            reflayout::kPhysicalHeight,
+                                            address.binsPhysical[i]);
+        bounce += glm::vec3(sample);
     }
     return bounce;
 }

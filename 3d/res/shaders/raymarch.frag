@@ -754,6 +754,11 @@ struct SurfaceChartLayout {
     bool valid;
 };
 
+struct SurfaceWeightedSample {
+    vec3 rgb;
+    float weight;
+};
+
 SurfaceChartLayout surfaceChartLayout(int chartId);
 
 float surfaceRemap01(float value, float lo, float hi) {
@@ -962,6 +967,104 @@ vec3 sampleSurfaceC0ProbeAverage(SurfaceChartHit h) {
     return sumRadiance / max(weight, 1.0);
 }
 
+SurfaceWeightedSample sampleSurfaceC0ProbeWeighted(SurfaceChartLayout chartLayout, vec2 probeCoord) {
+    SurfaceWeightedSample s;
+    s.rgb = vec3(0.0);
+    s.weight = 0.0;
+
+    const float probeSize = 2.0;
+    vec2 probePositions = chartLayout.gRes / probeSize;
+    vec2 clampedProbeCoord = clamp(probeCoord, vec2(0.0), probePositions - vec2(1.0));
+
+    vec3 sumRadiance = vec3(0.0);
+    float validDirections = 0.0;
+    for (int dy = 0; dy < 2; ++dy) {
+        for (int dx = 0; dx < 2; ++dx) {
+            vec2 localPx = clampedProbeCoord + vec2(float(dx), float(dy)) * probePositions;
+            ivec2 atlasPx = ivec2(vec2(chartLayout.chartX, 0.0) + localPx);
+            atlasPx = clamp(atlasPx, ivec2(0), ivec2(2559, 1279));
+
+            vec4 atlasSample = texelFetch(uCascadeAtlases[0], atlasPx, 0);
+            if (atlasSample.a > 1e-6) {
+                sumRadiance += sanitizeRadiance(atlasSample.rgb);
+                validDirections += 1.0;
+            }
+        }
+    }
+
+    if (validDirections > 0.0) {
+        s.rgb = sumRadiance / validDirections;
+        s.weight = validDirections * 0.25;
+    }
+    return s;
+}
+
+SurfaceWeightedSample sampleSurfaceC0WeightedBilinear(SurfaceChartHit h, SurfaceChartLayout chartLayout) {
+    SurfaceWeightedSample result;
+    result.rgb = vec3(0.0);
+    result.weight = 0.0;
+
+    const float probeSize = 2.0;
+    vec2 probePositions = chartLayout.gRes / probeSize;
+    vec2 probeCoord = h.uv * probePositions - vec2(0.5);
+    vec2 baseCoord = clamp(floor(probeCoord), vec2(0.0), probePositions - vec2(2.0));
+    vec2 f = clamp(probeCoord - baseCoord, vec2(0.0), vec2(1.0));
+
+    SurfaceWeightedSample s00 = sampleSurfaceC0ProbeWeighted(chartLayout, baseCoord);
+    SurfaceWeightedSample s10 = sampleSurfaceC0ProbeWeighted(chartLayout, baseCoord + vec2(1.0, 0.0));
+    SurfaceWeightedSample s01 = sampleSurfaceC0ProbeWeighted(chartLayout, baseCoord + vec2(0.0, 1.0));
+    SurfaceWeightedSample s11 = sampleSurfaceC0ProbeWeighted(chartLayout, baseCoord + vec2(1.0, 1.0));
+
+    float w00 = (1.0 - f.x) * (1.0 - f.y);
+    float w10 = f.x * (1.0 - f.y);
+    float w01 = (1.0 - f.x) * f.y;
+    float w11 = f.x * f.y;
+
+    vec3 rgb =
+        s00.rgb * s00.weight * w00 +
+        s10.rgb * s10.weight * w10 +
+        s01.rgb * s01.weight * w01 +
+        s11.rgb * s11.weight * w11;
+    float weight =
+        s00.weight * w00 +
+        s10.weight * w10 +
+        s01.weight * w01 +
+        s11.weight * w11;
+
+    if (weight > 1e-5) {
+        result.rgb = rgb / weight;
+        result.weight = weight;
+    }
+    return result;
+}
+
+SurfaceWeightedSample sampleSurfaceRC_CornellUpperCascadeHook(SurfaceChartHit h, SurfaceChartLayout chartLayout) {
+    SurfaceWeightedSample s;
+    s.rgb = vec3(0.0);
+    s.weight = 0.0;
+    return s;
+}
+
+vec3 sampleSurfaceRC_CornellHierarchical(SurfaceChartHit h) {
+    SurfaceChartLayout chartLayout = surfaceChartLayout(h.chartId);
+    if (!chartLayout.valid) return vec3(0.0);
+
+    SurfaceWeightedSample c0 = sampleSurfaceC0WeightedBilinear(h, chartLayout);
+    SurfaceWeightedSample upper = sampleSurfaceRC_CornellUpperCascadeHook(h, chartLayout);
+
+    if (upper.weight > 0.0) {
+        float weight = c0.weight + upper.weight;
+        if (weight > 1e-5) {
+            return (c0.rgb * c0.weight + upper.rgb * upper.weight) / weight;
+        }
+    }
+    if (c0.weight > 0.0) {
+        return c0.rgb;
+    }
+
+    return sampleSurfaceC0ProbeAverage(h);
+}
+
 /**
  * @brief Main surface RC GI sampling function
  * @param hitPos Hit position in world space
@@ -975,9 +1078,11 @@ vec3 sampleSurfaceRC_GI(vec3 hitPos, vec3 normal, vec3 cameraPos) {
     SurfaceChartHit h = classifySurfaceChart(hitPos);
     if (!h.valid) return vec3(0.0);
 
-    // First Phase 2F binding gate: consume C0's probe+direction packed surface
-    // atlas. Higher-cascade chart-space sampling remains a quality follow-up.
-    vec3 gi = sampleSurfaceC0ProbeAverage(h);
+    // Cornell uses the hit-distance alpha contract through the new weighted
+    // sampler. Sponza keeps the calibrated C0 bridge/proxy path isolated.
+    vec3 gi = (uSurfaceSceneType == 1)
+        ? sampleSurfaceRC_CornellHierarchical(h)
+        : sampleSurfaceC0ProbeAverage(h);
     return min(gi, vec3(10.0));
 }
 
