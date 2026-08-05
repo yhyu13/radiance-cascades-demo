@@ -267,12 +267,14 @@ ReferenceLegacyCornellScene::ReferenceLegacyCornellScene() {
             {ch.bitangent.x, ch.bitangent.y, ch.bitangent.z, reflegacy::kTexelScale},
             {ch.normal.x, ch.normal.y, ch.normal.z, reflegacy::kTexelScale},
         };
-        // metadata.w high bit 0x100: plane normal for the one-sided
-        // intersection test is the negated chart normal (ceiling, back, light).
+        // metadata.w bits: 0x100 flips the one-sided intersection plane normal
+        // (ceiling, back, light); 0x200 enables tie-override so the charted box
+        // top quad wins over the coplanar box primitive's top face.
         const uint32_t flip = (ch.chartId == 2 || ch.chartId == 5 || ch.chartId == 6)
             ? 0x100u : 0u;
+        const uint32_t tie = (ch.chartId == 7 || ch.chartId == 8) ? 0x200u : 0u;
         gpuData_.primitives[c] = {
-            {c + 1, 0, ch.materialId, ch.chartId | flip},
+            {c + 1, 0, ch.materialId, ch.chartId | flip | tie},
             {ch.origin.x, ch.origin.y, ch.origin.z, 0},
             {ch.tangent.x, ch.tangent.y, ch.tangent.z, extent.x},
             {ch.bitangent.x, ch.bitangent.y, ch.bitangent.z, extent.y},

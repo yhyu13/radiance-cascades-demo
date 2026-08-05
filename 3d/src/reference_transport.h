@@ -54,6 +54,11 @@ using C0Fetch = std::function<glm::vec4(const glm::ivec2&)>;
 // charts without a valid chartUv.
 glm::vec3 feedbackB(const ReferenceTraceHit& hit, const C0Fetch& fetchC0);
 
+// Bilinear atlas fetch matching the GPU's textureLod with GL_LINEAR and
+// GL_CLAMP_TO_EDGE. Shared by the parity and legacy CPU feedback oracles.
+glm::vec4 sampleBilinear(const C0Fetch& fetch, int width, int height,
+                         const glm::vec2& coord);
+
 // Trace the locked scene and shade the result.
 LocalSample traceAndShade(const ReferenceCornellScene& scene,
                           const glm::vec3& origin, const glm::vec3& direction,

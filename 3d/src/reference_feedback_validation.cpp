@@ -121,8 +121,8 @@ bool initSession(GpuSession& s, const ReferenceCornellScene& scene, Results& r) 
     gl::setShaderRoot(RC3D_SHADER_ROOT);
     gl::clearShaderSourceRecords();
     s.shader = gl::loadComputeShader(
-        gl::resolveShaderPath("reference_transport_local.comp"),
-        "reference_transport_local.comp");
+        gl::resolveShaderPath("reference_transport.comp"),
+        "reference_transport.comp");
     r.shaderLoaded = s.shader != 0;
     if (!r.shaderLoaded) { r.fail("shader load"); return false; }
     countGlErrors(r, "shader");
@@ -146,6 +146,8 @@ void dispatchCascade(GpuSession& s, ReferenceRcAtlases& atlases, int cascade,
     glUniform1i(glGetUniformLocation(s.shader, "uEnableUpperMerge"),
                 enableMerge && cascade < 5 ? 1 : 0);
     glUniform1i(glGetUniformLocation(s.shader, "uHistoryValid"), historyValid ? 1 : 0);
+    glUniform1i(glGetUniformLocation(s.shader, "uPhysicalWidth"), reflayout::kPhysicalWidth);
+    glUniform1i(glGetUniformLocation(s.shader, "uPhysicalHeight"), reflayout::kPhysicalHeight);
     glBindImageTexture(2, atlases.writeTexture(static_cast<uint32_t>(cascade)), 0,
                        GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
     glActiveTexture(GL_TEXTURE4);

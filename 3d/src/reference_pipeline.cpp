@@ -15,8 +15,8 @@ bool ReferenceRcPipeline::initialize() {
 
     gl::setShaderRoot(RC3D_SHADER_ROOT);
     transportShader_ = gl::loadComputeShader(
-        gl::resolveShaderPath("reference_transport_local.comp"),
-        "reference_transport_local.comp");
+        gl::resolveShaderPath("reference_transport.comp"),
+        "reference_transport.comp");
     if (transportShader_ == 0) {
         std::cerr << "[ReferencePipeline] transport shader load failed\n";
         return false;
@@ -64,6 +64,10 @@ bool ReferenceRcPipeline::runFrame() {
                     cascade < 5 ? 1 : 0);
         glUniform1i(glGetUniformLocation(transportShader_, "uHistoryValid"),
                     atlases_.historyValid() ? 1 : 0);
+        glUniform1i(glGetUniformLocation(transportShader_, "uPhysicalWidth"),
+                    reflayout::kPhysicalWidth);
+        glUniform1i(glGetUniformLocation(transportShader_, "uPhysicalHeight"),
+                    reflayout::kPhysicalHeight);
         glBindImageTexture(2, atlases_.writeTexture(static_cast<uint32_t>(cascade)),
                            0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
         glActiveTexture(GL_TEXTURE4);

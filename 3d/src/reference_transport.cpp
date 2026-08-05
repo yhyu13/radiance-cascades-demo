@@ -95,7 +95,6 @@ FeedbackAddress feedbackAddress(uint32_t chartId, const glm::vec2& chartUv) {
 // Reads 4 texels around the continuous coordinate and blends RGB channels.
 // The alpha channel is also interpolated (matching the original ShaderToy's
 // cubemap textureLod which blends all channels).
-namespace {
 glm::vec4 sampleBilinear(const C0Fetch& fetch, int width, int height,
                           const glm::vec2& coord) {
     // GPU textureLod at normalized coord/size computes:
@@ -120,7 +119,6 @@ glm::vec4 sampleBilinear(const C0Fetch& fetch, int width, int height,
     const auto row1 = c01 * (1.0f - fx) + c11 * fx;
     return row0 * (1.0f - fy) + row1 * fy;
 }
-}  // namespace
 
 glm::vec3 feedbackB(const ReferenceTraceHit& hit, const C0Fetch& fetchC0) {
     if (!hit.hit || hit.chartId == ReferenceChartId::Invalid || hit.chartUv.x < 0.0f)

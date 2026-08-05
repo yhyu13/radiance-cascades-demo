@@ -319,11 +319,12 @@ void runGpuFixtures(GpuSession& session, const ReferenceCornellScene& scene,
     glBufferData(GL_SHADER_STORAGE_BUFFER,
                  static_cast<GLsizeiptr>(count * 4 * sizeof(float)), nullptr,
                  GL_STATIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, session.requestBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, session.recordBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, session.requestBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, session.recordBuffer);
 
     glUseProgram(session.shader);
     glUniform1i(glGetUniformLocation(session.shader, "uMode"), 0);
+    glUniform1i(glGetUniformLocation(session.shader, "uLayoutRequest"), 0);
     glUniform1i(glGetUniformLocation(session.shader, "uRequestCount"),
                 static_cast<GLint>(count));
     glDispatchCompute(1, static_cast<GLuint>((count + 63) / 64), 1);
@@ -406,6 +407,12 @@ void runBandTransport(GpuSession& session, const ReferenceCornellScene& scene,
         glUniform1i(glGetUniformLocation(session.shader, "uMode"), 1);
         glUniform1i(glGetUniformLocation(session.shader, "uCascade"),
                     static_cast<GLint>(c));
+        glUniform1i(glGetUniformLocation(session.shader, "uEnableUpperMerge"), 0);
+        glUniform1i(glGetUniformLocation(session.shader, "uHistoryValid"), 0);
+        glUniform1i(glGetUniformLocation(session.shader, "uPhysicalWidth"),
+                    reflayout::kPhysicalWidth);
+        glUniform1i(glGetUniformLocation(session.shader, "uPhysicalHeight"),
+                    reflayout::kPhysicalHeight);
         glBindImageTexture(2, texture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
         glDispatchCompute(reflayout::kPhysicalWidth / 8, reflayout::kPhysicalHeight / 8, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
@@ -607,11 +614,11 @@ bool runReferenceTransportValidation(const std::string& reportPath) {
         gl::setShaderRoot(RC3D_SHADER_ROOT);
         gl::clearShaderSourceRecords();
         session.shader = gl::loadComputeShader(
-            gl::resolveShaderPath("reference_transport_local.comp"),
-            "reference_transport_local.comp");
+            gl::resolveShaderPath("reference_transport.comp"),
+            "reference_transport.comp");
         r.shaderLoaded = session.shader != 0;
         if (!r.shaderLoaded) {
-            r.fail("gpu.shader", "reference_transport_local.comp", 1, 0);
+            r.fail("gpu.shader", "reference_transport.comp", 1, 0);
             gpuOk = false;
         }
         countGlErrors(r, "gpu.shader");

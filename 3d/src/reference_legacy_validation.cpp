@@ -74,33 +74,7 @@ struct alignas(16) GpuLayoutRecord {
 };
 static_assert(sizeof(GpuLayoutRecord) == 80);
 
-using C0Fetch = std::function<glm::vec4(const glm::ivec2&)>;
-
-// Bilinear fetch matching the GPU's textureLod with GL_LINEAR filtering.
-glm::vec4 sampleBilinear(const C0Fetch& fetch, int width, int height,
-                          const glm::vec2& coord) {
-    // GPU textureLod at normalized coord/size computes:
-    //   texel index = floor(coord), fractional = coord - floor(coord)
-    // Do NOT subtract 0.5 — that would push to the texel center and lose the
-    // fractional part that the GPU uses for GL_LINEAR interpolation.
-    const float x = coord.x;
-    const float y = coord.y;
-    const int ix = static_cast<int>(std::floor(x));
-    const int iy = static_cast<int>(std::floor(y));
-    const float fx = x - static_cast<float>(ix);
-    const float fy = y - static_cast<float>(iy);
-    const int ix0 = std::clamp(ix, 0, width - 1);
-    const int iy0 = std::clamp(iy, 0, height - 1);
-    const int ix1 = std::clamp(ix + 1, 0, width - 1);
-    const int iy1 = std::clamp(iy + 1, 0, height - 1);
-    const auto c00 = fetch({ix0, iy0});
-    const auto c10 = fetch({ix1, iy0});
-    const auto c01 = fetch({ix0, iy1});
-    const auto c11 = fetch({ix1, iy1});
-    const auto row0 = c00 * (1.0f - fx) + c10 * fx;
-    const auto row1 = c01 * (1.0f - fx) + c11 * fx;
-    return row0 * (1.0f - fy) + row1 * fy;
-}
+using C0Fetch = reftransport::C0Fetch;
 
 glm::vec3 legacyFeedbackB(const ReferenceTraceHit& hit, const C0Fetch& fetch) {
     if (!hit.hit || hit.chartId == ReferenceChartId::Invalid || hit.chartUv.x < 0.0f)
@@ -113,8 +87,8 @@ glm::vec3 legacyFeedbackB(const ReferenceTraceHit& hit, const C0Fetch& fetch) {
     const glm::vec2 offsets[4] = {{0, 0}, {halfRes.x, 0}, {0, halfRes.y}, halfRes};
     glm::vec3 bounce(0.0f);
     for (const auto& off : offsets) {
-        const auto sample = sampleBilinear(fetch, reflegacy::kPhysicalWidth,
-                                            reflegacy::kPhysicalHeight, suv + off);
+        const auto sample = reftransport::sampleBilinear(
+            fetch, reflegacy::kPhysicalWidth, reflegacy::kPhysicalHeight, suv + off);
         bounce += glm::vec3(sample);
     }
     return bounce;
@@ -288,13 +262,14 @@ bool runReferenceLegacyValidation(const std::string& reportPath) {
         // Dispatch through the pipeline's shader via a fresh load (keeps the
         // pipeline state simple).
         GLuint shader = gl::loadComputeShader(
-            gl::resolveShaderPath("reference_transport_legacy.comp"),
-            "reference_transport_legacy.comp");
+            gl::resolveShaderPath("reference_transport.comp"),
+            "reference_transport.comp");
         if (shader == 0) {
             r.fail("layout shader load");
         } else {
             glUseProgram(shader);
             glUniform1i(glGetUniformLocation(shader, "uMode"), 0);
+            glUniform1i(glGetUniformLocation(shader, "uLayoutRequest"), 1);
             glUniform1i(glGetUniformLocation(shader, "uRequestCount"),
                         static_cast<GLint>(requests.size()));
             glDispatchCompute(1, static_cast<GLuint>((requests.size() + 63) / 64), 1);
