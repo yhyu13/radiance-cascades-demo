@@ -51,50 +51,96 @@ function Run-Gate {
 
 $allOk = $true
 
-# G0: reproducible legacy baseline
+# G0: reproducible legacy baseline (explicit deprecation-window shell)
 $g0Report = "$relDir/g0_runtime.json"
+$g0Shot = "$relDir/g0_legacy.png"
 $allOk = (Run-Gate -Name "G0-baseline" -ReportRel $g0Report -GateArgs @(
-    "--phase0-baseline", "--metadata-json=$g0Report", "--window-size=640,480",
+    "--runtime-shell=legacy", "--phase0-baseline", "--metadata-json=$g0Report", "--window-size=640,480",
     "--use-cascade-gi=1", "--use-gi-blur=0", "--use-hybrid=0", "--use-surface-rc=0",
     "--enable-surface-rc-gi=0", "--use-multi-bounce=0", "--use-probe-jitter=0",
     "--noise-seed-offset=0", "--render-mode=0", "--auto-capture-delay=0",
-    "--exit-frames=2", "--screenshot=$relDir/g0_legacy.png")) -and $allOk
+    "--exit-frames=2", "--screenshot=$g0Shot")) -and $allOk
 
-# G1 shell parity: legacy-direct vs app3d-wrapped must match selection + screenshot bytes
+# G1 cut-over gate: App3D is the default shell, Demo3D is explicit-only.
+#   a) the legacy shell reproduces the G0 baseline exactly (stable deprecation window);
+#   b) the app3d default shell runs the reference surface-RC renderer;
+#   c) legacy-only flags without --runtime-shell=legacy fail with a usage error
+#      (no runtime feature silently falls back to old global state).
 $shellCommon = @(
     "--phase0-baseline", "--window-size=640,480", "--use-cascade-gi=1", "--use-gi-blur=0",
     "--use-hybrid=0", "--use-surface-rc=0", "--enable-surface-rc-gi=0", "--use-multi-bounce=0",
     "--use-probe-jitter=0", "--noise-seed-offset=0", "--render-mode=0", "--auto-capture-delay=0",
     "--exit-frames=2")
-$shellOk = $true
-$shellRuns = @{}
-foreach ($shell in @("legacy", "app3d")) {
-    $rep = "$relDir/g1_$shell.runtime.json"
-    $shot = "$relDir/g1_$shell.png"
-    $g1Args = @("--runtime-shell=$shell", "--metadata-json=$rep", "--screenshot=$shot") + $shellCommon
-    Push-Location $root
-    try {
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        & $exe @g1Args *> (Join-Path $runDir "g1_$shell.log")
-        $code = $LASTEXITCODE
-        $ErrorActionPreference = $prev
-    } finally {
-        $ErrorActionPreference = "Stop"
-        Pop-Location
-    }
-    $shellRuns[$shell] = @{ rep = (Join-Path $root $rep); shot = (Join-Path $root $shot); code = $code }
+$g1 = [ordered]@{}
+# (a) legacy reproducibility vs G0
+$legacyRep = "$relDir/g1_legacy.runtime.json"
+$legacyShot = "$relDir/g1_legacy.png"
+$g1LegacyArgs = @("--runtime-shell=legacy", "--metadata-json=$legacyRep", "--screenshot=$legacyShot") + $shellCommon
+Push-Location $root
+try {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $exe @g1LegacyArgs *> (Join-Path $runDir "g1_legacy.log")
+    $codeLegacy = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+} finally {
+    $ErrorActionPreference = "Stop"
+    Pop-Location
 }
-$selFields = @("backend", "render_view", "render_mode", "scene", "scene_revision", "shader_revision")
-$lr = Get-Content -Raw $shellRuns.legacy.rep | ConvertFrom-Json
-$ar = Get-Content -Raw $shellRuns.app3d.rep | ConvertFrom-Json
-$selEqual = $true
-foreach ($f in $selFields) { if ($lr.selection.$f -ne $ar.selection.$f) { $selEqual = $false } }
-$shotEqual = ((Get-FileHash -Algorithm SHA256 $shellRuns.legacy.shot).Hash -eq (Get-FileHash -Algorithm SHA256 $shellRuns.app3d.shot).Hash)
-$shellOk = $shellRuns.legacy.code -eq 0 -and $shellRuns.app3d.code -eq 0 -and $selEqual -and $shotEqual
-$gates["G1-shell"] = [ordered]@{ result = $(if ($shellOk) { "PASS" } else { "FAIL" }); report = "$relDir/g1_app3d.runtime.json" }
-Write-Host "[G1-shell] $($gates['G1-shell'].result)"
-$allOk = $shellOk -and $allOk
+$legacyOk = $codeLegacy -eq 0
+if ($legacyOk) {
+    $lr = Get-Content -Raw (Join-Path $root $legacyRep) | ConvertFrom-Json
+    $gr = Get-Content -Raw (Join-Path $root $g0Report) | ConvertFrom-Json
+    $selFields = @("backend", "render_view", "render_mode", "scene", "scene_revision", "shader_revision")
+    foreach ($f in $selFields) { if ($lr.selection.$f -ne $gr.selection.$f) { $legacyOk = $false } }
+    if ($legacyOk) {
+        $legacyOk = (Get-FileHash -Algorithm SHA256 (Join-Path $root $legacyShot)).Hash -eq
+                    (Get-FileHash -Algorithm SHA256 (Join-Path $root $g0Shot)).Hash
+    }
+}
+$g1.legacy_stable = $legacyOk
+Write-Host "[G1-cutover] legacy_stable=$legacyOk"
+
+# (b) app3d reference render (bounded). The no-arg default shell runs the same
+# runReferenceRenderInteractive backend but is unbounded (runs until ESC), so CI
+# exercises the explicit --reference-render=N subcommand as its proxy.
+$refShot = "$relDir/g1_app3d_ref.png"
+Push-Location $root
+try {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $exe --runtime-shell=app3d --reference-render=2 --reference-render-shot="$refShot" *> (Join-Path $runDir "g1_app3d.log")
+    $codeRef = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+} finally {
+    $ErrorActionPreference = "Stop"
+    Pop-Location
+}
+$refOk = $codeRef -eq 0 -and (Test-Path -LiteralPath (Join-Path $root $refShot))
+$g1.app3d_reference_render = $refOk
+$g1.app3d_default_note = "no-arg default shares the runReferenceRenderInteractive backend; CI proxy is --reference-render=N (unbounded default cannot exit in CI)"
+Write-Host "[G1-cutover] app3d_reference_render=$refOk"
+
+# (c) no silent fallback: legacy-only flags without the legacy shell must fail
+Push-Location $root
+try {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $exe @("--use-cascade-gi=1", "--use-hybrid=0", "--exit-frames=2") *> (Join-Path $runDir "g1_no_fallback.log")
+    $codeNoFallback = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+} finally {
+    $ErrorActionPreference = "Stop"
+    Pop-Location
+}
+$noFallbackOk = $codeNoFallback -ne 0
+$g1.no_silent_fallback = $noFallbackOk
+Write-Host "[G1-cutover] no_silent_fallback=$noFallbackOk"
+
+$g1Ok = $legacyOk -and $refOk -and $noFallbackOk
+$gates["G1-cutover"] = [ordered]@{ result = $(if ($g1Ok) { "PASS" } else { "FAIL" }); report = "$relDir/g1_app3d.log"; details = $g1 }
+Write-Host "[G1-cutover] $($gates['G1-cutover'].result)"
+$allOk = $g1Ok -and $allOk
 
 $allOk = (Run-Gate -Name "G1-chart" -ReportRel "$relDir/g1_scene.json" -GateArgs @(
     "--runtime-shell=app3d", "--validate-reference-cornell-scene",

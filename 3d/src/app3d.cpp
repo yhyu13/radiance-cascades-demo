@@ -15,7 +15,6 @@
 
 #include <algorithm>
 #include <iostream>
-#include <memory>
 #include <string_view>
 
 namespace {
@@ -26,8 +25,11 @@ enum class RuntimeShell {
 };
 
 struct StartupConfig {
-    RuntimeShell shell = RuntimeShell::Legacy;
+    // Phase 9 cut-over: App3D is the default shell. Demo3D is reachable only
+    // through the explicit --runtime-shell=legacy deprecation window.
+    RuntimeShell shell = RuntimeShell::App3D;
     bool valid = true;
+    bool hasUnknownArguments = false;
     bool validateReferenceScene = false;
     bool validateReferenceLayout = false;
     bool validateReferenceTransport = false;
@@ -53,25 +55,6 @@ struct StartupConfig {
     std::string_view referenceMergeReport;
     std::string_view referenceFeedbackReport;
     std::string_view referenceFinalReport;
-};
-
-class RuntimeBackend {
-public:
-    virtual ~RuntimeBackend() = default;
-    virtual std::string_view name() const noexcept = 0;
-    virtual int run(int argc, char* argv[]) = 0;
-};
-
-class Demo3DBackend final : public RuntimeBackend {
-public:
-    std::string_view name() const noexcept override {
-        return "demo3d-legacy";
-    }
-
-    int run(int argc, char* argv[]) override {
-        return runLegacyDemo3DRuntime(
-            argc, argv, {.shellName = "app3d", .runtimeBackendName = name()});
-    }
 };
 
 StartupConfig parseStartupConfig(int argc, char* argv[]) {
@@ -210,26 +193,30 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
             continue;
         }
         constexpr std::string_view prefix = "--runtime-shell=";
-        if (!argument.starts_with(prefix))
-            continue;
+        if (argument.starts_with(prefix)) {
+            if (shellSeen) {
+                std::cerr << "[APP3D] Duplicate --runtime-shell selector.\n";
+                config.valid = false;
+                continue;
+            }
+            shellSeen = true;
 
-        if (shellSeen) {
-            std::cerr << "[APP3D] Duplicate --runtime-shell selector.\n";
-            config.valid = false;
+            const std::string_view value = argument.substr(prefix.size());
+            if (value == "legacy") {
+                config.shell = RuntimeShell::Legacy;
+            } else if (value == "app3d") {
+                config.shell = RuntimeShell::App3D;
+            } else {
+                std::cerr << "[APP3D] Invalid --runtime-shell value '" << value
+                          << "'; expected legacy or app3d.\n";
+                config.valid = false;
+            }
             continue;
         }
-        shellSeen = true;
 
-        const std::string_view value = argument.substr(prefix.size());
-        if (value == "legacy") {
-            config.shell = RuntimeShell::Legacy;
-        } else if (value == "app3d") {
-            config.shell = RuntimeShell::App3D;
-        } else {
-            std::cerr << "[APP3D] Invalid --runtime-shell value '" << value
-                      << "'; expected legacy or app3d.\n";
-            config.valid = false;
-        }
+        // Unrecognized by the app3d shell. Legacy Demo3D flags are forwarded
+        // only when --runtime-shell=legacy; otherwise they are reported.
+        config.hasUnknownArguments = true;
     }
 
     return config;
@@ -493,14 +480,31 @@ int App3D::run(int argc, char* argv[]) {
     }
 
     if (config.shell == RuntimeShell::Legacy) {
-        std::cout << "[APP3D] shell=legacy runtimeBackend=legacy-direct\n";
+        // Phase 9 deprecation window: Demo3D is no longer the default runtime.
+        // It remains reachable only through this explicit selector.
+        std::cout << "[APP3D] shell=legacy runtimeBackend=legacy-direct (deprecation window)\n";
         return runLegacyDemo3DRuntime(
             argc, argv, {.shellName = "legacy", .runtimeBackendName = "legacy-direct"});
     }
 
-    std::unique_ptr<RuntimeBackend> backend = std::make_unique<Demo3DBackend>();
-    std::cout << "[APP3D] shell=app3d runtimeBackend=" << backend->name() << "\n";
-    return backend->run(argc, argv);
+    // App3D is the default shell. Legacy Demo3D flags no longer silently fall
+    // back to old global state; they require the explicit legacy selector.
+    if (config.hasUnknownArguments) {
+        std::cerr << "[APP3D] Unknown arguments in the app3d shell.\n"
+                  << "[APP3D] Legacy Demo3D flags require --runtime-shell=legacy (deprecation window).\n"
+                  << "[APP3D] Supported app3d commands:\n"
+                  << "[APP3D]   --reference-render[=N] [--reference-render-shot=PATH]\n"
+                  << "[APP3D]   --reference-pt-shot=PATH [--reference-pt-spp=N] [--reference-pt-bounces=N]\n"
+                  << "[APP3D]   --legacy-render=N [--legacy-render-shot=PATH]   --legacy-pt-shot=PATH\n"
+                  << "[APP3D]   --validate-reference-{cornell-scene,layout,transport,merge,feedback,final,legacy}\n"
+                  << "[APP3D]       with the matching --reference-*-report=PATH\n"
+                  << "[APP3D]   --debug-legacy-pixel=X,Y   --debug-legacy-c0=PATH\n";
+        return 2;
+    }
+
+    // Default runtime: the reference surface-RC interactive view.
+    std::cout << "[APP3D] backend=reference-surface-rc-default\n";
+    return runReferenceRenderInteractive(0, "");
 }
 
 int runReferenceRenderInteractive(int frames, const std::string& screenshotPath) {

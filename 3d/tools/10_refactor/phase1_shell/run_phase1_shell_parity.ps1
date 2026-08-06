@@ -4,6 +4,14 @@ param(
     [switch]$DryRun
 )
 
+# Phase 1 G1 gate, updated for the Phase 9 shell cut-over.
+# App3D is the default shell; Demo3D is reachable only via --runtime-shell=legacy.
+# The old "legacy vs app3d-wrapped byte parity" assertion is retired with the
+# removal of the silent Demo3D fallback. The gate now verifies:
+#   a) the legacy shell reproduces the frozen baseline exactly;
+#   b) the app3d shell runs the reference surface-RC renderer;
+#   c) legacy-only flags without --runtime-shell=legacy fail with a usage error.
+
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 $buildDir = Join-Path $root "build"
@@ -34,9 +42,9 @@ $commonArgs = @(
 if ($DryRun) {
     Write-Host "cmake -S $root -B $buildDir"
     Write-Host "cmake --build $buildDir --config $Configuration"
-    foreach ($shell in @("legacy", "app3d")) {
-        Write-Host "$exe --runtime-shell=$shell $($commonArgs -join ' ')"
-    }
+    Write-Host "$exe --runtime-shell=legacy $($commonArgs -join ' ')  # frozen baseline"
+    Write-Host "$exe --runtime-shell=app3d --reference-render=2 --reference-render-shot=...  # reference default"
+    Write-Host "$exe --use-cascade-gi=1 --exit-frames=2  # must fail (no silent fallback)"
     exit 0
 }
 
@@ -48,69 +56,82 @@ if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 & cmake --build $buildDir --config $Configuration
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 
-$results = [ordered]@{}
-foreach ($shell in @("legacy", "app3d")) {
-    $reportRelative = "$relativeRunDir/$shell.runtime.json"
-    $screenshotRelative = "$relativeRunDir/$shell.png"
-    $logPath = Join-Path $runDir "$shell.runtime.log"
-    $args = @("--runtime-shell=$shell", "--metadata-json=$reportRelative", "--screenshot=$screenshotRelative") + $commonArgs
-
+function Invoke-ExeCapture {
+    param([string[]]$Arguments, [string]$LogName, [string]$Shell, [bool]$WritesRuntimeReport = $true)
+    $logPath = Join-Path $runDir $LogName
+    $reportRelative = if ($WritesRuntimeReport) { "$relativeRunDir/$Shell.runtime.json" } else { "" }
+    $screenshotRelative = "$relativeRunDir/$Shell.png"
     Push-Location $root
     try {
         $previousErrorActionPreference = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        & $exe @args *> $logPath
+        & $exe @Arguments *> $logPath
         $exitCode = $LASTEXITCODE
         $ErrorActionPreference = $previousErrorActionPreference
     } finally {
         $ErrorActionPreference = "Stop"
         Pop-Location
     }
-
-    $reportPath = Join-Path $root $reportRelative
-    $screenshotPath = Join-Path $root $screenshotRelative
-    if (-not (Test-Path -LiteralPath $reportPath)) { throw "Missing runtime report: $reportPath" }
-    if (-not (Test-Path -LiteralPath $screenshotPath)) { throw "Missing screenshot: $screenshotPath" }
-
-    $runtime = Get-Content -Raw -LiteralPath $reportPath | ConvertFrom-Json
-    $results[$shell] = [ordered]@{
+    return [ordered]@{
         exit_code = $exitCode
-        runtime = $runtime
-        screenshot_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $screenshotPath).Hash.ToLowerInvariant()
+        log = $logPath
+        report_relative = $reportRelative
+        screenshot_relative = $screenshotRelative
     }
 }
 
-$legacy = $results.legacy
-$app3d = $results.app3d
-$selectionFields = @("backend", "render_view", "render_mode", "scene", "scene_revision", "shader_revision")
-$selectionEqual = $true
-foreach ($field in $selectionFields) {
-    if ($legacy.runtime.selection.$field -ne $app3d.runtime.selection.$field) {
-        $selectionEqual = $false
-    }
+# (a) frozen legacy baseline
+$legacyArgs = @("--runtime-shell=legacy", "--metadata-json=$relativeRunDir/legacy.runtime.json", "--screenshot=$relativeRunDir/legacy.png") + $commonArgs
+$legacy = Invoke-ExeCapture -Arguments $legacyArgs -LogName "legacy.runtime.log" -Shell "legacy"
+
+# (b) app3d reference renderer (bounded); produces a screenshot, no runtime.json
+$refArgs = @("--runtime-shell=app3d", "--reference-render=2", "--reference-render-shot=$relativeRunDir/app3d.png")
+$app3d = Invoke-ExeCapture -Arguments $refArgs -LogName "app3d.log" -Shell "app3d" -WritesRuntimeReport $false
+
+# (c) no silent fallback
+$noFallbackLog = Join-Path $runDir "no_fallback.log"
+Push-Location $root
+try {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $exe "--use-cascade-gi=1" "--use-hybrid=0" "--exit-frames=$Frames" *> $noFallbackLog
+    $noFallbackExit = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorActionPreference
+} finally {
+    $ErrorActionPreference = "Stop"
+    Pop-Location
 }
 
-$screenshotEqual = $legacy.screenshot_sha256 -eq $app3d.screenshot_sha256
-$passed = $legacy.exit_code -eq 0 -and $app3d.exit_code -eq 0 -and
-          $legacy.runtime.result -eq "PASS" -and $app3d.runtime.result -eq "PASS" -and
-          $legacy.runtime.selection.shell -eq "legacy" -and
-          $legacy.runtime.selection.runtime_backend -eq "legacy-direct" -and
-          $app3d.runtime.selection.shell -eq "app3d" -and
-          $app3d.runtime.selection.runtime_backend -eq "demo3d-legacy" -and
-          $selectionEqual -and $screenshotEqual
+$legacyStable = $false
+if ($legacy.exit_code -eq 0) {
+    $legacyReport = Get-Content -Raw (Join-Path $root $legacy.report_relative) | ConvertFrom-Json
+    $legacyStable = $legacyReport.result -eq "PASS" -and
+                    $legacyReport.selection.shell -eq "legacy" -and
+                    $legacyReport.selection.runtime_backend -eq "legacy-direct"
+}
+$app3dOk = $app3d.exit_code -eq 0 -and
+           (Test-Path -LiteralPath (Join-Path $root $app3d.screenshot_relative))
+$noFallbackOk = $noFallbackExit -ne 0
+
+$passed = $legacyStable -and $app3dOk -and $noFallbackOk
 
 $report = [ordered]@{
-    schema_version = "phase1-shell-parity-report-v1"
+    schema_version = "phase1-cutover-report-v2"
     gate = "G1"
+    phase = "Phase 9 shell cut-over (supersedes legacy-vs-app3d shell parity)"
     run_id = $runId
     created_utc = (Get-Date).ToUniversalTime().ToString("o")
     result = if ($passed) { "PASS" } else { "FAIL" }
     executable_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
-    executions = $results
-    comparison = [ordered]@{
-        selection_equal = $selectionEqual
-        screenshot_equal = $screenshotEqual
-        screenshot_method = "sha256-file"
+    checks = [ordered]@{
+        legacy_baseline_stable = $legacyStable
+        app3d_runs_reference_default = $app3dOk
+        no_silent_fallback_to_demo3d = $noFallbackOk
+        no_fallback_exit_code = $noFallbackExit
+    }
+    executions = [ordered]@{
+        legacy = $legacy
+        app3d = $app3d
     }
 }
 

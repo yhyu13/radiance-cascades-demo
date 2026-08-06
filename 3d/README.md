@@ -139,6 +139,24 @@ Cascade 4: 32³ probes, 32.0 unit cells (coarsest, far-field)
 .\build\RadianceCascades3D.exe
 ```
 
+Running the executable with no arguments starts the **reference surface-RC interactive view** (the Phase 9 default). The legacy volumetric app is reachable through the explicit deprecation window:
+
+```powershell
+.\build\RadianceCascades3D.exe --runtime-shell=legacy
+```
+
+Key runtime commands:
+
+| Command | Action |
+|---------|--------|
+| *(no args)* | Reference surface-RC interactive view (App3D default) |
+| `--runtime-shell=legacy` | Legacy Demo3D app (deprecation window) |
+| `--reference-render=N [--reference-render-shot=FILE]` | Reference render, N frames, optional shot |
+| `--reference-pt-shot=FILE [--reference-pt-spp=N] [--reference-pt-bounces=N]` | CPU path-trace reference shot |
+| `--legacy-render=N [--legacy-render-shot=FILE]` | Legacy Cornell new-RC render |
+| `--legacy-pt-shot=FILE` | Legacy Cornell path-trace shot |
+| `--validate-reference-<gate> --reference-<gate>-report=FILE` | Run a G1-G10 validation gate |
+
 Runtime shaders are loaded from the canonical source directory configured by CMake. The build also synchronizes a packaging copy under `build/res/shaders`.
 
 ### Phase 0 Baseline
@@ -149,13 +167,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\10_refactor\phase0_b
 
 This command builds Release, captures a deterministic legacy-volumetric smoke frame, verifies shader compile/hash integrity, and writes a machine-readable G0 report under `tools/10_refactor/phase0_baseline/runs/`. This is baseline evidence only and does not claim surface radiance-cascade parity.
 
-### Phase 1 Shell Parity
+### Phase 1 Shell Cut-Over
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\10_refactor\phase1_shell\run_phase1_shell_parity.ps1
 ```
 
-The legacy shell remains the default. Use `--runtime-shell=app3d` to run the same legacy implementation through the new opaque `Demo3DBackend` seam.
+Since Phase 9, `App3D` is the default runtime shell and runs the reference surface-RC renderer. `Demo3D` (the legacy volumetric app) is no longer the default and is reachable only through the explicit `--runtime-shell=legacy` deprecation window. This gate verifies the legacy baseline is stable, the app3d shell runs the reference renderer, and legacy-only flags without `--runtime-shell=legacy` fail with a usage error instead of silently falling back to old global state.
 
 ### Phase 2 Reference Scene
 
