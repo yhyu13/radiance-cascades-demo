@@ -29,8 +29,6 @@ $commonArgs = @(
     "--use-cascade-gi=1",
     "--use-gi-blur=0",
     "--use-hybrid=0",
-    "--use-surface-rc=0",
-    "--enable-surface-rc-gi=0",
     "--use-multi-bounce=0",
     "--use-probe-jitter=0",
     "--noise-seed-offset=0",
@@ -124,9 +122,10 @@ $report = [ordered]@{
     result = if ($passed) { "PASS" } else { "FAIL" }
     executable_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
     checks = [ordered]@{
-        legacy_baseline_stable = $legacyStable
-        app3d_runs_reference_default = $app3dOk
-        no_silent_fallback_to_demo3d = $noFallbackOk
+        legacy_stable = $legacyStable
+        app3d_reference_render = $app3dOk
+        app3d_default_note = "no-arg default shares the runReferenceRenderInteractive backend; CI proxy is --reference-render=N (unbounded default cannot exit in CI)"
+        no_silent_fallback = $noFallbackOk
         no_fallback_exit_code = $noFallbackExit
     }
     executions = [ordered]@{

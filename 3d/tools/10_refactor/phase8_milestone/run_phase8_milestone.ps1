@@ -56,8 +56,8 @@ $g0Report = "$relDir/g0_runtime.json"
 $g0Shot = "$relDir/g0_legacy.png"
 $allOk = (Run-Gate -Name "G0-baseline" -ReportRel $g0Report -GateArgs @(
     "--runtime-shell=legacy", "--phase0-baseline", "--metadata-json=$g0Report", "--window-size=640,480",
-    "--use-cascade-gi=1", "--use-gi-blur=0", "--use-hybrid=0", "--use-surface-rc=0",
-    "--enable-surface-rc-gi=0", "--use-multi-bounce=0", "--use-probe-jitter=0",
+    "--use-cascade-gi=1", "--use-gi-blur=0", "--use-hybrid=0",
+    "--use-multi-bounce=0", "--use-probe-jitter=0",
     "--noise-seed-offset=0", "--render-mode=0", "--auto-capture-delay=0",
     "--exit-frames=2", "--screenshot=$g0Shot")) -and $allOk
 
@@ -68,7 +68,7 @@ $allOk = (Run-Gate -Name "G0-baseline" -ReportRel $g0Report -GateArgs @(
 #      (no runtime feature silently falls back to old global state).
 $shellCommon = @(
     "--phase0-baseline", "--window-size=640,480", "--use-cascade-gi=1", "--use-gi-blur=0",
-    "--use-hybrid=0", "--use-surface-rc=0", "--enable-surface-rc-gi=0", "--use-multi-bounce=0",
+    "--use-hybrid=0", "--use-multi-bounce=0",
     "--use-probe-jitter=0", "--noise-seed-offset=0", "--render-mode=0", "--auto-capture-delay=0",
     "--exit-frames=2")
 $g1 = [ordered]@{}

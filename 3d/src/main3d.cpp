@@ -425,9 +425,6 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
     std::string screenshotPath;
     std::string probeStatsPath;
     std::string atlasAttributionPath;
-    std::string surfaceC0ProducerPath;
-    bool        validateUVRoundTripRequested = false;
-    bool        phase3ValidationFailed = false;
     bool        phase0BaselineRequested = false;
     bool        runtimeArtifactFailure = false;
     bool        sceneLoadFailure = false;
@@ -436,7 +433,6 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
     bool        firstFrameGlError = false;
     std::string phase0MetadataPath;
     std::vector<std::string> unknownArguments;
-    std::string phase3ValidationJsonPath = "tools/phase3_validation/uv_roundtrip_metrics.json";
     std::vector<glm::ivec3> atlasAttributionCells;
     // Continuous-shot capture inside a SINGLE session (critic 15 H2 / H3 follow-up):
     // capture frames [shotsAfter, shotsAfter + shotsCount) into PREFIX_fN.png.
@@ -495,16 +491,6 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
             atlasAttributionPath = arg.substr(25);
             std::cout << "[MAIN] --atlas-attribution-json=" << atlasAttributionPath
                       << ": will dump targeted C0 atlas texels on exit frame.\n";
-        } else if (arg.rfind("--surface-c0-producer-json=", 0) == 0) {
-            surfaceC0ProducerPath = arg.substr(27);
-            std::cout << "[MAIN] --surface-c0-producer-json=" << surfaceC0ProducerPath
-                      << ": will dump surface-RC C0 producer/direct-atlas stats on exit frame.\n";
-        } else if (arg == "--validate-uv-roundtrip") {
-            validateUVRoundTripRequested = true;
-            std::cout << "[MAIN] --validate-uv-roundtrip: will write Phase 3 chart metrics.\n";
-        } else if (arg.rfind("--phase3-validation-json=", 0) == 0) {
-            phase3ValidationJsonPath = arg.substr(25);
-            std::cout << "[MAIN] --phase3-validation-json=" << phase3ValidationJsonPath << "\n";
         } else if (arg.rfind("--atlas-attribution-cells=", 0) == 0) {
             atlasAttributionCells = parseAtlasCells(arg.substr(26));
             std::cout << "[MAIN] --atlas-attribution-cells count="
@@ -689,52 +675,6 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
             int v = std::atoi(arg.substr(14).c_str());
             demo->setUseGIBlur(v != 0);
             std::cout << "[MAIN] --use-gi-blur=" << v << "\n";
-        } else if (arg.rfind("--use-surface-rc=", 0) == 0) {
-            int v = std::atoi(arg.substr(17).c_str());
-            demo->setUseSurfaceRC(v != 0);
-            std::cout << "[MAIN] --use-surface-rc=" << v
-                      << " (ShaderToy2 Phase 0/1 Cornell surface atlas debug; final shading unchanged)\n";
-        } else if (arg == "--enable-surface-rc-gi") {
-            demo->setEnableSurfaceRCInRaymarch(true);
-            std::cout << "[MAIN] --enable-surface-rc-gi: surface RC contributes to raymarch mode 0\n";
-        } else if (arg.rfind("--enable-surface-rc-gi=", 0) == 0) {
-            int v = std::atoi(arg.substr(23).c_str());
-            demo->setEnableSurfaceRCInRaymarch(v != 0);
-            std::cout << "[MAIN] --enable-surface-rc-gi=" << v << "\n";
-        } else if (arg.rfind("--surface-gi-scale=", 0) == 0) {
-            float v = static_cast<float>(std::atof(arg.substr(19).c_str()));
-            demo->setSurfaceGIScale(v);
-            std::cout << "[MAIN] --surface-gi-scale=" << v << "\n";
-        } else if (arg.rfind("--blend-with-volumetric=", 0) == 0) {
-            int v = std::atoi(arg.substr(24).c_str());
-            demo->setBlendWithVolumetric(v != 0);
-            std::cout << "[MAIN] --blend-with-volumetric=" << v << "\n";
-        } else if (arg.rfind("--surface-blend-factor=", 0) == 0) {
-            float v = static_cast<float>(std::atof(arg.substr(23).c_str()));
-            demo->setBlendFactor(v);
-            std::cout << "[MAIN] --surface-blend-factor=" << v << "\n";
-        } else if (arg.rfind("--surface-debug-target=", 0) == 0) {
-            std::string v = arg.substr(23);
-            int target = (v == "radiance" || v == "2") ? 2 : ((v == "ring" || v == "1") ? 1 : 0);
-            demo->setSurfaceDebugTarget(target);
-            std::cout << "[MAIN] --surface-debug-target=" << v
-                      << " (0/chart, 1/ring-packed, 2/radiance skeleton)\n";
-        } else if (arg.rfind("--surface-debug-mode=", 0) == 0) {
-            int v = std::atoi(arg.substr(21).c_str());
-            demo->setSurfaceDebugMode(v);
-            std::cout << "[MAIN] --surface-debug-mode=" << v << "\n";
-        } else if (arg.rfind("--surface-ring-debug-mode=", 0) == 0) {
-            int v = std::atoi(arg.substr(26).c_str());
-            demo->setSurfaceRingDebugMode(v);
-            std::cout << "[MAIN] --surface-ring-debug-mode=" << v << "\n";
-        } else if (arg.rfind("--surface-radiance-debug-mode=", 0) == 0) {
-            int v = std::atoi(arg.substr(30).c_str());
-            demo->setSurfaceRadianceDebugMode(v);
-            std::cout << "[MAIN] --surface-radiance-debug-mode=" << v << "\n";
-        } else if (arg.rfind("--surface-ray-bias=", 0) == 0) {
-            float v = static_cast<float>(std::atof(arg.substr(19).c_str()));
-            demo->setSurfaceRayBias(v);
-            std::cout << "[MAIN] --surface-ray-bias=" << v << "\n";
         } else if (arg.rfind("--use-dir-bilinear=", 0) == 0) {
             int v = std::atoi(arg.substr(19).c_str());
             demo->setUseDirBilinearCLI(v != 0);
@@ -1073,14 +1013,6 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
     if (!presetSkipped && cliCameraTargetSet) demo->setCameraTarget(cliCameraTarget);
     if (cliFovySet)         demo->setCameraFovy(cliFovy);
 
-    if (validateUVRoundTripRequested) {
-        phase3ValidationFailed = !demo->validateUVRoundTrip(phase3ValidationJsonPath);
-        if (exitAfterFrames <= 0) {
-            exitAfterFrames = 1;
-            std::cout << "[MAIN] --validate-uv-roundtrip: defaulting --exit-frames=1.\n";
-        }
-    }
-
     std::cout << "[BACKEND] shell=" << launch.shellName
               << " runtimeBackend=" << launch.runtimeBackendName
               << " name=" << demo->getLegacyBackendName()
@@ -1141,8 +1073,6 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
                 }
                 if (!probeStatsPath.empty())
                     runtimeArtifactFailure |= !demo->dumpProbeStatsJson(probeStatsPath);
-                if (!surfaceC0ProducerPath.empty())
-                    runtimeArtifactFailure |= !demo->dumpSurfaceC0ProducerJson(surfaceC0ProducerPath);
                 if (!atlasAttributionPath.empty()) {
                     if (atlasAttributionCells.empty()) {
                         atlasAttributionCells = {
@@ -1271,9 +1201,6 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
         std::cerr << "[MAIN] EXIT NONZERO: at least one critical shader failed to load this run.\n"
                   << "  See the banner above for which shader. Output is likely WRONG.\n";
     }
-    if (phase3ValidationFailed) {
-        std::cerr << "[MAIN] EXIT NONZERO: Phase 3 validation failed.\n";
-    }
     bool phase0ReportFailed = false;
     if (phase0BaselineRequested) {
         phase0ReportFailed = !writePhase0RuntimeReport(
@@ -1289,7 +1216,7 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
     rlImGuiShutdown();
     CloseWindow();
 
-    if (exitNonzeroForShaderFail || phase3ValidationFailed || runtimeArtifactFailure ||
+    if (exitNonzeroForShaderFail || runtimeArtifactFailure ||
         sceneLoadFailure || phase0ReportFailed) {
         std::cerr << "[MAIN] Application terminated with validation/runtime failure (exit 1)." << std::endl;
         return 1;

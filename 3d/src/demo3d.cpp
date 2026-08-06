@@ -30,7 +30,6 @@
 #include <sstream>
 #include <thread>
 #include <vector>
-#include <array>
 #include <random>
 #include <cassert>
 #include <utility>
@@ -338,7 +337,6 @@ Demo3D::Demo3D()
     , radianceExposure(1.0f)
     , radianceIntensityScale(1.0f)
     , showRadianceGrid(false)
-    , surfaceRC(nullptr)
     , probeTotal(0)
     , probeCenterSample(0.0f)
     , probeBackwallSample(0.0f)
@@ -442,17 +440,7 @@ Demo3D::Demo3D()
     // v1.2: bilateral blur pass on the hybrid accumulator (depth+normal aware).
     // Mandatory companion to hybrid_correction.comp when useHybrid is on.
     ok &= loadShader("hybrid_blur.comp");
-    // v5 / ShaderToy2 Phase 0-1 surface-attached debug path. Non-critical while
-    // --use-surface-rc is opt-in; failures are still visible via loadShader banner.
-    loadShader("surface_cornell_debug.comp");
-    loadShader("surface_ring_debug.comp");
-    loadShader("surface_radiance_debug.comp");
-    loadShader("surface_debug.frag");
-    
-    // Phase 2E: Cascade hierarchy shaders
-    loadShader("cascade_downsample.comp");
-    loadShader("cascade_upsample.comp");
-    
+
     criticalShaderLoadOk = ok;
     ++shaderRevision;
     
@@ -462,10 +450,6 @@ Demo3D::Demo3D()
     // Step 6: Initialize debug quad geometry
     initDebugQuad();
 
-    // v5 / ShaderToy2 Phase 0-1: allocate hardcoded Cornell chart debug atlas.
-    surfaceRC = std::make_unique<SurfaceRC>();
-    surfaceRC->initialize(1024, 512);
-    
     // Step 7: Set up initial scene
     std::cout << "\n[Demo3D] Setting up initial scene..." << std::endl;
     setScene(1); // Cornell Box (default test scene)
@@ -495,7 +479,6 @@ Demo3D::~Demo3D() {
      */
     
     // TODO: Implement destructor
-    surfaceRC.reset();
     destroyCascades();
     destroyVolumeBuffers();
     
@@ -1025,87 +1008,6 @@ void Demo3D::render() {
         cascadeReady  = true;
     }
 
-    // v5 / ShaderToy2 Phase 0-1: update the experimental surface debug atlas.
-    // This does not feed final shading yet; volumetric RC remains the renderer.
-    if (surfaceRC) {
-        surfaceRC->updateScene(currentOBJPath, currentObjBmin, currentObjBmax, useOBJMesh);
-        
-        // Phase 2D/2E: Track camera movement for feedback/cascade reset
-        static glm::vec3 prevCameraPos = glm::vec3(0.0f);
-        static float prevCameraYaw = 0.0f;
-        static float prevCameraPitch = 0.0f;
-        
-        bool cameraMoved = length(camera.position - prevCameraPos) > 0.05f ||
-                           abs(cameraYaw - prevCameraYaw) > 0.5f ||
-                           abs(cameraPitch - prevCameraPitch) > 0.5f;
-        
-        if (cameraMoved) {
-            surfaceRC->clearAtlases();         // Phase 2D: Reset ping-pong atlases
-            surfaceRC->clearCascadeAtlases();  // Phase 2E: Reset cascade hierarchy
-        }
-        
-        prevCameraPos = camera.position;
-        prevCameraYaw = cameraYaw;
-        prevCameraPitch = cameraPitch;
-        
-        auto sit = shaders.find("surface_cornell_debug.comp");
-        if (sit != shaders.end())
-            surfaceRC->dispatchDebug(sit->second);
-        auto rit = shaders.find("surface_ring_debug.comp");
-        if (rit != shaders.end())
-            surfaceRC->dispatchRingDebug(rit->second);
-        auto radit = shaders.find("surface_radiance_debug.comp");
-        if (radit != shaders.end()) {
-            glm::vec3 surfaceLightPos = lightPosition;
-            if (useDirectionalLight) {
-                glm::vec3 volCenter = volumeOrigin + 0.5f * volumeSize;
-                surfaceLightPos = volCenter - glm::normalize(lightDirection) * 100.0f;
-            }
-            glm::vec3 surfaceLightColor = glm::vec3(1.0f, 0.95f, 0.85f) * lightIntensity;
-            
-            // Phase 2D: Pass feedback parameters to shader
-            glUseProgram(radit->second);
-            glUniform1f(glGetUniformLocation(radit->second, "uFeedbackAlpha"), surfaceFeedbackAlpha);
-            glUniform1i(glGetUniformLocation(radit->second, "uResetFeedback"), surfaceResetFeedback ? 1 : 0);
-            
-            // Phase 2D: Handle manual reset request
-            if (surfaceResetFeedback && surfaceRC) {
-                surfaceRC->clearAtlases();
-                surfaceResetFeedback = false;  // Reset flag after clearing
-            }
-            
-            surfaceRC->dispatchRadianceDebug(radit->second, sdfTexture, volumeOrigin, volumeSize,
-                                             surfaceLightPos, surfaceLightColor);
-            
-            // Phase 2D: Flip ping-pong atlases after each frame
-            if (surfaceRC) {
-                surfaceRC->flipAtlases();
-            }
-
-            if (enableSurfaceRCInRaymarch) {
-                const int savedRadianceMode = surfaceRC->getRadianceDebugMode();
-                const int directAtlasMode = (savedRadianceMode == 20) ? 20 : 15;
-                if (savedRadianceMode != directAtlasMode) {
-                    surfaceRC->setRadianceDebugMode(directAtlasMode);
-                    surfaceRC->dispatchRadianceDebug(radit->second, sdfTexture, volumeOrigin, volumeSize,
-                                                     surfaceLightPos, surfaceLightColor);
-                    surfaceRC->setRadianceDebugMode(savedRadianceMode);
-                }
-                surfaceRC->seedCascadeBaseFromDirect();
-            }
-            
-            // Phase 2E: Dispatch cascade hierarchy if enabled
-            if (cascadeHierarchyEnabled && surfaceRC) {
-                auto downProg = shaders.find("cascade_downsample.comp");
-                auto upProg = shaders.find("cascade_upsample.comp");
-                
-                if (downProg != shaders.end() && upProg != shaders.end()) {
-                    surfaceRC->dispatchCascadeHierarchy(downProg->second, upProg->second);
-                }
-            }
-        }
-    }
-
     // Probe readback: once per cascade update, sample all active levels
     if (!probeDumped && cascadeReady) {
         probeDumped = true;
@@ -1404,14 +1306,6 @@ void Demo3D::render() {
     renderRadianceDebug();
     if (g_phase0Validation)
         gl::checkGLError("renderRadianceDebug", 0);
-
-    if (surfaceRC) {
-        auto sit = shaders.find("surface_debug.frag");
-        if (sit != shaders.end())
-            surfaceRC->renderDebug(sit->second, debugQuadVAO);
-        if (g_phase0Validation)
-            gl::checkGLError("surfaceRC renderDebug", 0);
-    }
 
     // Phase 2.5a.1: bake-leak baseline measurement. Triggered by --bake-leak-test=path.
     // Counter increments only when cascade is ready (don't count warm-up frames);
@@ -1946,46 +1840,6 @@ void Demo3D::renderRadianceDebugUI() {
     ImGui::Text("  [Mouse Wheel] Adjust position");
     ImGui::Text("  [F] Cycle visualize mode");
     ImGui::Text("  [+/-] Adjust exposure");
-    ImGui::End();
-}
-
-void Demo3D::renderSurfaceDebugUI() {
-    if (!surfaceRC || !surfaceRC->isEnabled() || !surfaceRC->getShowDebug()) return;
-
-    GLint viewport[4];
-    glGetIntegerv(GL_VIEWPORT, viewport);
-
-    ImGui::SetNextWindowPos(ImVec2(10, 270));
-    ImGui::Begin("Surface RC Debug Info", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize |
-                 ImGuiWindowFlags_NoBackground);
-
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 pos = ImGui::GetWindowPos();
-    ImVec2 size = ImVec2(540, 120);
-    draw_list->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                       IM_COL32(255, 0, 255, 255), 0.0f, ImDrawFlags_None, 2.0f);
-
-    ImGui::Text("ShaderToy2 Surface RC Atlas (Phase 1)");
-    ImGui::Separator();
-    ImGui::Text("Target: %s", SurfaceRC::debugTargetName(surfaceRC->getDebugTarget()));
-    ImGui::Text("Mode: %s", surfaceRC->getDebugTarget() == 1
-        ? SurfaceRC::ringDebugModeName(surfaceRC->getRingDebugMode())
-        : (surfaceRC->getDebugTarget() == 2
-            ? SurfaceRC::radianceDebugModeName(surfaceRC->getRadianceDebugMode())
-            : SurfaceRC::debugModeName(surfaceRC->getDebugMode())));
-    if (surfaceRC->getDebugTarget() == 1 || surfaceRC->getDebugTarget() == 2) {
-        ImGui::Text("Ring atlas: %dx%d, band=%d, cascades=%d",
-                    surfaceRC->getRingAtlasWidth(), surfaceRC->getRingAtlasHeight(),
-                    surfaceRC->getRingBandHeight(), surfaceRC->getRingCascadeCount());
-    } else {
-        ImGui::Text("Chart atlas: %dx%d, charts=%d, valid texels=%d",
-                    surfaceRC->getAtlasWidth(), surfaceRC->getAtlasHeight(),
-                    surfaceRC->getValidChartCount(), surfaceRC->getValidTexelCount());
-    }
-    ImGui::Text("Scene: %s (%s)", surfaceRC->getSceneLabel().c_str(),
-                surfaceRC->isSceneSupported() ? "Cornell-supported" : "unsupported/fallback tint");
-    ImGui::Text("Overlay: bottom-left (%s)", surfaceRC->getDebugTarget() == 1 ? "ring packed" : "chart atlas");
     ImGui::End();
 }
 
@@ -3094,89 +2948,6 @@ void Demo3D::raymarchPass() {
     glUniform1i(glGetUniformLocation(prog, "uHybridConfidenceSamples"), hybridConfidenceSamples);
     phase0GlCheck("raymarch uniforms optional");
 
-    // Phase 2F: Surface RC cascade bridge into the final raymarch shader.
-    // This integration gate consumes the surface atlas through scene-keyed chart
-    // classification. Higher-cascade quality validation remains a follow-up.
-    const bool surfaceRCGIActive =
-        enableSurfaceRCInRaymarch && surfaceRC && surfaceRC->isEnabled() && surfaceRC->getCascadeCount() > 0;
-    static bool loggedSurfaceRaymarchDiag = false;
-    if (surfaceRCGIActive) {
-        constexpr int kSurfaceCascadeBaseUnit = 10;
-        const int cascadeCountToBind = std::min(surfaceRC->getCascadeCount(), 5);
-        int resolutions[5] = {32, 16, 8, 4, 2};
-
-        for (int i = 0; i < cascadeCountToBind; ++i) {
-            glActiveTexture(GL_TEXTURE0 + kSurfaceCascadeBaseUnit + i);
-            const GLuint atlasTexture = (i == 0 && surfaceRC->getDirectAtlasTexture() != 0)
-                ? surfaceRC->getDirectAtlasTexture()
-                : surfaceRC->getCascadeAtlas(i);
-            glBindTexture(GL_TEXTURE_2D, atlasTexture);
-            const std::string samplerName = "uCascadeAtlases[" + std::to_string(i) + "]";
-            glUniform1i(glGetUniformLocation(prog, samplerName.c_str()), kSurfaceCascadeBaseUnit + i);
-            resolutions[i] = surfaceRC->getCascadeResolution(i);
-        }
-
-        glUniform1iv(glGetUniformLocation(prog, "uCascadeResolutions"), 5, resolutions);
-        glUniform1i(glGetUniformLocation(prog, "uSurfaceSceneType"), surfaceRC->getSceneType());
-
-        glm::vec3 surfaceBoundsMin(0.0f);
-        glm::vec3 surfaceBoundsMax(0.0f);
-        surfaceRC->getSceneBounds(surfaceBoundsMin, surfaceBoundsMax);
-        glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMin"), 1, glm::value_ptr(surfaceBoundsMin));
-        glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMax"), 1, glm::value_ptr(surfaceBoundsMax));
-
-        glm::vec3 shortBmin(0.0f), shortBmax(0.0f), tallBmin(0.0f), tallBmax(0.0f);
-        surfaceRC->getBoxBounds(shortBmin, shortBmax, tallBmin, tallBmax);
-        glUniform3fv(glGetUniformLocation(prog, "uShortBoxMin"), 1, glm::value_ptr(shortBmin));
-        glUniform3fv(glGetUniformLocation(prog, "uShortBoxMax"), 1, glm::value_ptr(shortBmax));
-        glUniform3fv(glGetUniformLocation(prog, "uTallBoxMin"), 1, glm::value_ptr(tallBmin));
-        glUniform3fv(glGetUniformLocation(prog, "uTallBoxMax"), 1, glm::value_ptr(tallBmax));
-
-        if (!loggedSurfaceRaymarchDiag && raymarchRenderMode >= 21 && raymarchRenderMode <= 23) {
-            loggedSurfaceRaymarchDiag = true;
-            std::cout << "[SurfaceRC] raymarch bridge active mode=" << raymarchRenderMode
-                      << " sceneType=" << surfaceRC->getSceneType()
-                      << " shortBox=(" << shortBmin.x << "," << shortBmin.y << "," << shortBmin.z
-                      << ")..(" << shortBmax.x << "," << shortBmax.y << "," << shortBmax.z
-                      << ") tallBox=(" << tallBmin.x << "," << tallBmin.y << "," << tallBmin.z
-                      << ")..(" << tallBmax.x << "," << tallBmax.y << "," << tallBmax.z << ")\n";
-        }
-
-        glUniform1f(glGetUniformLocation(prog, "uSurfaceGIScale"), surfaceGIScale);
-        glUniform1i(glGetUniformLocation(prog, "uEnableSurfaceRC"), 1);
-        glUniform1i(glGetUniformLocation(prog, "uBlendWithVolumetric"), blendWithVolumetric ? 1 : 0);
-        glUniform1f(glGetUniformLocation(prog, "uBlendFactor"), blendFactor);
-    } else {
-        if (!loggedSurfaceRaymarchDiag && raymarchRenderMode >= 21 && raymarchRenderMode <= 23) {
-            loggedSurfaceRaymarchDiag = true;
-            std::cout << "[SurfaceRC] raymarch bridge inactive mode=" << raymarchRenderMode
-                      << " enable=" << (enableSurfaceRCInRaymarch ? 1 : 0)
-                      << " surface=" << (surfaceRC ? 1 : 0)
-                      << " surfaceEnabled=" << (surfaceRC && surfaceRC->isEnabled() ? 1 : 0)
-                      << " cascadeCount=" << (surfaceRC ? surfaceRC->getCascadeCount() : 0) << "\n";
-        }
-        int resolutions[5] = {32, 16, 8, 4, 2};
-        constexpr int kSurfaceCascadeBaseUnit = 10;
-        for (int i = 0; i < 5; ++i) {
-            const std::string samplerName = "uCascadeAtlases[" + std::to_string(i) + "]";
-            glUniform1i(glGetUniformLocation(prog, samplerName.c_str()), kSurfaceCascadeBaseUnit + i);
-        }
-        glUniform1iv(glGetUniformLocation(prog, "uCascadeResolutions"), 5, resolutions);
-        glUniform1i(glGetUniformLocation(prog, "uSurfaceSceneType"), 0);
-        glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMin"), 1, glm::value_ptr(volumeOrigin));
-        glUniform3fv(glGetUniformLocation(prog, "uSceneBoundsMax"), 1, glm::value_ptr(volumeMax));
-        const glm::vec3 inactiveProxy(0.0f);
-        glUniform3fv(glGetUniformLocation(prog, "uShortBoxMin"), 1, glm::value_ptr(inactiveProxy));
-        glUniform3fv(glGetUniformLocation(prog, "uShortBoxMax"), 1, glm::value_ptr(inactiveProxy));
-        glUniform3fv(glGetUniformLocation(prog, "uTallBoxMin"), 1, glm::value_ptr(inactiveProxy));
-        glUniform3fv(glGetUniformLocation(prog, "uTallBoxMax"), 1, glm::value_ptr(inactiveProxy));
-        glUniform1f(glGetUniformLocation(prog, "uSurfaceGIScale"), surfaceGIScale);
-        glUniform1i(glGetUniformLocation(prog, "uEnableSurfaceRC"), 0);
-        glUniform1i(glGetUniformLocation(prog, "uBlendWithVolumetric"), blendWithVolumetric ? 1 : 0);
-        glUniform1f(glGetUniformLocation(prog, "uBlendFactor"), blendFactor);
-    }
-    phase0GlCheck("raymarch uniforms surface");
-
     // GI blur: redirect mode-0/3/6 render to 3-attachment FBO (direct / gbuffer / indirect).
     // Modes 3 and 6 are pure-indirect views so direct=black and blur applies to full output.
     // Other debug modes go directly to the default framebuffer and are unaffected.
@@ -4031,12 +3802,6 @@ void Demo3D::reloadShaders() {
     ok &= loadShader("pt_reference.comp");
     ok &= loadShader("hybrid_correction.comp");
     ok &= loadShader("hybrid_blur.comp");
-    loadShader("surface_cornell_debug.comp");
-    loadShader("surface_ring_debug.comp");
-    loadShader("surface_radiance_debug.comp");
-    loadShader("surface_debug.frag");
-    loadShader("cascade_downsample.comp");
-    loadShader("cascade_upsample.comp");
 
     criticalShaderLoadOk = ok;
     ++shaderRevision;
@@ -4050,14 +3815,6 @@ bool Demo3D::selectedBackendShadersOk() const {
         const auto it = shaders.find(name);
         return it != shaders.end() && it->second != 0;
     };
-    if (getUseSurfaceRC() || enableSurfaceRCInRaymarch) {
-        return hasShader("surface_cornell_debug.comp") &&
-               hasShader("surface_ring_debug.comp") &&
-               hasShader("surface_radiance_debug.comp") &&
-               hasShader("surface_debug.frag") &&
-               hasShader("cascade_downsample.comp") &&
-               hasShader("cascade_upsample.comp");
-    }
     if (useHybrid)
         return hasShader("hybrid_correction.comp") && hasShader("hybrid_blur.comp");
     if (raymarchRenderMode == 16 || raymarchRenderMode == 18 || raymarchRenderMode == 19)
@@ -4066,11 +3823,6 @@ bool Demo3D::selectedBackendShadersOk() const {
 }
 
 std::string Demo3D::getLegacyBackendName() const {
-    if (getUseSurfaceRC() || enableSurfaceRCInRaymarch) {
-        return blendWithVolumetric
-            ? "legacy-surface-experimental-nonparity+volumetric"
-            : "legacy-surface-experimental-nonparity";
-    }
     if (useHybrid)
         return "legacy-volumetric-hybrid";
     if (raymarchRenderMode == 16)
@@ -4087,10 +3839,6 @@ std::string Demo3D::getRenderViewName() const {
         case 17: return "quality-comparison";
         case 18: return "cascade-vs-pt-delta";
         case 19: return "indirect-comparison";
-        case 20: return "legacy-surface-debug";
-        case 21: return "legacy-surface-gi-only";
-        case 22: return "legacy-surface-chart-classification";
-        case 23: return "legacy-surface-c0-raw";
         default: return "legacy-debug-mode-" + std::to_string(raymarchRenderMode);
     }
 }
@@ -4889,7 +4637,6 @@ void Demo3D::renderUI() {
     // Render debug UI overlays
     renderSDFDebugUI();       // Phase 0: SDF visualization
     renderRadianceDebugUI();  // Phase 1: Radiance cascade visualization
-    renderSurfaceDebugUI();   // v5 / ShaderToy2 Phase 1 surface atlas visualization
     renderLightingDebugUI();  // Phase 1: Per-light contribution visualization
     
     if (showImGuiDemo) {
@@ -5021,59 +4768,6 @@ void Demo3D::renderSettingsPanel() {
             cascadeC0Res, dirRes, dirRes * dirRes);
     else
         ImGui::TextColored(ImVec4(1,0.3f,0.3f,1), "Cascade not initialized!");
-
-    if (surfaceRC && ImGui::CollapsingHeader("Surface RC (ShaderToy2 experimental)")) {
-        bool surfaceOn = surfaceRC->isEnabled();
-        if (ImGui::Checkbox("Use Surface RC debug path", &surfaceOn))
-            surfaceRC->setEnabled(surfaceOn);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Phase 0/1 only: renders a hardcoded Cornell surface atlas debug view.\n"
-                              "Final shading still uses the existing volumetric path.");
-
-        bool showSurface = surfaceRC->getShowDebug();
-        if (ImGui::Checkbox("Show surface atlas overlay", &showSurface))
-            surfaceRC->setShowDebug(showSurface);
-
-        int target = surfaceRC->getDebugTarget();
-        const char* targets[] = {"Chart atlas", "Ring-packed atlas", "Radiance skeleton"};
-        if (ImGui::Combo("Surface debug target", &target, targets, 3))
-            surfaceRC->setDebugTarget(target);
-
-        int mode = surfaceRC->getDebugMode();
-        const char* modes[] = {"Chart ID", "Normal", "World Position", "Albedo", "Valid Mask"};
-        int ringMode = surfaceRC->getRingDebugMode();
-        const char* ringModes[] = {"Chart + Cascade", "Probe Coord", "Direction Coord", "Ring / Theta", "Probe World Pos", "Ray Origin", "Hemisphere Direction"};
-        int radianceMode = surfaceRC->getRadianceDebugMode();
-        const char* radianceModes[] = {"Ray Origin", "Hemisphere Direction", "Normal", "Active / Chart Mask", "Trace Classification", "Trace Distance", "Hit Chart ID", "Hit Chart UV", "UV Round Trip", "Hit Normal", "Unshadowed Direct", "NdotL", "Skip Mask", "Shadow Visibility", "Shadowed Direct", "Direct Atlas Write", "Atlas Readback", "Feedback Write (accumulated)", "Feedback Readback (GI)"};
-        if (target == 1) {
-            if (ImGui::Combo("Ring debug mode", &ringMode, ringModes, 7))
-                surfaceRC->setRingDebugMode(ringMode);
-        } else if (target == 2) {
-            if (ImGui::Combo("Radiance debug mode", &radianceMode, radianceModes, 19))
-                surfaceRC->setRadianceDebugMode(radianceMode);
-        } else {
-            if (ImGui::Combo("Surface debug mode", &mode, modes, 5))
-                surfaceRC->setDebugMode(mode);
-        }
-
-        ImGui::Text("Chart atlas: %dx%d, charts=%d, valid texels=%d",
-                    surfaceRC->getAtlasWidth(), surfaceRC->getAtlasHeight(),
-                    surfaceRC->getValidChartCount(), surfaceRC->getValidTexelCount());
-        ImGui::Text("Ring atlas: %dx%d, band=%d, cascades=%d",
-                    surfaceRC->getRingAtlasWidth(), surfaceRC->getRingAtlasHeight(),
-                    surfaceRC->getRingBandHeight(), surfaceRC->getRingCascadeCount());
-        const auto& active = surfaceRC->getChartActive();
-        ImGui::Text("Active charts: %d/18 [%d %d %d %d %d %d | %d %d %d %d %d %d | %d %d %d %d %d %d]",
-                    surfaceRC->getActiveChartCount(), 
-                    active[0], active[1], active[2], active[3], active[4], active[5],
-                    active[6], active[7], active[8], active[9], active[10], active[11],
-                    active[12], active[13], active[14], active[15], active[16], active[17]);
-        float bias = surfaceRC->getRayBias();
-        if (ImGui::SliderFloat("Surface ray bias", &bias, 0.0005f, 0.05f, "%.4f"))
-            surfaceRC->setRayBias(bias);
-        ImGui::Text("Scene: %s (%s)", surfaceRC->getSceneLabel().c_str(),
-                    surfaceRC->isSceneSupported() ? "Cornell-supported" : "unsupported/fallback tint");
-    }
 
     // Lighting controls follow-up: directional/intensity + 2 independent
     // ambient floor sliders. Replaces the Step 11 binary "strip ambient floor"
@@ -7116,314 +6810,6 @@ bool Demo3D::dumpProbeStatsJson(const std::string& path) const {
     j << "}\n";
 
     std::cout << "[probe-stats] written: " << path << "\n";
-    return true;
-}
-
-bool Demo3D::dumpSurfaceC0ProducerJson(const std::string& path) const {
-    namespace fs = std::filesystem;
-    if (path.empty()) return false;
-    if (!surfaceRC || !surfaceRC->isEnabled()) {
-        std::cerr << "[surface-c0-producer] surface RC unavailable or disabled\n";
-        return false;
-    }
-
-    const GLuint diagTex = surfaceRC->getRadianceDebugTexture();
-    const GLuint directTex = surfaceRC->getDirectAtlasTexture();
-    const int width = surfaceRC->getRingAtlasWidth();
-    const int height = surfaceRC->getRingAtlasHeight();
-    const int bandHeight = surfaceRC->getRingBandHeight();
-    if (diagTex == 0 || directTex == 0 || width <= 0 || height <= 0 || bandHeight <= 0) {
-        std::cerr << "[surface-c0-producer] missing surface atlas texture(s)\n";
-        return false;
-    }
-
-    auto readTexRGBA = [&](GLuint tex, std::vector<float>& out, const char* label) {
-        glBindTexture(GL_TEXTURE_2D, tex);
-        while (glGetError() != GL_NO_ERROR) {}
-
-        GLint texW = 0;
-        GLint texH = 0;
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
-        if (texW != width || texH != height) {
-            std::cerr << "[surface-c0-producer] " << label << " size mismatch: "
-                      << texW << "x" << texH << " expected "
-                      << width << "x" << height << "\n";
-            glBindTexture(GL_TEXTURE_2D, 0);
-            return false;
-        }
-
-        out.assign(static_cast<size_t>(texW) * texH * 4, 0.0f);
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
-                        GL_TEXTURE_FETCH_BARRIER_BIT |
-                        GL_TEXTURE_UPDATE_BARRIER_BIT);
-        glFinish();
-        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, out.data());
-        GLenum err = glGetError();
-        glBindTexture(GL_TEXTURE_2D, 0);
-        if (err != GL_NO_ERROR) {
-            std::cerr << "[surface-c0-producer] " << label << " glGetTexImage err=0x"
-                      << std::hex << err << std::dec << "\n";
-            return false;
-        }
-        return true;
-    };
-
-    std::vector<float> diag;
-    std::vector<float> direct;
-    if (!readTexRGBA(diagTex, diag, "mode19") ||
-        !readTexRGBA(directTex, direct, "directAtlas"))
-        return false;
-
-    const size_t c0Pixels = static_cast<size_t>(width) * bandHeight;
-    auto pixelOffset = [width](int x, int y) {
-        return (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4;
-    };
-    auto luma = [](float r, float g, float b) {
-        return 0.2126f * r + 0.7152f * g + 0.0722f * b;
-    };
-    auto percentile = [](std::vector<float> values, double q) {
-        if (values.empty()) return 0.0f;
-        std::sort(values.begin(), values.end());
-        const double pos = std::clamp(q, 0.0, 1.0) * double(values.size() - 1);
-        const size_t lo = static_cast<size_t>(std::floor(pos));
-        const size_t hi = static_cast<size_t>(std::ceil(pos));
-        const float t = static_cast<float>(pos - double(lo));
-        return values[lo] * (1.0f - t) + values[hi] * t;
-    };
-    auto jsonEscape = [](const std::string& s) {
-        std::string out;
-        out.reserve(s.size());
-        for (char c : s) {
-            if (c == '\\' || c == '"') out.push_back('\\');
-            out.push_back(c);
-        }
-        return out;
-    };
-
-    size_t traceHit = 0;
-    size_t traceEscape = 0;
-    size_t traceMiss = 0;
-    size_t chartValid = 0;
-    size_t ndotlPositive = 0;
-    size_t visibilityPositive = 0;
-    size_t litVisible = 0;
-    size_t hitNdotlPositive = 0;
-    size_t hitVisibilityPositive = 0;
-    size_t hitLitVisible = 0;
-    double ndotlSum = 0.0;
-    double visibilitySum = 0.0;
-    double hitNdotlSum = 0.0;
-    double hitVisibilitySum = 0.0;
-
-    size_t directAlpha = 0;
-    size_t directNonzero1e6 = 0;
-    size_t directNonzero1e5 = 0;
-    double directLumaSumAll = 0.0;
-    double directLumaSumAlpha = 0.0;
-    float directMaxLuma = 0.0f;
-    std::vector<float> directLumas;
-    directLumas.reserve(c0Pixels);
-
-    struct ChartAudit {
-        int id;
-        const char* name;
-        int x0;
-        int w;
-        size_t pixels = 0;
-        size_t traceHit = 0;
-        size_t chartValid = 0;
-        size_t litVisible = 0;
-        size_t hitNdotlPositive = 0;
-        size_t hitVisibilityPositive = 0;
-        size_t hitLitVisible = 0;
-        size_t directAlpha = 0;
-        size_t directNonzero = 0;
-        double directLumaSumAll = 0.0;
-        double directLumaSumAlpha = 0.0;
-        float directMaxLuma = 0.0f;
-    };
-    std::array<ChartAudit, 18> chartAudits{{
-        {1, "floor", 0, 256},
-        {2, "ceiling", 256, 256},
-        {3, "left_wall", 512, 128},
-        {4, "right_wall", 640, 128},
-        {5, "back_wall", 768, 128},
-        {6, "front_wall", 896, 128},
-        {7, "short_bottom", 1024, 128},
-        {8, "short_top", 1152, 128},
-        {9, "short_left", 1280, 128},
-        {10, "short_right", 1408, 128},
-        {11, "short_front", 1536, 128},
-        {12, "short_back", 1664, 128},
-        {13, "tall_bottom", 1792, 128},
-        {14, "tall_top", 1920, 128},
-        {15, "tall_left", 2048, 128},
-        {16, "tall_right", 2176, 128},
-        {17, "tall_front", 2304, 128},
-        {18, "tall_back", 2432, 128},
-    }};
-
-    for (int y = 0; y < bandHeight; ++y) {
-        for (int x = 0; x < width; ++x) {
-            const size_t o = pixelOffset(x, y);
-            const float stateCode = diag[o + 0];
-            const bool isHit = stateCode > 0.75f;
-            const bool isEscape = stateCode > 0.25f && stateCode <= 0.75f;
-            const bool isValid = diag[o + 1] > 0.5f;
-            const float ndotl = diag[o + 2];
-            const float visibility = diag[o + 3];
-
-            if (isHit) ++traceHit;
-            else if (isEscape) ++traceEscape;
-            else ++traceMiss;
-            if (isHit) {
-                hitNdotlSum += ndotl;
-                hitVisibilitySum += visibility;
-                if (ndotl > 1e-6f) ++hitNdotlPositive;
-                if (visibility > 1e-6f) ++hitVisibilityPositive;
-                if (ndotl > 1e-6f && visibility > 1e-6f) ++hitLitVisible;
-            }
-            if (isValid) {
-                ++chartValid;
-                ndotlSum += ndotl;
-                visibilitySum += visibility;
-                if (ndotl > 1e-6f) ++ndotlPositive;
-                if (visibility > 1e-6f) ++visibilityPositive;
-                if (ndotl > 1e-6f && visibility > 1e-6f) ++litVisible;
-            }
-
-            const float lum = luma(direct[o + 0], direct[o + 1], direct[o + 2]);
-            directLumas.push_back(lum);
-            directLumaSumAll += lum;
-            directMaxLuma = std::max(directMaxLuma, lum);
-            if (direct[o + 3] > 0.5f) {
-                ++directAlpha;
-                directLumaSumAlpha += lum;
-            }
-            if (lum > 1e-6f) ++directNonzero1e6;
-            if (lum > 1e-5f) ++directNonzero1e5;
-        }
-    }
-
-    for (ChartAudit& c : chartAudits) {
-        for (int y = 0; y < bandHeight; ++y) {
-            for (int x = c.x0; x < c.x0 + c.w; ++x) {
-                const size_t o = pixelOffset(x, y);
-                const float stateCode = diag[o + 0];
-                const bool isHit = stateCode > 0.75f;
-                const bool isValid = diag[o + 1] > 0.5f;
-                const float ndotl = diag[o + 2];
-                const float visibility = diag[o + 3];
-                const float lum = luma(direct[o + 0], direct[o + 1], direct[o + 2]);
-                ++c.pixels;
-                if (isHit) ++c.traceHit;
-                if (isValid) ++c.chartValid;
-                if (isValid && ndotl > 1e-6f && visibility > 1e-6f) ++c.litVisible;
-                if (isHit && ndotl > 1e-6f) ++c.hitNdotlPositive;
-                if (isHit && visibility > 1e-6f) ++c.hitVisibilityPositive;
-                if (isHit && ndotl > 1e-6f && visibility > 1e-6f) ++c.hitLitVisible;
-                c.directLumaSumAll += lum;
-                c.directMaxLuma = std::max(c.directMaxLuma, lum);
-                if (direct[o + 3] > 0.5f) {
-                    ++c.directAlpha;
-                    c.directLumaSumAlpha += lum;
-                }
-                if (lum > 1e-6f) ++c.directNonzero;
-            }
-        }
-    }
-
-    const double total = std::max<double>(1.0, static_cast<double>(c0Pixels));
-    const double hitDenom = std::max<double>(1.0, static_cast<double>(traceHit));
-    const double validDenom = std::max<double>(1.0, static_cast<double>(chartValid));
-    const double alphaDenom = std::max<double>(1.0, static_cast<double>(directAlpha));
-
-    fs::path outPath(path);
-    if (outPath.has_parent_path())
-        fs::create_directories(outPath.parent_path());
-    std::ofstream j(path);
-    if (!j) {
-        std::cerr << "[surface-c0-producer] failed to open: " << path << "\n";
-        return false;
-    }
-
-    j << std::fixed << std::setprecision(8);
-    j << "{\n";
-    j << "  \"test\": \"surface_c0_producer_audit\",\n";
-    j << "  \"scene\": \"" << jsonEscape(surfaceRC->getSceneLabel()) << "\",\n";
-    j << "  \"sceneType\": " << surfaceRC->getSceneType() << ",\n";
-    j << "  \"radianceDebugMode\": " << surfaceRC->getRadianceDebugMode() << ",\n";
-    j << "  \"producerGateMode19Valid\": "
-      << (surfaceRC->getRadianceDebugMode() == 19 ? "true" : "false") << ",\n";
-    j << "  \"atlas\": {\"width\": " << width << ", \"height\": " << height
-      << ", \"bandHeight\": " << bandHeight << ", \"c0Pixels\": " << c0Pixels << "},\n";
-    j << "  \"producerGateMode19\": {\n";
-    j << "    \"traceHitPixels\": " << traceHit << ",\n";
-    j << "    \"traceHitFraction\": " << (double(traceHit) / total) << ",\n";
-    j << "    \"traceEscapePixels\": " << traceEscape << ",\n";
-    j << "    \"traceEscapeFraction\": " << (double(traceEscape) / total) << ",\n";
-    j << "    \"traceMissPixels\": " << traceMiss << ",\n";
-    j << "    \"traceMissFraction\": " << (double(traceMiss) / total) << ",\n";
-    j << "    \"chartValidPixels\": " << chartValid << ",\n";
-    j << "    \"chartValidFraction\": " << (double(chartValid) / total) << ",\n";
-    j << "    \"chartValidGivenHitFraction\": " << (traceHit > 0 ? double(chartValid) / double(traceHit) : 0.0) << ",\n";
-    j << "    \"ndotlPositivePixels\": " << ndotlPositive << ",\n";
-    j << "    \"ndotlPositiveFraction\": " << (double(ndotlPositive) / total) << ",\n";
-    j << "    \"visibilityPositivePixels\": " << visibilityPositive << ",\n";
-    j << "    \"visibilityPositiveFraction\": " << (double(visibilityPositive) / total) << ",\n";
-    j << "    \"litVisiblePixels\": " << litVisible << ",\n";
-    j << "    \"litVisibleFraction\": " << (double(litVisible) / total) << ",\n";
-    j << "    \"hitNdotLPositivePixels\": " << hitNdotlPositive << ",\n";
-    j << "    \"hitNdotLPositiveFraction\": " << (double(hitNdotlPositive) / total) << ",\n";
-    j << "    \"hitVisibilityPositivePixels\": " << hitVisibilityPositive << ",\n";
-    j << "    \"hitVisibilityPositiveFraction\": " << (double(hitVisibilityPositive) / total) << ",\n";
-    j << "    \"hitLitVisiblePixels\": " << hitLitVisible << ",\n";
-    j << "    \"hitLitVisibleFraction\": " << (double(hitLitVisible) / total) << ",\n";
-    j << "    \"meanNdotLWhenValid\": " << (ndotlSum / validDenom) << ",\n";
-    j << "    \"meanVisibilityWhenValid\": " << (visibilitySum / validDenom) << ",\n";
-    j << "    \"meanNdotLWhenHit\": " << (hitNdotlSum / hitDenom) << ",\n";
-    j << "    \"meanVisibilityWhenHit\": " << (hitVisibilitySum / hitDenom) << "\n";
-    j << "  },\n";
-    j << "  \"directAtlasC0\": {\n";
-    j << "    \"alphaPixels\": " << directAlpha << ",\n";
-    j << "    \"alphaFraction\": " << (double(directAlpha) / total) << ",\n";
-    j << "    \"nonzeroPixelsGt1e6\": " << directNonzero1e6 << ",\n";
-    j << "    \"nonzeroFractionGt1e6\": " << (double(directNonzero1e6) / total) << ",\n";
-    j << "    \"nonzeroPixelsGt1e5\": " << directNonzero1e5 << ",\n";
-    j << "    \"nonzeroFractionGt1e5\": " << (double(directNonzero1e5) / total) << ",\n";
-    j << "    \"meanLumaAll\": " << (directLumaSumAll / total) << ",\n";
-    j << "    \"meanLumaAlpha\": " << (directLumaSumAlpha / alphaDenom) << ",\n";
-    j << "    \"p95LumaAll\": " << percentile(directLumas, 0.95) << ",\n";
-    j << "    \"p99LumaAll\": " << percentile(directLumas, 0.99) << ",\n";
-    j << "    \"maxLuma\": " << directMaxLuma << "\n";
-    j << "  },\n";
-    j << "  \"charts\": [\n";
-    for (size_t i = 0; i < chartAudits.size(); ++i) {
-        const ChartAudit& c = chartAudits[i];
-        const double chartTotal = std::max<double>(1.0, static_cast<double>(c.pixels));
-        const double chartAlphaDenom = std::max<double>(1.0, static_cast<double>(c.directAlpha));
-        j << "    {\"id\": " << c.id
-          << ", \"name\": \"" << c.name << "\""
-          << ", \"pixels\": " << c.pixels
-          << ", \"traceHitFraction\": " << (double(c.traceHit) / chartTotal)
-          << ", \"chartValidFraction\": " << (double(c.chartValid) / chartTotal)
-          << ", \"litVisibleFraction\": " << (double(c.litVisible) / chartTotal)
-          << ", \"hitNdotLPositiveFraction\": " << (double(c.hitNdotlPositive) / chartTotal)
-          << ", \"hitVisibilityPositiveFraction\": " << (double(c.hitVisibilityPositive) / chartTotal)
-          << ", \"hitLitVisibleFraction\": " << (double(c.hitLitVisible) / chartTotal)
-          << ", \"directAlphaFraction\": " << (double(c.directAlpha) / chartTotal)
-          << ", \"directNonzeroFraction\": " << (double(c.directNonzero) / chartTotal)
-          << ", \"directMeanLumaAll\": " << (c.directLumaSumAll / chartTotal)
-          << ", \"directMeanLumaAlpha\": " << (c.directLumaSumAlpha / chartAlphaDenom)
-          << ", \"directMaxLuma\": " << c.directMaxLuma << "}";
-        if (i + 1 < chartAudits.size()) j << ",";
-        j << "\n";
-    }
-    j << "  ]\n";
-    j << "}\n";
-
-    std::cout << "[surface-c0-producer] written: " << path << "\n";
     return true;
 }
 

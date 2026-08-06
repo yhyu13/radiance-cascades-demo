@@ -75,8 +75,6 @@ set(SOURCES_3D
     src/reference_transport.cpp
     src/reference_transport_validation.cpp
     src/demo3d.cpp
-    src/surface_rc.cpp
-    src/validation_helpers.cpp
     src/gl_helpers.cpp
     src/analytic_sdf.cpp  # Analytic SDF primitives for Phase 0
     src/rdoc_helper.cpp   # Phase 6b: RenderDoc DLL loading (isolated from raylib.h)
@@ -104,7 +102,6 @@ set(HEADERS_3D
     src/reference_transport.h
     src/reference_transport_validation.h
     src/demo3d.h
-    src/surface_rc.h
     src/analytic_sdf.h  # Analytic SDF header
     include/gl_helpers.h
 )

@@ -20,14 +20,13 @@ $runtimeLog = Join-Path $runDir "runtime.log"
 $reportPath = Join-Path $runDir "phase0_report.json"
 
 $runtimeArgs = @(
+    "--runtime-shell=legacy",
     "--phase0-baseline",
     "--metadata-json=$runtimeReport",
     "--window-size=640,480",
     "--use-cascade-gi=1",
     "--use-gi-blur=0",
     "--use-hybrid=0",
-    "--use-surface-rc=0",
-    "--enable-surface-rc-gi=0",
     "--use-multi-bounce=0",
     "--use-probe-jitter=0",
     "--noise-seed-offset=0",

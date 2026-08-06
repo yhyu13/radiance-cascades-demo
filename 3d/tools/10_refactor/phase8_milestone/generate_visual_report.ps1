@@ -54,8 +54,8 @@ $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
 $ErrorActionPreference = $prev
 
 # 6. Legacy OLD (volumetric GI)
-$common = @("--window-size=640,480", "--use-cascade-gi=1", "--use-gi-blur=0", "--use-hybrid=0",
-    "--use-surface-rc=0", "--enable-surface-rc-gi=0", "--use-probe-jitter=0", "--noise-seed-offset=0",
+$common = @("--runtime-shell=legacy", "--window-size=640,480", "--use-cascade-gi=1", "--use-gi-blur=0", "--use-hybrid=0",
+    "--use-probe-jitter=0", "--noise-seed-offset=0",
     "--render-mode=0", "--auto-capture-delay=0", "--exit-frames=180", "--screenshot=$outDir/legacy_old.png")
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
 & $exe @common *> "$outDir/log_legacy_old.txt"
