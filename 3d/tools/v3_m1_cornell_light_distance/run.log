@@ -1,0 +1,49 @@
+[stage11d] near_baseline_reverify
+[m1-stage11d] m1stage11d_near_baseline_reverify_N2048_m17 -> tools/v3_m1_cornell_light_distance/captures_near_baseline_reverify/m1stage11d_near_baseline_reverify_N2048_m17.log
+[m1-stage11d] m1stage11d_near_baseline_reverify_N2048_m17 exit=0
+  moved: m1stage11d_near_baseline_reverify_N2048_m17.png
+  moved: m1stage11d_near_baseline_reverify_N2048_m17_cascade_gi.exr
+  moved: m1stage11d_near_baseline_reverify_N2048_m17_pt_full.exr
+  moved: m1stage11d_near_baseline_reverify_N2048_m17_pt_direct.exr
+  moved: m1stage11d_near_baseline_reverify_N2048_m17_gbuffer.exr
+  moved: m1stage11d_near_baseline_reverify_N2048_m17_probe_diag.exr
+  moved: m1stage11d_near_baseline_reverify_N2048_m17_probe_contrib.exr
+  moved: m1stage11d_near_baseline_reverify_N2048_m17_probe_bin.exr
+[stage11d] near_baseline_reverify done in 87s
+[stage11d] mid_0p8_x4
+[m1-stage11d] m1stage11d_mid_0p8_x4_N2048_m17 -> tools/v3_m1_cornell_light_distance/captures_mid_0p8_x4/m1stage11d_mid_0p8_x4_N2048_m17.log
+[m1-stage11d] m1stage11d_mid_0p8_x4_N2048_m17 exit=0
+  moved: m1stage11d_mid_0p8_x4_N2048_m17.png
+  moved: m1stage11d_mid_0p8_x4_N2048_m17_cascade_gi.exr
+  moved: m1stage11d_mid_0p8_x4_N2048_m17_pt_full.exr
+  moved: m1stage11d_mid_0p8_x4_N2048_m17_pt_direct.exr
+  moved: m1stage11d_mid_0p8_x4_N2048_m17_gbuffer.exr
+  moved: m1stage11d_mid_0p8_x4_N2048_m17_probe_diag.exr
+  moved: m1stage11d_mid_0p8_x4_N2048_m17_probe_contrib.exr
+  moved: m1stage11d_mid_0p8_x4_N2048_m17_probe_bin.exr
+[stage11d] mid_0p8_x4 done in 87s
+[stage11d] far_5
+[m1-stage11d] m1stage11d_far_5_N2048_m17 -> tools/v3_m1_cornell_light_distance/captures_far_5/m1stage11d_far_5_N2048_m17.log
+[m1-stage11d] m1stage11d_far_5_N2048_m17 exit=0
+  moved: m1stage11d_far_5_N2048_m17.png
+  moved: m1stage11d_far_5_N2048_m17_cascade_gi.exr
+  moved: m1stage11d_far_5_N2048_m17_pt_full.exr
+  moved: m1stage11d_far_5_N2048_m17_pt_direct.exr
+  moved: m1stage11d_far_5_N2048_m17_gbuffer.exr
+  moved: m1stage11d_far_5_N2048_m17_probe_diag.exr
+  moved: m1stage11d_far_5_N2048_m17_probe_contrib.exr
+  moved: m1stage11d_far_5_N2048_m17_probe_bin.exr
+[stage11d] far_5 done in 86s
+[stage11d] far_25
+[m1-stage11d] m1stage11d_far_25_N2048_m17 -> tools/v3_m1_cornell_light_distance/captures_far_25/m1stage11d_far_25_N2048_m17.log
+[m1-stage11d] m1stage11d_far_25_N2048_m17 exit=0
+  moved: m1stage11d_far_25_N2048_m17.png
+  moved: m1stage11d_far_25_N2048_m17_cascade_gi.exr
+  moved: m1stage11d_far_25_N2048_m17_pt_full.exr
+  moved: m1stage11d_far_25_N2048_m17_pt_direct.exr
+  moved: m1stage11d_far_25_N2048_m17_gbuffer.exr
+  moved: m1stage11d_far_25_N2048_m17_probe_diag.exr
+  moved: m1stage11d_far_25_N2048_m17_probe_contrib.exr
+  moved: m1stage11d_far_25_N2048_m17_probe_bin.exr
+[stage11d] far_25 done in 85s
+[stage11d] all done in 346s

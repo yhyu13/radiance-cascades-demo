@@ -1,0 +1,60 @@
+{
+  "dirRes": 8,
+  "cascadeCount": 4,
+  "temporalAlpha": 0.05,
+  "probeJitterScale": 0.06,
+  "jitterPatternSize": 8,
+  "jitterHoldFrames": 2,
+  "c0MinRange": 0.5,
+  "c1MinRange": 1,
+  "baseRes": 32,
+  "volumeSize": 4,
+  "cascadeTimeMs": 69.71,
+  "raymarchTimeMs": 0.1155,
+  "cascades": [
+    {
+      "index": 0,
+      "resolution": 32,
+      "dirRes": 8,
+      "anyPct": 100,
+      "surfPct": 99.1119,
+      "skyPct": 0,
+      "meanLum": 0.156862,
+      "maxLum": 2.07878,
+      "variance": 0.0238079
+    },
+    {
+      "index": 1,
+      "resolution": 16,
+      "dirRes": 16,
+      "anyPct": 100,
+      "surfPct": 99.6582,
+      "skyPct": 0,
+      "meanLum": 0.151476,
+      "maxLum": 0.697266,
+      "variance": 0.0183197
+    },
+    {
+      "index": 2,
+      "resolution": 8,
+      "dirRes": 16,
+      "anyPct": 100,
+      "surfPct": 100,
+      "skyPct": 0,
+      "meanLum": 0.125903,
+      "maxLum": 0.435954,
+      "variance": 0.0098207
+    },
+    {
+      "index": 3,
+      "resolution": 4,
+      "dirRes": 16,
+      "anyPct": 100,
+      "surfPct": 100,
+      "skyPct": 0,
+      "meanLum": 0.0472123,
+      "maxLum": 0.0728556,
+      "variance": 0.000152902
+    }
+  ]
+}

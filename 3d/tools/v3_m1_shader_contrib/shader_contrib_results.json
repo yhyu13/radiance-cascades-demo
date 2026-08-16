@@ -1,0 +1,504 @@
+{
+  "scene": "sponza",
+  "N": 2048,
+  "result": {
+    "status": "ok",
+    "valid": 693,
+    "bad": 693,
+    "screen": {
+      "ratio_self": 4.7148027420043945,
+      "bad_pct": 100.0,
+      "luma_reconstruction_ratio_mean_bad": 1.0,
+      "luma_reconstruction_ratio_p05_bad": 1.0,
+      "luma_reconstruction_ratio_p95_bad": 1.0
+    },
+    "cells": [
+      {
+        "cell": "(7, 5, 4)",
+        "count": 325,
+        "mean_ratio": 5.077413082122803,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.09450598806142807,
+        "probe_share_p95": 0.15434570610523224,
+        "bin_share_mean": 0.03439617529511452,
+        "bin_share_p95": 0.05637206882238388,
+        "top_probe_mode_share": 0.35384615384615387,
+        "top_bin_mode_share": 0.5446153846153846,
+        "top_probes": [
+          {
+            "key": "(5, 4, 3)",
+            "count": 115
+          },
+          {
+            "key": "(6, 5, 4)",
+            "count": 56
+          },
+          {
+            "key": "(6, 4, 4)",
+            "count": 56
+          },
+          {
+            "key": "(7, 5, 4)",
+            "count": 28
+          },
+          {
+            "key": "(4, 3, 3)",
+            "count": 18
+          },
+          {
+            "key": "(8, 6, 5)",
+            "count": 15
+          },
+          {
+            "key": "(6, 4, 3)",
+            "count": 13
+          },
+          {
+            "key": "(7, 5, 5)",
+            "count": 8
+          },
+          {
+            "key": "(5, 3, 3)",
+            "count": 5
+          },
+          {
+            "key": "(4, 3, 2)",
+            "count": 4
+          },
+          {
+            "key": "(7, 6, 5)",
+            "count": 3
+          },
+          {
+            "key": "(9, 7, 6)",
+            "count": 3
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(2, 1)",
+            "count": 177
+          },
+          {
+            "key": "(1, 2)",
+            "count": 77
+          },
+          {
+            "key": "(2, 0)",
+            "count": 68
+          },
+          {
+            "key": "(2, 2)",
+            "count": 3
+          }
+        ]
+      },
+      {
+        "cell": "(6, 5, 4)",
+        "count": 234,
+        "mean_ratio": 4.484697341918945,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.12500078976154327,
+        "probe_share_p95": 0.16596069931983948,
+        "bin_share_mean": 0.03727741912007332,
+        "bin_share_p95": 0.04837799072265625,
+        "top_probe_mode_share": 0.2692307692307692,
+        "top_bin_mode_share": 0.7435897435897436,
+        "top_probes": [
+          {
+            "key": "(7, 5, 4)",
+            "count": 63
+          },
+          {
+            "key": "(7, 5, 5)",
+            "count": 41
+          },
+          {
+            "key": "(6, 5, 4)",
+            "count": 34
+          },
+          {
+            "key": "(8, 6, 5)",
+            "count": 33
+          },
+          {
+            "key": "(6, 4, 4)",
+            "count": 32
+          },
+          {
+            "key": "(5, 4, 3)",
+            "count": 20
+          },
+          {
+            "key": "(7, 6, 5)",
+            "count": 6
+          },
+          {
+            "key": "(9, 7, 6)",
+            "count": 2
+          },
+          {
+            "key": "(6, 4, 3)",
+            "count": 2
+          },
+          {
+            "key": "(5, 3, 3)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(2, 0)",
+            "count": 174
+          },
+          {
+            "key": "(1, 2)",
+            "count": 60
+          }
+        ]
+      },
+      {
+        "cell": "(6, 4, 4)",
+        "count": 112,
+        "mean_ratio": 4.3106279373168945,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.0572422556579113,
+        "probe_share_p95": 0.075347900390625,
+        "bin_share_mean": 0.05789266154170036,
+        "bin_share_p95": 0.0706787109375,
+        "top_probe_mode_share": 0.39285714285714285,
+        "top_bin_mode_share": 1.0,
+        "top_probes": [
+          {
+            "key": "(4, 3, 3)",
+            "count": 44
+          },
+          {
+            "key": "(5, 3, 3)",
+            "count": 29
+          },
+          {
+            "key": "(4, 3, 2)",
+            "count": 24
+          },
+          {
+            "key": "(5, 4, 3)",
+            "count": 15
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(1, 2)",
+            "count": 112
+          }
+        ]
+      },
+      {
+        "cell": "(3, 3, 2)",
+        "count": 8,
+        "mean_ratio": 3.4174787998199463,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.3561553955078125,
+        "probe_share_p95": 0.611572265625,
+        "bin_share_mean": 0.0444183349609375,
+        "bin_share_p95": 0.0518035888671875,
+        "top_probe_mode_share": 0.25,
+        "top_bin_mode_share": 0.5,
+        "top_probes": [
+          {
+            "key": "(8, 8, 6)",
+            "count": 2
+          },
+          {
+            "key": "(9, 9, 6)",
+            "count": 1
+          },
+          {
+            "key": "(9, 10, 6)",
+            "count": 1
+          },
+          {
+            "key": "(13, 12, 8)",
+            "count": 1
+          },
+          {
+            "key": "(13, 12, 9)",
+            "count": 1
+          },
+          {
+            "key": "(8, 9, 6)",
+            "count": 1
+          },
+          {
+            "key": "(7, 7, 5)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(1, 0)",
+            "count": 4
+          },
+          {
+            "key": "(0, 0)",
+            "count": 3
+          },
+          {
+            "key": "(0, 1)",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "cell": "(4, 3, 2)",
+        "count": 6,
+        "mean_ratio": 3.5708343982696533,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.4152628481388092,
+        "probe_share_p95": 0.7166748046875,
+        "bin_share_mean": 0.03519948199391365,
+        "bin_share_p95": 0.05501556396484375,
+        "top_probe_mode_share": 0.16666666666666666,
+        "top_bin_mode_share": 0.6666666666666666,
+        "top_probes": [
+          {
+            "key": "(5, 5, 3)",
+            "count": 1
+          },
+          {
+            "key": "(15, 13, 9)",
+            "count": 1
+          },
+          {
+            "key": "(9, 7, 7)",
+            "count": 1
+          },
+          {
+            "key": "(9, 6, 6)",
+            "count": 1
+          },
+          {
+            "key": "(16, 12, 11)",
+            "count": 1
+          },
+          {
+            "key": "(13, 9, 9)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(0, 1)",
+            "count": 4
+          },
+          {
+            "key": "(0, 0)",
+            "count": 2
+          }
+        ]
+      },
+      {
+        "cell": "(4, 4, 2)",
+        "count": 2,
+        "mean_ratio": 4.216835021972656,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.2130126953125,
+        "probe_share_p95": 0.3012329041957855,
+        "bin_share_mean": 0.040618896484375,
+        "bin_share_p95": 0.04374999925494194,
+        "top_probe_mode_share": 0.5,
+        "top_bin_mode_share": 0.5,
+        "top_probes": [
+          {
+            "key": "(5, 5, 3)",
+            "count": 1
+          },
+          {
+            "key": "(9, 9, 6)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(0, 0)",
+            "count": 1
+          },
+          {
+            "key": "(1, 0)",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "cell": "(5, 5, 3)",
+        "count": 1,
+        "mean_ratio": 3.2721028327941895,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.3701171875,
+        "probe_share_p95": 0.3701171875,
+        "bin_share_mean": 0.05279541015625,
+        "bin_share_p95": 0.05279541015625,
+        "top_probe_mode_share": 1.0,
+        "top_bin_mode_share": 1.0,
+        "top_probes": [
+          {
+            "key": "(10, 10, 6)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(1, 2)",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "cell": "(5, 6, 4)",
+        "count": 1,
+        "mean_ratio": 5.6789116859436035,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.4111328125,
+        "probe_share_p95": 0.4111328125,
+        "bin_share_mean": 0.072021484375,
+        "bin_share_p95": 0.072021484375,
+        "top_probe_mode_share": 1.0,
+        "top_bin_mode_share": 1.0,
+        "top_probes": [
+          {
+            "key": "(10, 11, 8)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(1, 0)",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "cell": "(6, 6, 4)",
+        "count": 1,
+        "mean_ratio": 6.211245059967041,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.390625,
+        "probe_share_p95": 0.390625,
+        "bin_share_mean": 0.1142578125,
+        "bin_share_p95": 0.1142578125,
+        "top_probe_mode_share": 1.0,
+        "top_bin_mode_share": 1.0,
+        "top_probes": [
+          {
+            "key": "(10, 10, 7)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(0, 0)",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "cell": "(4, 4, 3)",
+        "count": 1,
+        "mean_ratio": 4.264483451843262,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.1461181640625,
+        "probe_share_p95": 0.1461181640625,
+        "bin_share_mean": 0.056732177734375,
+        "bin_share_p95": 0.056732177734375,
+        "top_probe_mode_share": 1.0,
+        "top_bin_mode_share": 1.0,
+        "top_probes": [
+          {
+            "key": "(6, 6, 4)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(0, 0)",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "cell": "(2, 3, 2)",
+        "count": 1,
+        "mean_ratio": 3.243520975112915,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.191650390625,
+        "probe_share_p95": 0.191650390625,
+        "bin_share_mean": 0.038482666015625,
+        "bin_share_p95": 0.038482666015625,
+        "top_probe_mode_share": 1.0,
+        "top_bin_mode_share": 1.0,
+        "top_probes": [
+          {
+            "key": "(6, 7, 5)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(1, 0)",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "cell": "(7, 4, 4)",
+        "count": 1,
+        "mean_ratio": 5.120615482330322,
+        "luma_reconstruction_ratio_mean": 1.0,
+        "luma_reconstruction_ratio_p05": 1.0,
+        "luma_reconstruction_ratio_p95": 1.0,
+        "probe_share_mean": 0.08355712890625,
+        "probe_share_p95": 0.08355712890625,
+        "bin_share_mean": 0.042449951171875,
+        "bin_share_p95": 0.042449951171875,
+        "top_probe_mode_share": 1.0,
+        "top_bin_mode_share": 1.0,
+        "top_probes": [
+          {
+            "key": "(5, 4, 3)",
+            "count": 1
+          }
+        ],
+        "top_bins": [
+          {
+            "key": "(1, 2)",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "verdict": "BROAD_LOCAL_ENERGY"
+  },
+  "verdict": "BROAD_LOCAL_ENERGY"
+}

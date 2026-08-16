@@ -1,0 +1,156 @@
+[stage9] starting ladder at 05/27/2026 19:14:09
+[stage9] sponza gain=0
+[m1-stage9] m1stage9_sponza_g000_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --multi-bounce-gain=0
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --probe-stats-json=tools/v3_m1_mb_gain_ladder/captures_sponza_g000/m1stage9_sponza_g000_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage9_sponza_g000_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_mb_gain_ladder/captures_sponza_g000/m1stage9_sponza_g000_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage9_sponza_g000_N2048_m17.png
+  moved: m1stage9_sponza_g000_N2048_m17.png
+  moved: m1stage9_sponza_g000_N2048_m17_cascade_gi.exr
+  moved: m1stage9_sponza_g000_N2048_m17_pt_full.exr
+  moved: m1stage9_sponza_g000_N2048_m17_pt_direct.exr
+  moved: m1stage9_sponza_g000_N2048_m17_gbuffer.exr
+  moved: m1stage9_sponza_g000_N2048_m17_probe_diag.exr
+  moved: m1stage9_sponza_g000_N2048_m17_probe_contrib.exr
+  moved: m1stage9_sponza_g000_N2048_m17_probe_bin.exr
+[stage9] sponza gain=0 done in 109s
+[stage9] sponza gain=0.1
+[m1-stage9] m1stage9_sponza_g010_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --multi-bounce-gain=0.1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --probe-stats-json=tools/v3_m1_mb_gain_ladder/captures_sponza_g010/m1stage9_sponza_g010_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage9_sponza_g010_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_mb_gain_ladder/captures_sponza_g010/m1stage9_sponza_g010_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage9_sponza_g010_N2048_m17.png
+  moved: m1stage9_sponza_g010_N2048_m17.png
+  moved: m1stage9_sponza_g010_N2048_m17_cascade_gi.exr
+  moved: m1stage9_sponza_g010_N2048_m17_pt_full.exr
+  moved: m1stage9_sponza_g010_N2048_m17_pt_direct.exr
+  moved: m1stage9_sponza_g010_N2048_m17_gbuffer.exr
+  moved: m1stage9_sponza_g010_N2048_m17_probe_diag.exr
+  moved: m1stage9_sponza_g010_N2048_m17_probe_contrib.exr
+  moved: m1stage9_sponza_g010_N2048_m17_probe_bin.exr
+[stage9] sponza gain=0.1 done in 109s
+[stage9] sponza gain=0.2
+[m1-stage9] m1stage9_sponza_g020_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --multi-bounce-gain=0.2
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --probe-stats-json=tools/v3_m1_mb_gain_ladder/captures_sponza_g020/m1stage9_sponza_g020_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage9_sponza_g020_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_mb_gain_ladder/captures_sponza_g020/m1stage9_sponza_g020_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage9_sponza_g020_N2048_m17.png
+  moved: m1stage9_sponza_g020_N2048_m17.png
+  moved: m1stage9_sponza_g020_N2048_m17_cascade_gi.exr
+  moved: m1stage9_sponza_g020_N2048_m17_pt_full.exr
+  moved: m1stage9_sponza_g020_N2048_m17_pt_direct.exr
+  moved: m1stage9_sponza_g020_N2048_m17_gbuffer.exr
+  moved: m1stage9_sponza_g020_N2048_m17_probe_diag.exr
+  moved: m1stage9_sponza_g020_N2048_m17_probe_contrib.exr
+  moved: m1stage9_sponza_g020_N2048_m17_probe_bin.exr
+[stage9] sponza gain=0.2 done in 109s
+[stage9] sponza gain=0.3
+[m1-stage9] m1stage9_sponza_g030_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --multi-bounce-gain=0.3
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --probe-stats-json=tools/v3_m1_mb_gain_ladder/captures_sponza_g030/m1stage9_sponza_g030_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage9_sponza_g030_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_mb_gain_ladder/captures_sponza_g030/m1stage9_sponza_g030_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage9_sponza_g030_N2048_m17.png
+  moved: m1stage9_sponza_g030_N2048_m17.png
+  moved: m1stage9_sponza_g030_N2048_m17_cascade_gi.exr
+  moved: m1stage9_sponza_g030_N2048_m17_pt_full.exr
+  moved: m1stage9_sponza_g030_N2048_m17_pt_direct.exr
+  moved: m1stage9_sponza_g030_N2048_m17_gbuffer.exr
+  moved: m1stage9_sponza_g030_N2048_m17_probe_diag.exr
+  moved: m1stage9_sponza_g030_N2048_m17_probe_contrib.exr
+  moved: m1stage9_sponza_g030_N2048_m17_probe_bin.exr
+[stage9] sponza gain=0.3 done in 110s
+[stage9] sponza gain=0.4
+[m1-stage9] m1stage9_sponza_g040_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --multi-bounce-gain=0.4
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --probe-stats-json=tools/v3_m1_mb_gain_ladder/captures_sponza_g040/m1stage9_sponza_g040_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage9_sponza_g040_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_mb_gain_ladder/captures_sponza_g040/m1stage9_sponza_g040_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage9_sponza_g040_N2048_m17.png
+  moved: m1stage9_sponza_g040_N2048_m17.png
+  moved: m1stage9_sponza_g040_N2048_m17_cascade_gi.exr
+  moved: m1stage9_sponza_g040_N2048_m17_pt_full.exr
+  moved: m1stage9_sponza_g040_N2048_m17_pt_direct.exr
+  moved: m1stage9_sponza_g040_N2048_m17_gbuffer.exr
+  moved: m1stage9_sponza_g040_N2048_m17_probe_diag.exr
+  moved: m1stage9_sponza_g040_N2048_m17_probe_contrib.exr
+  moved: m1stage9_sponza_g040_N2048_m17_probe_bin.exr
+[stage9] sponza gain=0.4 done in 109s
+[stage9] cornell gain=0.25
+[m1-stage9] m1stage9_cornell_g025_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --multi-bounce-gain=0.25
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --probe-stats-json=tools/v3_m1_mb_gain_ladder/captures_cornell_g025/m1stage9_cornell_g025_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+[GIBlur] FBO incomplete at 0x0
+[hdr-exr] glGetTexImage err=0x506 tex=36
+  [hdr-exr] dumped stem=m1stage9_cornell_g025_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2041
+  [probe-stats] written: tools/v3_m1_mb_gain_ladder/captures_cornell_g025/m1stage9_cornell_g025_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage9_cornell_g025_N2048_m17.png
+  moved: m1stage9_cornell_g025_N2048_m17.png
+  moved: m1stage9_cornell_g025_N2048_m17_cascade_gi.exr
+  moved: m1stage9_cornell_g025_N2048_m17_pt_full.exr
+  moved: m1stage9_cornell_g025_N2048_m17_pt_direct.exr
+  moved: m1stage9_cornell_g025_N2048_m17_gbuffer.exr
+  moved: m1stage9_cornell_g025_N2048_m17_probe_diag.exr
+  moved: m1stage9_cornell_g025_N2048_m17_probe_contrib.exr
+  moved: m1stage9_cornell_g025_N2048_m17_probe_bin.exr
+[stage9] cornell gain=0.25 done in 193s
+[stage9] cornell gain=0.5
+[m1-stage9] m1stage9_cornell_g050_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --multi-bounce-gain=0.5
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --probe-stats-json=tools/v3_m1_mb_gain_ladder/captures_cornell_g050/m1stage9_cornell_g050_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage9_cornell_g050_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_mb_gain_ladder/captures_cornell_g050/m1stage9_cornell_g050_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage9_cornell_g050_N2048_m17.png
+  moved: m1stage9_cornell_g050_N2048_m17.png
+  moved: m1stage9_cornell_g050_N2048_m17_cascade_gi.exr
+  moved: m1stage9_cornell_g050_N2048_m17_pt_full.exr
+  moved: m1stage9_cornell_g050_N2048_m17_pt_direct.exr
+  moved: m1stage9_cornell_g050_N2048_m17_gbuffer.exr
+  moved: m1stage9_cornell_g050_N2048_m17_probe_diag.exr
+  moved: m1stage9_cornell_g050_N2048_m17_probe_contrib.exr
+  moved: m1stage9_cornell_g050_N2048_m17_probe_bin.exr
+[stage9] cornell gain=0.5 done in 87s
+[stage9] cornell gain=0.75
+[m1-stage9] m1stage9_cornell_g075_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --multi-bounce-gain=0.75
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --probe-stats-json=tools/v3_m1_mb_gain_ladder/captures_cornell_g075/m1stage9_cornell_g075_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage9_cornell_g075_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_mb_gain_ladder/captures_cornell_g075/m1stage9_cornell_g075_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage9_cornell_g075_N2048_m17.png
+  moved: m1stage9_cornell_g075_N2048_m17.png
+  moved: m1stage9_cornell_g075_N2048_m17_cascade_gi.exr
+  moved: m1stage9_cornell_g075_N2048_m17_pt_full.exr
+  moved: m1stage9_cornell_g075_N2048_m17_pt_direct.exr
+  moved: m1stage9_cornell_g075_N2048_m17_gbuffer.exr
+  moved: m1stage9_cornell_g075_N2048_m17_probe_diag.exr
+  moved: m1stage9_cornell_g075_N2048_m17_probe_contrib.exr
+  moved: m1stage9_cornell_g075_N2048_m17_probe_bin.exr
+[stage9] cornell gain=0.75 done in 87s
+[stage9] ladder done in 913s

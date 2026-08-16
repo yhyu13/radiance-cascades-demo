@@ -1,0 +1,194 @@
+[stage8] starting all captures at 05/27/2026 18:51:36
+[stage8] running cornell baseline
+[m1-stage8] m1stage8_cornell_baseline_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --use-multi-bounce=1 (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)
+  [MAIN] --multi-bounce-gain=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --use-probe-jitter=1
+  [Demo3D] useDirectionalGI=ON (display path)
+  [MAIN] --m1-delta3-gated-trilinear=0 (uses WeightedSample.rgb instead of scalar attenuation)
+  [MAIN] --probe-stats-json=tools/v3_m1_source_energy_ab/captures_cornell_baseline/m1stage8_cornell_baseline_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage8_cornell_baseline_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_source_energy_ab/captures_cornell_baseline/m1stage8_cornell_baseline_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage8_cornell_baseline_N2048_m17.png
+  moved: m1stage8_cornell_baseline_N2048_m17.png
+  moved: m1stage8_cornell_baseline_N2048_m17_cascade_gi.exr
+  moved: m1stage8_cornell_baseline_N2048_m17_pt_full.exr
+  moved: m1stage8_cornell_baseline_N2048_m17_pt_direct.exr
+  moved: m1stage8_cornell_baseline_N2048_m17_gbuffer.exr
+  moved: m1stage8_cornell_baseline_N2048_m17_probe_diag.exr
+  moved: m1stage8_cornell_baseline_N2048_m17_probe_contrib.exr
+  moved: m1stage8_cornell_baseline_N2048_m17_probe_bin.exr
+  kept: m1stage8_cornell_baseline_N2048_m17_probe_stats.json
+[stage8] cornell baseline finished in 86s
+[stage8] running sponza mb_off
+[m1-stage8] m1stage8_sponza_mb_off_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --use-multi-bounce=0 (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)
+  [MAIN] --multi-bounce-gain=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --use-probe-jitter=1
+  [Demo3D] useDirectionalGI=ON (display path)
+  [MAIN] --m1-delta3-gated-trilinear=0 (uses WeightedSample.rgb instead of scalar attenuation)
+  [MAIN] --probe-stats-json=tools/v3_m1_source_energy_ab/captures_sponza_mb_off/m1stage8_sponza_mb_off_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage8_sponza_mb_off_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_source_energy_ab/captures_sponza_mb_off/m1stage8_sponza_mb_off_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage8_sponza_mb_off_N2048_m17.png
+  moved: m1stage8_sponza_mb_off_N2048_m17.png
+  moved: m1stage8_sponza_mb_off_N2048_m17_cascade_gi.exr
+  moved: m1stage8_sponza_mb_off_N2048_m17_pt_full.exr
+  moved: m1stage8_sponza_mb_off_N2048_m17_pt_direct.exr
+  moved: m1stage8_sponza_mb_off_N2048_m17_gbuffer.exr
+  moved: m1stage8_sponza_mb_off_N2048_m17_probe_diag.exr
+  moved: m1stage8_sponza_mb_off_N2048_m17_probe_contrib.exr
+  moved: m1stage8_sponza_mb_off_N2048_m17_probe_bin.exr
+  kept: m1stage8_sponza_mb_off_N2048_m17_probe_stats.json
+[stage8] sponza mb_off finished in 65s
+[stage8] running sponza mb_gain_half
+[m1-stage8] m1stage8_sponza_mb_gain_half_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --use-multi-bounce=1 (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)
+  [MAIN] --multi-bounce-gain=0.5
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --use-probe-jitter=1
+  [Demo3D] useDirectionalGI=ON (display path)
+  [MAIN] --m1-delta3-gated-trilinear=0 (uses WeightedSample.rgb instead of scalar attenuation)
+  [MAIN] --probe-stats-json=tools/v3_m1_source_energy_ab/captures_sponza_mb_gain_half/m1stage8_sponza_mb_gain_half_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage8_sponza_mb_gain_half_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_source_energy_ab/captures_sponza_mb_gain_half/m1stage8_sponza_mb_gain_half_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage8_sponza_mb_gain_half_N2048_m17.png
+  moved: m1stage8_sponza_mb_gain_half_N2048_m17.png
+  moved: m1stage8_sponza_mb_gain_half_N2048_m17_cascade_gi.exr
+  moved: m1stage8_sponza_mb_gain_half_N2048_m17_pt_full.exr
+  moved: m1stage8_sponza_mb_gain_half_N2048_m17_pt_direct.exr
+  moved: m1stage8_sponza_mb_gain_half_N2048_m17_gbuffer.exr
+  moved: m1stage8_sponza_mb_gain_half_N2048_m17_probe_diag.exr
+  moved: m1stage8_sponza_mb_gain_half_N2048_m17_probe_contrib.exr
+  moved: m1stage8_sponza_mb_gain_half_N2048_m17_probe_bin.exr
+  kept: m1stage8_sponza_mb_gain_half_N2048_m17_probe_stats.json
+[stage8] sponza mb_gain_half finished in 109s
+[stage8] running sponza jitter_off
+[m1-stage8] m1stage8_sponza_jitter_off_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --use-multi-bounce=1 (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)
+  [MAIN] --multi-bounce-gain=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --use-probe-jitter=0
+  [Demo3D] useDirectionalGI=ON (display path)
+  [MAIN] --m1-delta3-gated-trilinear=0 (uses WeightedSample.rgb instead of scalar attenuation)
+  [MAIN] --probe-stats-json=tools/v3_m1_source_energy_ab/captures_sponza_jitter_off/m1stage8_sponza_jitter_off_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage8_sponza_jitter_off_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_source_energy_ab/captures_sponza_jitter_off/m1stage8_sponza_jitter_off_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage8_sponza_jitter_off_N2048_m17.png
+  moved: m1stage8_sponza_jitter_off_N2048_m17.png
+  moved: m1stage8_sponza_jitter_off_N2048_m17_cascade_gi.exr
+  moved: m1stage8_sponza_jitter_off_N2048_m17_pt_full.exr
+  moved: m1stage8_sponza_jitter_off_N2048_m17_pt_direct.exr
+  moved: m1stage8_sponza_jitter_off_N2048_m17_gbuffer.exr
+  moved: m1stage8_sponza_jitter_off_N2048_m17_probe_diag.exr
+  moved: m1stage8_sponza_jitter_off_N2048_m17_probe_contrib.exr
+  moved: m1stage8_sponza_jitter_off_N2048_m17_probe_bin.exr
+  kept: m1stage8_sponza_jitter_off_N2048_m17_probe_stats.json
+[stage8] sponza jitter_off finished in 180s
+[stage8] running sponza delta3_on
+[m1-stage8] m1stage8_sponza_delta3_on_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --use-multi-bounce=1 (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)
+  [MAIN] --multi-bounce-gain=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --use-probe-jitter=1
+  [Demo3D] useDirectionalGI=ON (display path)
+  [MAIN] --m1-delta3-gated-trilinear=1 (uses WeightedSample.rgb instead of scalar attenuation)
+  [MAIN] --probe-stats-json=tools/v3_m1_source_energy_ab/captures_sponza_delta3_on/m1stage8_sponza_delta3_on_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage8_sponza_delta3_on_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_source_energy_ab/captures_sponza_delta3_on/m1stage8_sponza_delta3_on_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage8_sponza_delta3_on_N2048_m17.png
+  moved: m1stage8_sponza_delta3_on_N2048_m17.png
+  moved: m1stage8_sponza_delta3_on_N2048_m17_cascade_gi.exr
+  moved: m1stage8_sponza_delta3_on_N2048_m17_pt_full.exr
+  moved: m1stage8_sponza_delta3_on_N2048_m17_pt_direct.exr
+  moved: m1stage8_sponza_delta3_on_N2048_m17_gbuffer.exr
+  moved: m1stage8_sponza_delta3_on_N2048_m17_probe_diag.exr
+  moved: m1stage8_sponza_delta3_on_N2048_m17_probe_contrib.exr
+  moved: m1stage8_sponza_delta3_on_N2048_m17_probe_bin.exr
+  kept: m1stage8_sponza_delta3_on_N2048_m17_probe_stats.json
+[stage8] sponza delta3_on finished in 113s
+[stage8] running sponza hybrid_on
+[m1-stage8] m1stage8_sponza_hybrid_on_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/sponza_cam.json loaded 1 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --use-multi-bounce=1 (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)
+  [MAIN] --multi-bounce-gain=1
+  [MAIN] --use-hybrid=1 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --use-probe-jitter=1
+  [Demo3D] useDirectionalGI=ON (display path)
+  [MAIN] --m1-delta3-gated-trilinear=0 (uses WeightedSample.rgb instead of scalar attenuation)
+  [MAIN] --probe-stats-json=tools/v3_m1_source_energy_ab/captures_sponza_hybrid_on/m1stage8_sponza_hybrid_on_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage8_sponza_hybrid_on_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_source_energy_ab/captures_sponza_hybrid_on/m1stage8_sponza_hybrid_on_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage8_sponza_hybrid_on_N2048_m17.png
+  moved: m1stage8_sponza_hybrid_on_N2048_m17.png
+  moved: m1stage8_sponza_hybrid_on_N2048_m17_cascade_gi.exr
+  moved: m1stage8_sponza_hybrid_on_N2048_m17_pt_full.exr
+  moved: m1stage8_sponza_hybrid_on_N2048_m17_pt_direct.exr
+  moved: m1stage8_sponza_hybrid_on_N2048_m17_gbuffer.exr
+  moved: m1stage8_sponza_hybrid_on_N2048_m17_probe_diag.exr
+  moved: m1stage8_sponza_hybrid_on_N2048_m17_probe_contrib.exr
+  moved: m1stage8_sponza_hybrid_on_N2048_m17_probe_bin.exr
+  kept: m1stage8_sponza_hybrid_on_N2048_m17_probe_stats.json
+[stage8] sponza hybrid_on finished in 111s
+[stage8] running cornell mb_off
+[m1-stage8] m1stage8_cornell_mb_off_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --use-multi-bounce=0 (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)
+  [MAIN] --multi-bounce-gain=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --use-probe-jitter=1
+  [Demo3D] useDirectionalGI=ON (display path)
+  [MAIN] --m1-delta3-gated-trilinear=0 (uses WeightedSample.rgb instead of scalar attenuation)
+  [MAIN] --probe-stats-json=tools/v3_m1_source_energy_ab/captures_cornell_mb_off/m1stage8_cornell_mb_off_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage8_cornell_mb_off_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_source_energy_ab/captures_cornell_mb_off/m1stage8_cornell_mb_off_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage8_cornell_mb_off_N2048_m17.png
+  moved: m1stage8_cornell_mb_off_N2048_m17.png
+  moved: m1stage8_cornell_mb_off_N2048_m17_cascade_gi.exr
+  moved: m1stage8_cornell_mb_off_N2048_m17_pt_full.exr
+  moved: m1stage8_cornell_mb_off_N2048_m17_pt_direct.exr
+  moved: m1stage8_cornell_mb_off_N2048_m17_gbuffer.exr
+  moved: m1stage8_cornell_mb_off_N2048_m17_probe_diag.exr
+  moved: m1stage8_cornell_mb_off_N2048_m17_probe_contrib.exr
+  moved: m1stage8_cornell_mb_off_N2048_m17_probe_bin.exr
+  kept: m1stage8_cornell_mb_off_N2048_m17_probe_stats.json
+[stage8] cornell mb_off finished in 44s
+[stage8] running cornell delta3_on
+[m1-stage8] m1stage8_cornell_delta3_on_N2048_m17
+  [MAIN] --measurement-cameras-file=tools/v20_pre_measurement/cameras.json loaded 3 cameras
+  [MAIN] --measurement-camera=0 (will apply after scene load)
+  [MAIN] --use-multi-bounce=1 (0=OFF single-bounce, 1=ON temporal multi-bounce feedback)
+  [MAIN] --multi-bounce-gain=1
+  [MAIN] --use-hybrid=0 (1=ON per-pixel correction, 0=OFF cascade-only) doc/7
+  [MAIN] --use-probe-jitter=1
+  [Demo3D] useDirectionalGI=ON (display path)
+  [MAIN] --m1-delta3-gated-trilinear=1 (uses WeightedSample.rgb instead of scalar attenuation)
+  [MAIN] --probe-stats-json=tools/v3_m1_source_energy_ab/captures_cornell_delta3_on/m1stage8_cornell_delta3_on_N2048_m17_probe_stats.json: will dump per-cascade probe stats on exit frame.
+  [hdr-exr] dumped stem=m1stage8_cornell_delta3_on_N2048_m17 cascadeGI=1280x720 ptFull=640x360 ptDirect=640x360 gbuffer=1280x720 probeDiag=1280x720 probeContrib=1280x720 probeBin=1280x720 ptSamples=2048
+  [probe-stats] written: tools/v3_m1_source_energy_ab/captures_cornell_delta3_on/m1stage8_cornell_delta3_on_N2048_m17_probe_stats.json
+  [MAIN] --screenshot saved (clean 3D, no UI): m1stage8_cornell_delta3_on_N2048_m17.png
+  moved: m1stage8_cornell_delta3_on_N2048_m17.png
+  moved: m1stage8_cornell_delta3_on_N2048_m17_cascade_gi.exr
+  moved: m1stage8_cornell_delta3_on_N2048_m17_pt_full.exr
+  moved: m1stage8_cornell_delta3_on_N2048_m17_pt_direct.exr
+  moved: m1stage8_cornell_delta3_on_N2048_m17_gbuffer.exr
+  moved: m1stage8_cornell_delta3_on_N2048_m17_probe_diag.exr
+  moved: m1stage8_cornell_delta3_on_N2048_m17_probe_contrib.exr
+  moved: m1stage8_cornell_delta3_on_N2048_m17_probe_bin.exr
+  kept: m1stage8_cornell_delta3_on_N2048_m17_probe_stats.json
+[stage8] cornell delta3_on finished in 92s
+[stage8] all captures done in 800s

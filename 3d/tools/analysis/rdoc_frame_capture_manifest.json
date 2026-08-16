@@ -1,0 +1,58 @@
+{
+  "cap_path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\captures\\rdoc_frame_capture.rdc",
+  "timing": [
+    {
+      "event_id": 55,
+      "name": "raymarch",
+      "label": "Raymarching",
+      "duration_us": 5644.64,
+      "type": "draw"
+    },
+    {
+      "event_id": 83,
+      "name": "gi_blur",
+      "label": "GI blur",
+      "duration_us": 1743.392,
+      "type": "draw"
+    },
+    {
+      "event_id": 114,
+      "name": "glDrawElements()",
+      "label": "glDrawElements()",
+      "duration_us": 12.032000000000002,
+      "type": "draw"
+    }
+  ],
+  "textures": {
+    "sdfTexture": {
+      "label": "SDF Volume (Signed Distance Field)",
+      "prompt": "Inspect for missing geometry, incorrect distances, or holes in the SDF. The SDF should show smooth gradient values. Hard seams or flat regions indicate voxelization or SDF computation errors.",
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\analysis\\rdoc_frame_capture_sdfTexture.png",
+      "error": null
+    },
+    "albedoTexture": {
+      "label": "Albedo Volume",
+      "prompt": "Inspect surface colors. Red wall on left, green on right, white elsewhere. Flag incorrect or missing color regions.",
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\analysis\\rdoc_frame_capture_albedoTexture.png",
+      "error": null
+    },
+    "cascade0_probeAtlas": {
+      "label": "C0 Probe Directional Atlas",
+      "prompt": "Each probe owns a D x D tile. Neighboring tiles should have smoothly varying colors. Flag: uniform gray tiles (probe not baked), random noise (merge error). Bins with positive alpha = surface hit; negative = sky; zero = miss.",
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\analysis\\rdoc_frame_capture_cascade0_probeAtlas.png",
+      "error": null
+    },
+    "cascade1_probeAtlas": {
+      "label": "C1 Probe Directional Atlas",
+      "prompt": "Same as C0 but for cascade 1 (tMax ~1.0wu after Phase 14c). Expect near-100% surface coverage. Flag dead tiles (all-zero alpha).",
+      "path": null,
+      "error": "resource not found"
+    },
+    "cascade0_probeGrid": {
+      "label": "C0 Isotropic Probe Grid (reduction output)",
+      "prompt": "Direction-averaged radiance per probe. Should show smooth spatial gradients reflecting room lighting. Flag: all-black probes, sharp grid steps, wrong colors.",
+      "path": "D:\\GitRepo-My\\radiance-cascades-demo\\3d\\tools\\analysis\\rdoc_frame_capture_cascade0_probeGrid.png",
+      "error": null
+    }
+  }
+}

@@ -1,0 +1,68 @@
+[extract] RenderDoc Python API version check: 1.42
+[extract] Opening capture: D:\GitRepo-My\radiance-cascades-demo\3d\tools\captures\rdoc_frame_frame432.rdc
+[extract] OpenFile status: <Result: 'Success'>
+[extract] Capture opened OK, starting replay...
+[extract] OpenCapture status: <Result: 'Success'>
+[extract] Replay controller obtained.
+[extract] Structured data obtained for name resolution.
+[extract] Collecting GPU timing...
+[tree]  eid=3 flags=0x300001 disp=0 draw=0 name='glClear(Color = <0.000000, 0.000000, 0.000000, 1.000000>, Depth = <1.000000>)' children=0
+[tree]  eid=50 flags=0x40 disp=0 draw=0 name='radiance_3d' children=2
+[tree]    eid=51 flags=0x4 disp=1 draw=0 name='radiance_3d' children=0
+[tree]    eid=53 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=61 flags=0x40 disp=0 draw=0 name='reduction_3d' children=2
+[tree]    eid=62 flags=0x4 disp=1 draw=0 name='reduction_3d' children=0
+[tree]    eid=64 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=108 flags=0x100001 disp=0 draw=0 name='glClear(Color = <0.000000, 0.000000, 0.000000, 0.000000>)' children=0
+[tree]  eid=112 flags=0x40 disp=0 draw=0 name='raymarch' children=2
+[tree]    eid=113 flags=0x2 disp=0 draw=1 name='raymarch' children=0
+[tree]    eid=114 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=140 flags=0x40 disp=0 draw=0 name='gi_blur' children=2
+[tree]    eid=141 flags=0x2 disp=0 draw=1 name='gi_blur' children=0
+[tree]    eid=142 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=172 flags=0x10002 disp=0 draw=1 name='glDrawElements()' children=0
+[extract WARNING] Dispatch 172 unrecognized: 'glDrawElements()'
+[tree]  eid=176 flags=0x100 disp=0 draw=0 name='SwapBuffers(ResourceId::1000000000000000292)' children=0
+[extract] Attempting GPU performance counter fetch...
+[extract] Counter 1: name='GPU Duration' unit=1
+[extract] Counter 7: name='Samples Passed' unit=0
+[extract] Counter 2: name='Input Vertices Read' unit=0
+[extract] Counter 3: name='Input Primitives' unit=0
+[extract] Counter 4: name='GS Primitives' unit=0
+[extract] Counter 5: name='Rasterizer Invocations' unit=0
+[extract] Counter 6: name='Rasterized Primitives' unit=0
+[extract] Counter 8: name='VS Invocations' unit=0
+[extract] Fetching GPU counter 1 ...
+[extract] Counter unit=CounterUnit.Seconds byteWidth=8
+[extract] GPU counters: 12 events timed.
+[extract] FetchCounter eid=3 us=7.26
+[extract] FetchCounter eid=51 us=7601.47
+[extract] FetchCounter eid=53 us=1.31
+[extract] FetchCounter eid=62 us=216.29
+[extract] FetchCounter eid=64 us=1.50
+[extract] FetchCounter eid=108 us=22.34
+[extract] FetchCounter eid=113 us=4853.76
+[extract] FetchCounter eid=114 us=0.38
+[extract] FetchCounter eid=141 us=12878.05
+[extract] FetchCounter eid=142 us=1.57
+[extract] FetchCounter eid=172 us=10.30
+[extract] FetchCounter eid=176 us=1.57
+[extract] Cascade resources visible in capture:
+[extract]   name='cascade0_probeGrid'  id=ResourceId::146
+[extract]   name='cascade0_probeAtlas'  id=ResourceId::147
+[extract]   name='cascade0_probeAtlasHistory'  id=ResourceId::148
+[extract]   name='cascade0_probeGridHistory'  id=ResourceId::149
+[extract]   name='cascade1_probeGrid'  id=ResourceId::150
+[extract]   name='cascade1_probeAtlas'  id=ResourceId::151
+[extract] Extracting: SDF Volume (Signed Distance Field)
+[extract] sdfTexture depth=128 -> z_slice=64
+[extract] Extracting: Albedo Volume
+[extract] albedoTexture depth=128 -> z_slice=64
+[extract] Extracting: C0 Probe Directional Atlas
+[extract] cascade0_probeAtlas depth=32 -> z_slice=16
+[extract] Extracting: C1 Probe Directional Atlas
+[extract] cascade1_probeAtlas depth=16 -> z_slice=8
+[extract] Extracting: C0 Isotropic Probe Grid (reduction output)
+[extract] cascade0_probeGrid depth=32 -> z_slice=16
+[extract] Manifest written: D:\GitRepo-My\radiance-cascades-demo\3d\tools\analysis\rdoc_frame_frame432_manifest.json
+[extract] Done.

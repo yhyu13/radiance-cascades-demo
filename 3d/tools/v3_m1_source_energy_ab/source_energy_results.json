@@ -1,0 +1,464 @@
+{
+  "sponza": {
+    "variants": {
+      "baseline": {
+        "status": "ok",
+        "screen": {
+          "valid": 693,
+          "ratio_self": 4.7148027420043945,
+          "bad_pct": 100.0,
+          "p95_abs_ratio_minus_1": 4.527912616729736
+        },
+        "fixed_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 325,
+            "cascade_luma_mean": 0.27926769852638245,
+            "pt_luma_mean": 0.055552173405885696,
+            "ratio_mean": 5.077413082122803
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 234,
+            "cascade_luma_mean": 0.2739804685115814,
+            "pt_luma_mean": 0.06189063563942909,
+            "ratio_mean": 4.484697341918945
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 112,
+            "cascade_luma_mean": 0.27113667130470276,
+            "pt_luma_mean": 0.06372998654842377,
+            "ratio_mean": 4.3106279373168945
+          }
+        ],
+        "own_top_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 325,
+            "cascade_luma_mean": 0.27926769852638245,
+            "pt_luma_mean": 0.055552173405885696,
+            "ratio_mean": 5.077413082122803
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 234,
+            "cascade_luma_mean": 0.2739804685115814,
+            "pt_luma_mean": 0.06189063563942909,
+            "ratio_mean": 4.484697341918945
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 112,
+            "cascade_luma_mean": 0.27113667130470276,
+            "pt_luma_mean": 0.06372998654842377,
+            "ratio_mean": 4.3106279373168945
+          }
+        ]
+      },
+      "mb_off": {
+        "status": "ok",
+        "screen": {
+          "valid": 693,
+          "ratio_self": 0.9689198732376099,
+          "bad_pct": 0.5772005772005772,
+          "p95_abs_ratio_minus_1": 0.2721080780029297
+        },
+        "fixed_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          }
+        ],
+        "own_top_cells": [
+          {
+            "cell": "(1,1,1)",
+            "count": 4,
+            "cascade_luma_mean": 0.06203373149037361,
+            "pt_luma_mean": 0.05774211138486862,
+            "ratio_mean": 1.0914788246154785
+          }
+        ]
+      },
+      "mb_gain_half": {
+        "status": "ok",
+        "screen": {
+          "valid": 693,
+          "ratio_self": 1.6128158569335938,
+          "bad_pct": 90.04329004329004,
+          "p95_abs_ratio_minus_1": 0.8888323307037354
+        },
+        "fixed_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          }
+        ],
+        "own_top_cells": [
+          {
+            "cell": "(2,1,1)",
+            "count": 619,
+            "cascade_luma_mean": 0.09445357322692871,
+            "pt_luma_mean": 0.05911991745233536,
+            "ratio_mean": 1.6224400997161865
+          },
+          {
+            "cell": "(2,2,1)",
+            "count": 2,
+            "cascade_luma_mean": 0.11470117419958115,
+            "pt_luma_mean": 0.051292046904563904,
+            "ratio_mean": 2.2387208938598633
+          },
+          {
+            "cell": "(1,1,0)",
+            "count": 2,
+            "cascade_luma_mean": 0.06115996465086937,
+            "pt_luma_mean": 0.051136914640665054,
+            "ratio_mean": 1.197013020515442
+          }
+        ]
+      },
+      "jitter_off": {
+        "status": "ok",
+        "screen": {
+          "valid": 693,
+          "ratio_self": 4.7148027420043945,
+          "bad_pct": 100.0,
+          "p95_abs_ratio_minus_1": 4.527912616729736
+        },
+        "fixed_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 325,
+            "cascade_luma_mean": 0.27926769852638245,
+            "pt_luma_mean": 0.055552173405885696,
+            "ratio_mean": 5.077413082122803
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 234,
+            "cascade_luma_mean": 0.2739804685115814,
+            "pt_luma_mean": 0.06189063563942909,
+            "ratio_mean": 4.484697341918945
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 112,
+            "cascade_luma_mean": 0.27113667130470276,
+            "pt_luma_mean": 0.06372998654842377,
+            "ratio_mean": 4.3106279373168945
+          }
+        ],
+        "own_top_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 325,
+            "cascade_luma_mean": 0.27926769852638245,
+            "pt_luma_mean": 0.055552173405885696,
+            "ratio_mean": 5.077413082122803
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 234,
+            "cascade_luma_mean": 0.2739804685115814,
+            "pt_luma_mean": 0.06189063563942909,
+            "ratio_mean": 4.484697341918945
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 112,
+            "cascade_luma_mean": 0.27113667130470276,
+            "pt_luma_mean": 0.06372998654842377,
+            "ratio_mean": 4.3106279373168945
+          }
+        ]
+      },
+      "delta3_on": {
+        "status": "empty_valid"
+      },
+      "hybrid_on": {
+        "status": "ok",
+        "screen": {
+          "valid": 693,
+          "ratio_self": 0.8315186500549316,
+          "bad_pct": 0.0,
+          "p95_abs_ratio_minus_1": 0.30903443694114685
+        },
+        "fixed_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 325,
+            "cascade_luma_mean": 0.04485519975423813,
+            "pt_luma_mean": 0.055552173405885696,
+            "ratio_mean": 0.810139000415802
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 234,
+            "cascade_luma_mean": 0.053549978882074356,
+            "pt_luma_mean": 0.06189063563942909,
+            "ratio_mean": 0.8697942495346069
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 112,
+            "cascade_luma_mean": 0.05132650211453438,
+            "pt_luma_mean": 0.06372998654842377,
+            "ratio_mean": 0.8101505637168884
+          }
+        ],
+        "own_top_cells": []
+      }
+    },
+    "verdicts": {
+      "mb_off": {
+        "fixed_cell_pairs_used": 0,
+        "screen_ratio_improvement": 0.9916334381874553,
+        "screen_bad_pct_delta": -99.42279942279943,
+        "screen_p95_delta": -4.255804538726807,
+        "verdict": "STRONG_COLLAPSE",
+        "verdict_source": "screen_fallback",
+        "note": "fixed-cell p000 mapping shifted off baseline cells; screen-level used"
+      },
+      "mb_gain_half": {
+        "fixed_cell_pairs_used": 0,
+        "screen_ratio_improvement": 0.8350340786593323,
+        "screen_bad_pct_delta": -9.956709956709958,
+        "screen_p95_delta": -3.639080286026001,
+        "verdict": "STRONG_COLLAPSE",
+        "verdict_source": "screen_fallback",
+        "note": "fixed-cell p000 mapping shifted off baseline cells; screen-level used"
+      },
+      "jitter_off": {
+        "fixed_cell_pairs_used": 3,
+        "screen_ratio_improvement": 0.0,
+        "screen_bad_pct_delta": 0.0,
+        "screen_p95_delta": 0.0,
+        "mean_luma_drop": 0.0,
+        "mean_ratio_improvement_fixed_cell": 0.0,
+        "verdict": "NEUTRAL",
+        "verdict_source": "fixed_cell"
+      },
+      "delta3_on": {
+        "verdict": "VARIANT_BROKEN",
+        "variant_status": "empty_valid"
+      },
+      "hybrid_on": {
+        "fixed_cell_pairs_used": 3,
+        "screen_ratio_improvement": 0.9546459498266223,
+        "screen_bad_pct_delta": -100.0,
+        "screen_p95_delta": -4.2188781797885895,
+        "mean_luma_drop": 0.8182099187803648,
+        "mean_ratio_improvement_fixed_cell": 0.9529084871161303,
+        "verdict": "STRONG_COLLAPSE",
+        "verdict_source": "fixed_cell"
+      }
+    }
+  },
+  "cornell_sanity": {
+    "variants": {
+      "baseline": {
+        "status": "ok",
+        "screen": {
+          "valid": 37036,
+          "ratio_self": 0.49231481552124023,
+          "bad_pct": 3.855707959822875,
+          "p95_abs_ratio_minus_1": 0.856779932975769
+        },
+        "fixed_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 225,
+            "cascade_luma_mean": 0.24974419176578522,
+            "pt_luma_mean": 0.6054755449295044,
+            "ratio_mean": 0.4127512574195862
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 396,
+            "cascade_luma_mean": 0.22356171905994415,
+            "pt_luma_mean": 0.5378730893135071,
+            "ratio_mean": 0.41595205664634705
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 375,
+            "cascade_luma_mean": 0.22266626358032227,
+            "pt_luma_mean": 0.5307715535163879,
+            "ratio_mean": 0.42025578022003174
+          }
+        ],
+        "own_top_cells": [
+          {
+            "cell": "(8,6,8)",
+            "count": 77,
+            "cascade_luma_mean": 0.40074118971824646,
+            "pt_luma_mean": 0.2867180407047272,
+            "ratio_mean": 1.43622624874115
+          },
+          {
+            "cell": "(5,6,7)",
+            "count": 69,
+            "cascade_luma_mean": 0.33691608905792236,
+            "pt_luma_mean": 0.19367270171642303,
+            "ratio_mean": 1.7653175592422485
+          },
+          {
+            "cell": "(5,5,7)",
+            "count": 61,
+            "cascade_luma_mean": 0.33125609159469604,
+            "pt_luma_mean": 0.21639586985111237,
+            "ratio_mean": 1.5434540510177612
+          }
+        ]
+      },
+      "mb_off": {
+        "status": "ok",
+        "screen": {
+          "valid": 36936,
+          "ratio_self": 0.20705731213092804,
+          "bad_pct": 0.2951050465670349,
+          "p95_abs_ratio_minus_1": 0.9133000373840332
+        },
+        "fixed_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          }
+        ],
+        "own_top_cells": [
+          {
+            "cell": "(2,4,3)",
+            "count": 16,
+            "cascade_luma_mean": 0.16587725281715393,
+            "pt_luma_mean": 0.15026035904884338,
+            "ratio_mean": 1.524083137512207
+          },
+          {
+            "cell": "(2,1,2)",
+            "count": 16,
+            "cascade_luma_mean": 0.10402701050043106,
+            "pt_luma_mean": 0.35702696442604065,
+            "ratio_mean": 0.3794071078300476
+          },
+          {
+            "cell": "(3,4,3)",
+            "count": 10,
+            "cascade_luma_mean": 0.17660342156887054,
+            "pt_luma_mean": 0.2580355703830719,
+            "ratio_mean": 1.0364001989364624
+          }
+        ]
+      },
+      "delta3_on": {
+        "status": "ok",
+        "screen": {
+          "valid": 5234,
+          "ratio_self": 0.043024688959121704,
+          "bad_pct": 0.0,
+          "p95_abs_ratio_minus_1": 0.9964829683303833
+        },
+        "fixed_cells": [
+          {
+            "cell": "(7,5,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          },
+          {
+            "cell": "(6,5,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          },
+          {
+            "cell": "(6,4,4)",
+            "count": 0,
+            "cascade_luma_mean": 0.0,
+            "pt_luma_mean": 0.0,
+            "ratio_mean": 0.0
+          }
+        ],
+        "own_top_cells": []
+      }
+    },
+    "verdicts": {
+      "mb_off": {
+        "fixed_cell_pairs_used": 0,
+        "screen_ratio_improvement": -0.5618787234911847,
+        "screen_bad_pct_delta": -3.56060291325584,
+        "screen_p95_delta": 0.05652010440826416,
+        "verdict": "WORSE",
+        "verdict_source": "screen_fallback",
+        "note": "fixed-cell p000 mapping shifted off baseline cells; screen-level used"
+      },
+      "delta3_on": {
+        "fixed_cell_pairs_used": 0,
+        "screen_ratio_improvement": -0.8849778175492842,
+        "screen_bad_pct_delta": -3.855707959822875,
+        "screen_p95_delta": 0.13970303535461426,
+        "verdict": "CASCADE_BROKEN",
+        "verdict_source": "screen_fallback",
+        "note": "cascade essentially zero \u2014 variant breaks the pipeline, not a fix"
+      }
+    }
+  },
+  "fixed_cells": [
+    "(7,5,4)",
+    "(6,5,4)",
+    "(6,4,4)"
+  ]
+}

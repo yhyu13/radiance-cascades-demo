@@ -1,0 +1,19 @@
+{
+  "schema_version": "reference-legacy-report-v1",
+  "payload_schema": "ReferenceSurfaceTexelV1",
+  "result": "PASS",
+  "scene": "legacy-cornell (new RC on the old Cornell box)",
+  "layout": {"texel_scale": 0.0078125, "charts": 6, "logical": [1472, 1536], "physical": [1472, 256]},
+  "metrics": {
+    "layout_samples_checked": 512,
+    "layout_samples_failed": 0,
+    "pixels_checked": 76800,
+    "pixels_failed": 0,
+    "silhouette_pixels": 66,
+    "light_pixels_baseline": 156,
+    "gl_errors": 0,
+    "max_error": 0.130685
+  },
+  "notes": ["boxes are diffuse and uncharted (direct light + shadow, no feedback in this integration)", "light is an emissive ceiling quad; legacy renderer uses a point light (same geometry, different light model)"],
+  "mismatches": []
+}

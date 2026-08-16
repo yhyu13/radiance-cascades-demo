@@ -1,0 +1,63 @@
+{
+  "variants": {
+    "cornell_point_baseline": {
+      "status": "ok",
+      "valid": 37047,
+      "ratio_mean": 0.49220430850982666,
+      "ratio_median": 0.3926398754119873,
+      "per_cell_weighted_ratio": 0.4520822178953489,
+      "cascade_gi_luma_mean_valid": 0.1729678213596344,
+      "pt_gi_luma_mean_valid": 0.41133174300193787,
+      "per_region": {
+        "red": {
+          "count": 4146,
+          "ratio_median": 0.3264279365539551,
+          "ratio_mean": 0.4026607871055603
+        },
+        "green": {
+          "count": 1382,
+          "ratio_median": 0.22667309641838074,
+          "ratio_mean": 0.31463631987571716
+        },
+        "other": {
+          "count": 31503,
+          "ratio_median": 0.40306100249290466,
+          "ratio_mean": 0.5119370818138123
+        }
+      },
+      "light_setup": {
+        "source": "not_available"
+      }
+    },
+    "cornell_directional": {
+      "status": "ok",
+      "valid": 659,
+      "ratio_mean": 0.9345219731330872,
+      "ratio_median": 1.0264949798583984,
+      "per_cell_weighted_ratio": 0.8925605840074511,
+      "cascade_gi_luma_mean_valid": 0.05903828144073486,
+      "pt_gi_luma_mean_valid": 0.07082365453243256,
+      "per_region": {
+        "other": {
+          "count": 622,
+          "ratio_median": 1.066373348236084,
+          "ratio_mean": 0.9764676094055176
+        }
+      },
+      "light_setup": {
+        "source": "tools/v3_m1_cornell_light_type/captures_cornell_directional/m1stage11c_cornell_directional_N2048_m17.log"
+      }
+    }
+  },
+  "verdict": {
+    "verdict": "LIGHT_TYPE_DOMINANT",
+    "baseline_ratio_mean": 0.49220430850982666,
+    "new_ratio_mean": 0.9345219731330872,
+    "bridged_fraction": 0.8710543867066664,
+    "cascade_luma_change_factor": 0.3413252301882358,
+    "pt_luma_change_factor": 0.17218134933023851,
+    "cascade_vs_pt_change_asymmetry": 1.9823588995901325,
+    "green_wall_asymmetry_baseline_red_minus_green": 0.09975484013557434,
+    "green_wall_asymmetry_new_red_minus_green": null
+  }
+}

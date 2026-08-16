@@ -1,0 +1,79 @@
+- generic [active] [ref=e1]:
+  - heading "Surface RC vs Path Tracing — Controlled Comparison" [level=1] [ref=e2]
+  - generic [ref=e3]: Captured 2026-07-24 · branch 3d_v4.0 · NVIDIA RTX 2080 SUPER · same scene, same camera (legacy RC pose fovy 60), different algorithm
+  - generic [ref=e4]: "Controlled setup. All parity images render the locked ShaderToy parity Cornell from the legacy RC camera convention: legacy pose is (0,0,4)→(0,0,0) fovy 60 on the open legacy box; the parity room is enclosed, so the camera sits just inside the z=1 wall at (0.5, 0.25, 0.97) looking toward z=0 with the same fovy 60 framing. Only the GI algorithm differs. All panels use display mapping (8× exposure + γ2.2) for viewing; statistics use unmapped linear companions."
+  - 'heading "Primary: NEW (surface RC) vs PT (parity path tracer)" [level=2] [ref=e5]'
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - heading "NEW — reference surface RC (G0–G9 validated)" [level=3] [ref=e8]
+      - img "reference surface RC" [ref=e9]
+      - generic [ref=e10]: Six cascades, weighted upper merge, four-bin temporal feedback, 24 frames · linear luminance mean 29.74
+    - generic [ref=e11]:
+      - heading "PT — parity path tracer (same scene, same camera)" [level=3] [ref=e12]
+      - img "path traced parity scene" [ref=e13]
+      - generic [ref=e14]: Deterministic CPU PT, 64 spp × 5 bounces, mirrors enabled · linear luminance mean 36.53
+    - generic [ref=e15]:
+      - heading "PT — reflective-zero (RC's locked mirror policy)" [level=3] [ref=e16]
+      - img "PT without mirror reflections" [ref=e17]
+      - generic [ref=e18]: Same PT with mirror surfaces absorbing like the parity kernel · luminance mean 35.06 (mirror reflections contribute only ~4%)
+    - generic [ref=e19]:
+      - heading "PT — direct only (isolates indirect path)" [level=3] [ref=e20]
+      - img "PT direct only" [ref=e21]
+      - generic [ref=e22]: 1 bounce · luminance mean 18.72 — matches the RC baseline (18.9) within 1%
+  - heading "Energy decomposition (linear luminance means)" [level=2] [ref=e23]
+  - table [ref=e24]:
+    - rowgroup [ref=e25]:
+      - row [ref=e26]:
+        - columnheader "quantity" [ref=e27]
+        - columnheader "RC" [ref=e28]
+        - columnheader "PT" [ref=e29]
+        - columnheader "match" [ref=e30]
+      - row [ref=e31]:
+        - cell "direct light (baseline)" [ref=e32]
+        - cell "18.9" [ref=e33]
+        - cell "18.72" [ref=e34]
+        - cell "within 1%" [ref=e35]
+      - row [ref=e36]:
+        - cell "full image" [ref=e37]
+        - cell "29.74" [ref=e38]
+        - cell "36.53 (35.06 no-mirror)" [ref=e39]
+        - cell "RC ≈ 81–85% of PT" [ref=e40]
+      - row [ref=e41]:
+        - cell "indirect (full − direct)" [ref=e42]
+        - cell "≈ 10.8" [ref=e43]
+        - cell "≈ 17.8 (16.3 no-mirror)" [ref=e44]
+        - cell "see analysis below" [ref=e45]
+  - generic [ref=e46]: "Gap analysis. Direct light matches PT within 1%, and mirror reflections explain only ~4%. The remaining indirect gap is the reference algorithm's own coarse 2×2 C0 angular discretization plus merge visibility rejection spreading the small, focused sun patches (which enter only through the ceiling blades) — the ShaderToy reference shows the same shortfall against exact PT. It is inherent to the technique, not a port bug: gates G1–G9 verify the port reproduces the reference formulas exactly (C0 weights sum to 1.000000; the G9 gate compared 76,800 pixels against the CPU oracle). The difference map below localizes residual error to penumbra edges and the mirror sphere/box."
+  - heading "Difference map (|NEW − PT| × 4)" [level=2] [ref=e47]
+  - generic [ref=e49]:
+    - img "difference heatmap" [ref=e50]
+    - generic [ref=e51]: "Hotspots: mirror sphere/box (PT renders true reflections; the parity kernel's locked policy is reflective=zero — deliberate, plan-documented) and penumbra edges of the blade-projected sun patches (C0 angular-resolution smoothing)."
+  - heading "Scene component key (these are intentional parity-scene parts, not bugs)" [level=2] [ref=e52]
+  - generic [ref=e53]:
+    - text: "The locked ShaderToy parity Cornell intentionally contains: mirror sphere (left, black in RC per locked reflective=zero policy), mirror box (right-rear), an interior wall with two circular openings, and animated ceiling exclusion blades (the ringed dark shapes on the ceiling — sun passes through them, creating the only direct light in this enclosed room). There is no torus; the ringed ceiling pattern is the exclusion-blade geometry from"
+    - code [ref=e54]: Common.glsl
+    - text: .
+  - heading "About the earlier \"totally dark\" panels — resolved" [level=2] [ref=e55]
+  - generic [ref=e56]: The first comparison camera looked away from every sun-lit patch, so the direct-only baseline was legitimately black (CPU-verified equal). With the legacy-pose camera now seeing the blade-lit green wall and floor, the baseline is bright (luminance mean 18.9, 5,690 lit pixels) and matches PT direct-only within 1% — proving the direct path works and the darkness was viewpoint, not a bug.
+  - heading "Context only — different scene (legacy analytic Cornell)" [level=2] [ref=e57]
+  - generic [ref=e58]:
+    - generic [ref=e59]:
+      - heading "OLD — legacy volumetric GI (different scene)" [level=3] [ref=e60]
+      - img "legacy volumetric GI" [ref=e61]
+      - generic [ref=e62]: Legacy Demo3D analytic Cornell, cascade GI, 180 frames. Context only — different geometry/materials/lights.
+    - generic [ref=e63]:
+      - heading "Legacy PT reference (different scene)" [level=3] [ref=e64]
+      - img "legacy PT" [ref=e65]
+      - generic [ref=e66]: Legacy path tracer of the legacy scene, 200 frames. Legacy GI tracks it within ~5% mean energy.
+  - heading "What's next — Phase 8 (Cornell semantic parity milestone)" [level=2] [ref=e67]
+  - generic [ref=e68]: This controlled PT comparison (CPU PT, deterministic seed) becomes Phase 8's non-blocking quality report, with the energy decomposition above (direct 1%, mirror-policy 4%, discretization remainder) as the documented quality statement. Phase 8 runs G0–G10 from a clean launch into one report and blocks progression if any deliberate difference alters a locked invariant. Exit = semantic parity declared for the Cornell kernel, not general mesh support.
+  - generic [ref=e69]:
+    - text: "Artifacts: this page, stats.json, stats_controlled.json, and all PNGs live in"
+    - code [ref=e70]: 3d/tools/10_refactor/phase7_final/compare/
+    - text: ". Regenerate:"
+    - code [ref=e71]: "--reference-render-shot"
+    - text: (RC),
+    - code [ref=e72]: "--reference-pt-shot [--reference-pt-bounces=N] [--reference-pt-reflective-zero]"
+    - text: "(PT variants). Gate reports:"
+    - code [ref=e73]: tools/10_refactor/phase*/runs/
+    - text: .

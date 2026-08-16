@@ -1,0 +1,105 @@
+[extract] RenderDoc Python API version check: 1.42
+[extract] Opening capture: D:\GitRepo-My\radiance-cascades-demo\3d\tools\captures\rdoc_frame_frame229.rdc
+[extract] OpenFile status: <Result: 'Success'>
+[extract] Capture opened OK, starting replay...
+[extract] OpenCapture status: <Result: 'Success'>
+[extract] Replay controller obtained.
+[extract] Structured data obtained for name resolution.
+[extract] Collecting GPU timing...
+[tree]  eid=3 flags=0x300001 disp=0 draw=0 name='glClear(Color = <0.000000, 0.000000, 0.000000, 1.000000>, Depth = <1.000000>)' children=0
+[tree]  eid=45 flags=0x40 disp=0 draw=0 name='radiance_3d' children=2
+[tree]    eid=46 flags=0x4 disp=1 draw=0 name='radiance_3d' children=0
+[tree]    eid=48 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=56 flags=0x40 disp=0 draw=0 name='reduction_3d' children=2
+[tree]    eid=57 flags=0x4 disp=1 draw=0 name='reduction_3d' children=0
+[tree]    eid=59 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=104 flags=0x40 disp=0 draw=0 name='radiance_3d' children=2
+[tree]    eid=105 flags=0x4 disp=1 draw=0 name='radiance_3d' children=0
+[tree]    eid=107 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=115 flags=0x40 disp=0 draw=0 name='reduction_3d' children=2
+[tree]    eid=116 flags=0x4 disp=1 draw=0 name='reduction_3d' children=0
+[tree]    eid=118 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=163 flags=0x40 disp=0 draw=0 name='radiance_3d' children=2
+[tree]    eid=164 flags=0x4 disp=1 draw=0 name='radiance_3d' children=0
+[tree]    eid=166 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=174 flags=0x40 disp=0 draw=0 name='reduction_3d' children=2
+[tree]    eid=175 flags=0x4 disp=1 draw=0 name='reduction_3d' children=0
+[tree]    eid=177 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=222 flags=0x40 disp=0 draw=0 name='radiance_3d' children=2
+[tree]    eid=223 flags=0x4 disp=1 draw=0 name='radiance_3d' children=0
+[tree]    eid=225 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=233 flags=0x40 disp=0 draw=0 name='reduction_3d' children=2
+[tree]    eid=234 flags=0x4 disp=1 draw=0 name='reduction_3d' children=0
+[tree]    eid=236 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=280 flags=0x100001 disp=0 draw=0 name='glClear(Color = <0.000000, 0.000000, 0.000000, 0.000000>)' children=0
+[tree]  eid=284 flags=0x40 disp=0 draw=0 name='raymarch' children=2
+[tree]    eid=285 flags=0x2 disp=0 draw=1 name='raymarch' children=0
+[tree]    eid=286 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=312 flags=0x40 disp=0 draw=0 name='gi_blur' children=2
+[tree]    eid=313 flags=0x2 disp=0 draw=1 name='gi_blur' children=0
+[tree]    eid=314 flags=0x80 disp=0 draw=0 name='glPopDebugGroup()' children=0
+[tree]  eid=344 flags=0x10002 disp=0 draw=1 name='glDrawElements()' children=0
+[extract WARNING] Dispatch 344 unrecognized: 'glDrawElements()'
+[tree]  eid=348 flags=0x100 disp=0 draw=0 name='SwapBuffers(ResourceId::1000000000000000299)' children=0
+[extract] Attempting GPU performance counter fetch...
+[extract] Counter 1: name='GPU Duration' unit=1
+[extract] Counter 7: name='Samples Passed' unit=0
+[extract] Counter 2: name='Input Vertices Read' unit=0
+[extract] Counter 3: name='Input Primitives' unit=0
+[extract] Counter 4: name='GS Primitives' unit=0
+[extract] Counter 5: name='Rasterizer Invocations' unit=0
+[extract] Counter 6: name='Rasterized Primitives' unit=0
+[extract] Counter 8: name='VS Invocations' unit=0
+[extract] Fetching GPU counter 1 ...
+[extract] Counter unit=CounterUnit.Seconds byteWidth=8
+[extract] GPU counters: 24 events timed.
+[extract] FetchCounter eid=3 us=16.77
+[extract] FetchCounter eid=46 us=5842.94
+[extract] FetchCounter eid=48 us=0.61
+[extract] FetchCounter eid=57 us=28.67
+[extract] FetchCounter eid=59 us=0.00
+[extract] FetchCounter eid=105 us=9934.18
+[extract] FetchCounter eid=107 us=2.05
+[extract] FetchCounter eid=116 us=161.79
+[extract] FetchCounter eid=118 us=0.22
+[extract] FetchCounter eid=164 us=15062.88
+[extract] FetchCounter eid=166 us=1.22
+[extract] FetchCounter eid=175 us=165.92
+[extract] FetchCounter eid=177 us=0.54
+[extract] FetchCounter eid=223 us=13882.24
+[extract] FetchCounter eid=225 us=0.61
+[extract] FetchCounter eid=234 us=222.88
+[extract] FetchCounter eid=236 us=0.80
+[extract] FetchCounter eid=280 us=26.18
+[extract] FetchCounter eid=285 us=26052.16
+[extract] FetchCounter eid=286 us=0.00
+[extract] FetchCounter eid=313 us=11442.18
+[extract] FetchCounter eid=314 us=0.83
+[extract] FetchCounter eid=344 us=10.56
+[extract] FetchCounter eid=348 us=0.00
+[extract] Cascade resources visible in capture:
+[extract]   name='cascade0_probeGrid'  id=ResourceId::153
+[extract]   name='cascade0_probeAtlas'  id=ResourceId::154
+[extract]   name='cascade0_probeAtlasHistory'  id=ResourceId::155
+[extract]   name='cascade0_probeGridHistory'  id=ResourceId::156
+[extract]   name='cascade1_probeGrid'  id=ResourceId::157
+[extract]   name='cascade1_probeAtlas'  id=ResourceId::158
+[extract]   name='cascade1_probeAtlasHistory'  id=ResourceId::159
+[extract]   name='cascade2_probeGrid'  id=ResourceId::161
+[extract]   name='cascade2_probeAtlas'  id=ResourceId::162
+[extract]   name='cascade2_probeAtlasHistory'  id=ResourceId::163
+[extract]   name='cascade3_probeGrid'  id=ResourceId::165
+[extract]   name='cascade3_probeAtlas'  id=ResourceId::166
+[extract]   name='cascade3_probeAtlasHistory'  id=ResourceId::167
+[extract] Extracting: SDF Volume (Signed Distance Field)
+[extract] sdfTexture depth=128 -> z_slice=64
+[extract] Extracting: Albedo Volume
+[extract] albedoTexture depth=128 -> z_slice=64
+[extract] Extracting: C0 Probe Directional Atlas
+[extract] cascade0_probeAtlas depth=32 -> z_slice=16
+[extract] Extracting: C1 Probe Directional Atlas
+[extract] cascade1_probeAtlas depth=16 -> z_slice=8
+[extract] Extracting: C0 Isotropic Probe Grid (reduction output)
+[extract] cascade0_probeGrid depth=32 -> z_slice=16
+[extract] Manifest written: D:\GitRepo-My\radiance-cascades-demo\3d\tools\analysis\rdoc_frame_frame229_manifest.json
+[extract] Done.

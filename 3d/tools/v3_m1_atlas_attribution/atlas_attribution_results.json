@@ -1,0 +1,1652 @@
+{
+  "scene": "sponza",
+  "N": 2048,
+  "source": "tools\\v3_m1_atlas_attribution\\captures_sponza\\m1atlas_sponza_baseline_N2048_m17_atlas_attribution.json",
+  "stage5": "tools\\v3_m1_shader_probe_diag\\shader_probe_diag_results.json",
+  "measured_normals": {
+    "(7, 5, 4)": {
+      "normal": [
+        -0.3291518986225128,
+        -0.5877518057823181,
+        -0.7390580773353577
+      ],
+      "count": 325,
+      "mean_ratio": 5.077413082122803
+    },
+    "(6, 5, 4)": {
+      "normal": [
+        -0.3179420232772827,
+        -0.5901512503623962,
+        -0.7420474290847778
+      ],
+      "count": 234,
+      "mean_ratio": 4.484697341918945
+    },
+    "(6, 4, 4)": {
+      "normal": [
+        -0.4202248454093933,
+        -0.5013869404792786,
+        -0.7563214302062988
+      ],
+      "count": 112,
+      "mean_ratio": 4.3106279373168945
+    }
+  },
+  "verdict": "ATTRIBUTION_RECONSTRUCTION_MISMATCH",
+  "targets": [
+    {
+      "p000": [
+        7,
+        5,
+        4
+      ],
+      "stage5": {
+        "key": "(7, 5, 4)",
+        "count": 325,
+        "mean_ratio": 5.077413082122803,
+        "mean_shader_luma": 0.12208852916955948,
+        "mean_pg_fraction": [
+          0.09300480782985687,
+          0.3439062535762787,
+          0.6741946935653687
+        ]
+      },
+      "normal": "+y",
+      "mean_pg_fraction_used": [
+        0.09300480782985687,
+        0.3439062535762787,
+        0.6741946935653687
+      ],
+      "final_luma_reconstructed": 0.05891524255275726,
+      "trilinear_unormalized_luma": 0.9028760925448284,
+      "top_probe_share": 0.4110578683339806,
+      "top_bin_share": 0.04564797590126804,
+      "shape": "BROAD_LOCAL_ENERGY",
+      "top_probes": [
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9497380624683256,
+          "normalized_probe_luma": 0.06036350131034851,
+          "final_luma_contrib": 0.024217574016115826
+        },
+        {
+          "probe": [
+            7,
+            6,
+            5
+          ],
+          "offset": [
+            0,
+            1,
+            1
+          ],
+          "tri_weight": 0.21029569777695056,
+          "wsum": 13.907905999999999,
+          "unormalized_luma": 0.7905854049234409,
+          "normalized_probe_luma": 0.0568443201482296,
+          "final_luma_contrib": 0.011954115970228314
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "tri_weight": 0.19387822574575053,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.8982052005386061,
+          "normalized_probe_luma": 0.05708817020058632,
+          "final_luma_contrib": 0.011068153149561102
+        },
+        {
+          "probe": [
+            7,
+            6,
+            4
+          ],
+          "offset": [
+            0,
+            1,
+            0
+          ],
+          "tri_weight": 0.10162562077398028,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9505940553688844,
+          "normalized_probe_luma": 0.06041790544986725,
+          "final_luma_contrib": 0.006140007147206405
+        },
+        {
+          "probe": [
+            8,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "tri_weight": 0.04113927444683375,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9605258892047044,
+          "normalized_probe_luma": 0.06104915216565132,
+          "final_luma_contrib": 0.0025115178256892444
+        },
+        {
+          "probe": [
+            8,
+            6,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "tri_weight": 0.021564073468122606,
+          "wsum": 13.907905999999999,
+          "unormalized_luma": 0.7949808530905275,
+          "normalized_probe_luma": 0.057160355150699615,
+          "final_luma_contrib": 0.001232610097933667
+        },
+        {
+          "probe": [
+            8,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            0,
+            0
+          ],
+          "tri_weight": 0.0198805983576753,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9138530515538006,
+          "normalized_probe_luma": 0.058082714676856995,
+          "final_luma_contrib": 0.001154719122014046
+        },
+        {
+          "probe": [
+            8,
+            6,
+            4
+          ],
+          "offset": [
+            1,
+            1,
+            0
+          ],
+          "tri_weight": 0.010420861557225223,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9610678582777794,
+          "normalized_probe_luma": 0.0610835999250412,
+          "final_luma_contrib": 0.0006365437382357873
+        }
+      ],
+      "top_bins": [
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            4,
+            6
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.118042,
+            0.115356,
+            0.109924
+          ],
+          "luma": 0.115535,
+          "normalized_probe_luma_contrib": 0.006703366991132498,
+          "final_luma_contrib": 0.002689361572265625
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            3,
+            6
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.116272,
+            0.113525,
+            0.107971
+          ],
+          "luma": 0.113708,
+          "normalized_probe_luma_contrib": 0.00659737316891551,
+          "final_luma_contrib": 0.0026468373835086823
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            5,
+            5
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.150269,
+            0.146362,
+            0.13855
+          ],
+          "luma": 0.146629,
+          "normalized_probe_luma_contrib": 0.0059607247821986675,
+          "final_luma_contrib": 0.0023914168123155832
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            4,
+            7
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.98995,
+          "alpha": 1.0,
+          "rgb": [
+            0.0862427,
+            0.0838623,
+            0.0789795
+          ],
+          "luma": 0.0840158,
+          "normalized_probe_luma_contrib": 0.005286216735839844,
+          "final_luma_contrib": 0.0021208073012530804
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            3,
+            7
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.98995,
+          "alpha": 1.0,
+          "rgb": [
+            0.0787964,
+            0.0767212,
+            0.0723267
+          ],
+          "luma": 0.0768451,
+          "normalized_probe_luma_contrib": 0.004835039842873812,
+          "final_luma_contrib": 0.0019397968426346779
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            4,
+            5
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.588348,
+          "alpha": 1.0,
+          "rgb": [
+            0.118896,
+            0.116699,
+            0.112244
+          ],
+          "luma": 0.116845,
+          "normalized_probe_luma_contrib": 0.004369310103356838,
+          "final_luma_contrib": 0.0017529482720419765
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            3,
+            5
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.588348,
+          "alpha": 1.0,
+          "rgb": [
+            0.118164,
+            0.115845,
+            0.111084
+          ],
+          "luma": 0.115994,
+          "normalized_probe_luma_contrib": 0.0043375189416110516,
+          "final_luma_contrib": 0.0017401938093826175
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            2,
+            5
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.0996094,
+            0.0970459,
+            0.0917358
+          ],
+          "luma": 0.0972075,
+          "normalized_probe_luma_contrib": 0.0039516654796898365,
+          "final_luma_contrib": 0.00158539111725986
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "bin": [
+            5,
+            6
+          ],
+          "tri_weight": 0.40119564787346174,
+          "wcos": 0.857493,
+          "alpha": 1.0,
+          "rgb": [
+            0.0717773,
+            0.0701294,
+            0.0667114
+          ],
+          "luma": 0.070233,
+          "normalized_probe_luma_contrib": 0.0038277374114841223,
+          "final_luma_contrib": 0.001535671530291438
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "bin": [
+            4,
+            6
+          ],
+          "tri_weight": 0.19387822574575053,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.128906,
+            0.125732,
+            0.120605
+          ],
+          "luma": 0.126037,
+          "normalized_probe_luma_contrib": 0.007312682457268238,
+          "final_luma_contrib": 0.0014177700504660606
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "bin": [
+            5,
+            5
+          ],
+          "tri_weight": 0.19387822574575053,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.18103,
+            0.175903,
+            0.165405
+          ],
+          "luma": 0.176235,
+          "normalized_probe_luma_contrib": 0.007164281792938709,
+          "final_luma_contrib": 0.0013889982365071774
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "bin": [
+            3,
+            6
+          ],
+          "tri_weight": 0.19387822574575053,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.124451,
+            0.121338,
+            0.115112
+          ],
+          "luma": 0.12155,
+          "normalized_probe_luma_contrib": 0.007052385713905096,
+          "final_luma_contrib": 0.0013673040084540844
+        }
+      ],
+      "luma_reconstruction_ratio": 0.4825616538547562,
+      "normal_candidates": [
+        {
+          "normal": "+x",
+          "final_luma_reconstructed": 0.03562869131565094,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.38570180059729425,
+          "top_bin_share": 0.06796359819590204
+        },
+        {
+          "normal": "-x",
+          "final_luma_reconstructed": 0.01828794553875923,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.36242627540260236,
+          "top_bin_share": 0.08669049860739157
+        },
+        {
+          "normal": "+y",
+          "final_luma_reconstructed": 0.05891524255275726,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.4110578683339806,
+          "top_bin_share": 0.04564797590126804
+        },
+        {
+          "normal": "-y",
+          "final_luma_reconstructed": 0.0015947615029290318,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.34650177648626745,
+          "top_bin_share": 0.09196346245978781
+        },
+        {
+          "normal": "+z",
+          "final_luma_reconstructed": 0.05479154363274574,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.36527050811314327,
+          "top_bin_share": 0.045361270569002854
+        },
+        {
+          "normal": "-z",
+          "final_luma_reconstructed": 0.0019424258498474956,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.44821732991794555,
+          "top_bin_share": 0.11419530178370664
+        }
+      ]
+    },
+    {
+      "p000": [
+        6,
+        5,
+        4
+      ],
+      "stage5": {
+        "key": "(6, 5, 4)",
+        "count": 234,
+        "mean_ratio": 4.484697341918945,
+        "mean_shader_luma": 0.11738312244415283,
+        "mean_pg_fraction": [
+          0.961989164352417,
+          0.09478498995304108,
+          0.591796875
+        ]
+      },
+      "normal": "+y",
+      "mean_pg_fraction_used": [
+        0.961989164352417,
+        0.09478498995304108,
+        0.591796875
+      ],
+      "final_luma_reconstructed": 0.05892869457602501,
+      "trilinear_unormalized_luma": 0.9213436305913628,
+      "top_probe_share": 0.5278884945939223,
+      "top_bin_share": 0.05862202154293399,
+      "shape": "BROAD_LOCAL_ENERGY",
+      "top_probes": [
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9497380624683256,
+          "normalized_probe_luma": 0.06036350131034851,
+          "final_luma_contrib": 0.031107779868122878
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            0,
+            0
+          ],
+          "tri_weight": 0.3554661513565172,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.8982052005386061,
+          "normalized_probe_luma": 0.05708817020058632,
+          "final_luma_contrib": 0.02029291214918823
+        },
+        {
+          "probe": [
+            7,
+            6,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "tri_weight": 0.0539613015298002,
+          "wsum": 13.907905999999999,
+          "unormalized_luma": 0.7905854049234409,
+          "normalized_probe_luma": 0.0568443201482296,
+          "final_luma_contrib": 0.0030673934997751144
+        },
+        {
+          "probe": [
+            7,
+            6,
+            4
+          ],
+          "offset": [
+            1,
+            1,
+            0
+          ],
+          "tri_weight": 0.037220831748278026,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9505940553688844,
+          "normalized_probe_luma": 0.06041790544986725,
+          "final_luma_contrib": 0.002248804693332879
+        },
+        {
+          "probe": [
+            6,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "tri_weight": 0.02036253443106232,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9398151320896523,
+          "normalized_probe_luma": 0.059732817113399506,
+          "final_luma_contrib": 0.001216311545135946
+        },
+        {
+          "probe": [
+            6,
+            5,
+            4
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "tri_weight": 0.014045444541557837,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.8823539171588758,
+          "normalized_probe_luma": 0.05608069524168968,
+          "final_luma_contrib": 0.0007876782948691589
+        },
+        {
+          "probe": [
+            6,
+            6,
+            5
+          ],
+          "offset": [
+            0,
+            1,
+            1
+          ],
+          "tri_weight": 0.002132159321315906,
+          "wsum": 13.907905999999999,
+          "unormalized_luma": 0.7841321754633143,
+          "normalized_probe_luma": 0.056380316615104675,
+          "final_luma_contrib": 0.00012021181760963748
+        },
+        {
+          "probe": [
+            6,
+            6,
+            4
+          ],
+          "offset": [
+            0,
+            1,
+            0
+          ],
+          "tri_weight": 0.001470697353646945,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9372095976591429,
+          "normalized_probe_luma": 0.05956721305847168,
+          "final_luma_contrib": 8.760534260921804e-05
+        }
+      ],
+      "top_bins": [
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            4,
+            6
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.118042,
+            0.115356,
+            0.109924
+          ],
+          "luma": 0.115535,
+          "normalized_probe_luma_contrib": 0.006703366991132498,
+          "final_luma_contrib": 0.0034545192029327154
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            3,
+            6
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.116272,
+            0.113525,
+            0.107971
+          ],
+          "luma": 0.113708,
+          "normalized_probe_luma_contrib": 0.00659737316891551,
+          "final_luma_contrib": 0.003399896202608943
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            5,
+            5
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.150269,
+            0.146362,
+            0.13855
+          ],
+          "luma": 0.146629,
+          "normalized_probe_luma_contrib": 0.0059607247821986675,
+          "final_luma_contrib": 0.003071805229410529
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            4,
+            7
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.98995,
+          "alpha": 1.0,
+          "rgb": [
+            0.0862427,
+            0.0838623,
+            0.0789795
+          ],
+          "luma": 0.0840158,
+          "normalized_probe_luma_contrib": 0.005286216735839844,
+          "final_luma_contrib": 0.002724203746765852
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            0,
+            0
+          ],
+          "bin": [
+            4,
+            6
+          ],
+          "tri_weight": 0.3554661513565172,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.128906,
+            0.125732,
+            0.120605
+          ],
+          "luma": 0.126037,
+          "normalized_probe_luma_contrib": 0.007312682457268238,
+          "final_luma_contrib": 0.002599411178380251
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            0,
+            0
+          ],
+          "bin": [
+            5,
+            5
+          ],
+          "tri_weight": 0.3554661513565172,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.18103,
+            0.175903,
+            0.165405
+          ],
+          "luma": 0.176235,
+          "normalized_probe_luma_contrib": 0.007164281792938709,
+          "final_luma_contrib": 0.0025466596707701683
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            0,
+            0
+          ],
+          "bin": [
+            3,
+            6
+          ],
+          "tri_weight": 0.3554661513565172,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.124451,
+            0.121338,
+            0.115112
+          ],
+          "luma": 0.12155,
+          "normalized_probe_luma_contrib": 0.007052385713905096,
+          "final_luma_contrib": 0.002506884280592203
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            3,
+            7
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.98995,
+          "alpha": 1.0,
+          "rgb": [
+            0.0787964,
+            0.0767212,
+            0.0723267
+          ],
+          "luma": 0.0768451,
+          "normalized_probe_luma_contrib": 0.004835039842873812,
+          "final_luma_contrib": 0.00249169347807765
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            4,
+            5
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.588348,
+          "alpha": 1.0,
+          "rgb": [
+            0.118896,
+            0.116699,
+            0.112244
+          ],
+          "luma": 0.116845,
+          "normalized_probe_luma_contrib": 0.004369310103356838,
+          "final_luma_contrib": 0.0022516842000186443
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            3,
+            5
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.588348,
+          "alpha": 1.0,
+          "rgb": [
+            0.118164,
+            0.115845,
+            0.111084
+          ],
+          "luma": 0.115994,
+          "normalized_probe_luma_contrib": 0.0043375189416110516,
+          "final_luma_contrib": 0.002235300838947296
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            2,
+            5
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.0996094,
+            0.0970459,
+            0.0917358
+          ],
+          "luma": 0.0972075,
+          "normalized_probe_luma_contrib": 0.0039516654796898365,
+          "final_luma_contrib": 0.0020364548545330763
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "bin": [
+            5,
+            6
+          ],
+          "tri_weight": 0.5153408797178216,
+          "wcos": 0.857493,
+          "alpha": 1.0,
+          "rgb": [
+            0.0717773,
+            0.0701294,
+            0.0667114
+          ],
+          "luma": 0.070233,
+          "normalized_probe_luma_contrib": 0.0038277374114841223,
+          "final_luma_contrib": 0.0019725896418094635
+        }
+      ],
+      "luma_reconstruction_ratio": 0.502020165667866,
+      "normal_candidates": [
+        {
+          "normal": "+x",
+          "final_luma_reconstructed": 0.03438666835427284,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.5133337493081402,
+          "top_bin_share": 0.0904533193450784
+        },
+        {
+          "normal": "-x",
+          "final_luma_reconstructed": 0.01614757440984249,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.5272489000981275,
+          "top_bin_share": 0.1261152172360815
+        },
+        {
+          "normal": "+y",
+          "final_luma_reconstructed": 0.05892869457602501,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.5278884945939223,
+          "top_bin_share": 0.05862202154293399
+        },
+        {
+          "normal": "-y",
+          "final_luma_reconstructed": 0.0014218530850484967,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.49921182673961617,
+          "top_bin_share": 0.1324935369310913
+        },
+        {
+          "normal": "+z",
+          "final_luma_reconstructed": 0.051704227924346924,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.49721070281969165,
+          "top_bin_share": 0.06174632083813186
+        },
+        {
+          "normal": "-z",
+          "final_luma_reconstructed": 0.0016521743964403868,
+          "shape": "HOT_PROBE",
+          "top_probe_share": 0.6768860858695498,
+          "top_bin_share": 0.172454758185381
+        }
+      ]
+    },
+    {
+      "p000": [
+        6,
+        4,
+        4
+      ],
+      "stage5": {
+        "key": "(6, 4, 4)",
+        "count": 112,
+        "mean_ratio": 4.3106279373168945,
+        "mean_shader_luma": 0.11482511460781097,
+        "mean_pg_fraction": [
+          0.8849748969078064,
+          0.9266880750656128,
+          0.5409110188484192
+        ]
+      },
+      "normal": "+y",
+      "mean_pg_fraction_used": [
+        0.8849748969078064,
+        0.9266880750656128,
+        0.5409110188484192
+      ],
+      "final_luma_reconstructed": 0.058708008378744125,
+      "trilinear_unormalized_luma": 0.9236911226056141,
+      "top_probe_share": 0.4561077268819686,
+      "top_bin_share": 0.05065076290454577,
+      "shape": "BROAD_LOCAL_ENERGY",
+      "top_probes": [
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9497380624683256,
+          "normalized_probe_luma": 0.06036350131034851,
+          "final_luma_contrib": 0.02677717625139655
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            1,
+            0
+          ],
+          "tri_weight": 0.3764968918752117,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.8982052005386061,
+          "normalized_probe_luma": 0.05708817020058632,
+          "final_luma_contrib": 0.02149351864336383
+        },
+        {
+          "probe": [
+            6,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            1,
+            1
+          ],
+          "tri_weight": 0.05765699901674841,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9398151320896523,
+          "normalized_probe_luma": 0.059732817113399506,
+          "final_luma_contrib": 0.003444014977574888
+        },
+        {
+          "probe": [
+            6,
+            5,
+            4
+          ],
+          "offset": [
+            0,
+            1,
+            0
+          ],
+          "tri_weight": 0.04893539235198015,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.8823539171588758,
+          "normalized_probe_luma": 0.05608069524168968,
+          "final_luma_contrib": 0.002744330825023911
+        },
+        {
+          "probe": [
+            7,
+            4,
+            5
+          ],
+          "offset": [
+            1,
+            0,
+            1
+          ],
+          "tri_weight": 0.035093881320003725,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9302230692476565,
+          "normalized_probe_luma": 0.059123165905475616,
+          "final_luma_contrib": 0.002074861367549652
+        },
+        {
+          "probe": [
+            7,
+            4,
+            4
+          ],
+          "offset": [
+            1,
+            0,
+            0
+          ],
+          "tri_weight": 0.029785331890918434,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.8945028006718079,
+          "normalized_probe_luma": 0.05685285106301308,
+          "final_luma_contrib": 0.0016933810378567994
+        },
+        {
+          "probe": [
+            6,
+            4,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            1
+          ],
+          "tri_weight": 0.004561346689994488,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.9151462878948594,
+          "normalized_probe_luma": 0.05816490948200226,
+          "final_luma_contrib": 0.00026531031733956
+        },
+        {
+          "probe": [
+            6,
+            4,
+            4
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "tri_weight": 0.0038713650334705595,
+          "wsum": 15.733648,
+          "unormalized_luma": 0.8754647761843374,
+          "normalized_probe_luma": 0.055642835795879364,
+          "final_luma_contrib": 0.00021541372886331136
+        }
+      ],
+      "top_bins": [
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "bin": [
+            4,
+            6
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.118042,
+            0.115356,
+            0.109924
+          ],
+          "luma": 0.115535,
+          "normalized_probe_luma_contrib": 0.006703366991132498,
+          "final_luma_contrib": 0.002973605412989855
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "bin": [
+            3,
+            6
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.116272,
+            0.113525,
+            0.107971
+          ],
+          "luma": 0.113708,
+          "normalized_probe_luma_contrib": 0.00659737316891551,
+          "final_luma_contrib": 0.0029265868943184614
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            1,
+            0
+          ],
+          "bin": [
+            4,
+            6
+          ],
+          "tri_weight": 0.3764968918752117,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.128906,
+            0.125732,
+            0.120605
+          ],
+          "luma": 0.126037,
+          "normalized_probe_luma_contrib": 0.007312682457268238,
+          "final_luma_contrib": 0.002753202337771654
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            1,
+            0
+          ],
+          "bin": [
+            5,
+            5
+          ],
+          "tri_weight": 0.3764968918752117,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.18103,
+            0.175903,
+            0.165405
+          ],
+          "luma": 0.176235,
+          "normalized_probe_luma_contrib": 0.007164281792938709,
+          "final_luma_contrib": 0.0026973297353833914
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            1,
+            0
+          ],
+          "bin": [
+            3,
+            6
+          ],
+          "tri_weight": 0.3764968918752117,
+          "wcos": 0.912871,
+          "alpha": 1.0,
+          "rgb": [
+            0.124451,
+            0.121338,
+            0.115112
+          ],
+          "luma": 0.12155,
+          "normalized_probe_luma_contrib": 0.007052385713905096,
+          "final_luma_contrib": 0.0026552011258900166
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "bin": [
+            5,
+            5
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.150269,
+            0.146362,
+            0.13855
+          ],
+          "luma": 0.146629,
+          "normalized_probe_luma_contrib": 0.0059607247821986675,
+          "final_luma_contrib": 0.002644170308485627
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "bin": [
+            4,
+            7
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wcos": 0.98995,
+          "alpha": 1.0,
+          "rgb": [
+            0.0862427,
+            0.0838623,
+            0.0789795
+          ],
+          "luma": 0.0840158,
+          "normalized_probe_luma_contrib": 0.005286216735839844,
+          "final_luma_contrib": 0.0023449594154953957
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "bin": [
+            3,
+            7
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wcos": 0.98995,
+          "alpha": 1.0,
+          "rgb": [
+            0.0787964,
+            0.0767212,
+            0.0723267
+          ],
+          "luma": 0.0768451,
+          "normalized_probe_luma_contrib": 0.004835039842873812,
+          "final_luma_contrib": 0.002144817728549242
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "bin": [
+            4,
+            5
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wcos": 0.588348,
+          "alpha": 1.0,
+          "rgb": [
+            0.118896,
+            0.116699,
+            0.112244
+          ],
+          "luma": 0.116845,
+          "normalized_probe_luma_contrib": 0.004369310103356838,
+          "final_luma_contrib": 0.001938220695592463
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "bin": [
+            3,
+            5
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wcos": 0.588348,
+          "alpha": 1.0,
+          "rgb": [
+            0.118164,
+            0.115845,
+            0.111084
+          ],
+          "luma": 0.115994,
+          "normalized_probe_luma_contrib": 0.0043375189416110516,
+          "final_luma_contrib": 0.00192411825992167
+        },
+        {
+          "probe": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "bin": [
+            2,
+            5
+          ],
+          "tri_weight": 0.44359879182167256,
+          "wcos": 0.639602,
+          "alpha": 1.0,
+          "rgb": [
+            0.0996094,
+            0.0970459,
+            0.0917358
+          ],
+          "luma": 0.0972075,
+          "normalized_probe_luma_contrib": 0.0039516654796898365,
+          "final_luma_contrib": 0.0017529542092233896
+        },
+        {
+          "probe": [
+            7,
+            5,
+            4
+          ],
+          "offset": [
+            1,
+            1,
+            0
+          ],
+          "bin": [
+            4,
+            5
+          ],
+          "tri_weight": 0.3764968918752117,
+          "wcos": 0.588348,
+          "alpha": 1.0,
+          "rgb": [
+            0.124329,
+            0.121826,
+            0.116882
+          ],
+          "luma": 0.122001,
+          "normalized_probe_luma_contrib": 0.00456214277073741,
+          "final_luma_contrib": 0.0017176325200125575
+        }
+      ],
+      "luma_reconstruction_ratio": 0.5112819488947457,
+      "normal_candidates": [
+        {
+          "normal": "+x",
+          "final_luma_reconstructed": 0.03369177132844925,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.4509847264740374,
+          "top_bin_share": 0.08005900636948028
+        },
+        {
+          "normal": "-x",
+          "final_luma_reconstructed": 0.014939638786017895,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.49054475886597476,
+          "top_bin_share": 0.11733578263378033
+        },
+        {
+          "normal": "+y",
+          "final_luma_reconstructed": 0.058708008378744125,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.4561077268819686,
+          "top_bin_share": 0.05065076290454577
+        },
+        {
+          "normal": "-y",
+          "final_luma_reconstructed": 0.0013187224976718426,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.463320946596693,
+          "top_bin_share": 0.12296790886796484
+        },
+        {
+          "normal": "+z",
+          "final_luma_reconstructed": 0.049916692078113556,
+          "shape": "BROAD_LOCAL_ENERGY",
+          "top_probe_share": 0.44331914674815676,
+          "top_bin_share": 0.05505377662150796
+        },
+        {
+          "normal": "-z",
+          "final_luma_reconstructed": 0.0015035244869068265,
+          "shape": "HOT_PROBE",
+          "top_probe_share": 0.6402605289014518,
+          "top_bin_share": 0.1631234128653444
+        }
+      ]
+    }
+  ]
+}

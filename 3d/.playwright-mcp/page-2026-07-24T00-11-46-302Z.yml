@@ -1,0 +1,101 @@
+- generic [active] [ref=e1]:
+  - heading "Surface RC vs Path Tracing — Controlled Comparison" [level=1] [ref=e2]
+  - generic [ref=e3]: Captured 2026-07-24 · branch 3d_v4.0 · NVIDIA RTX 2080 SUPER · same scene, same camera, different algorithm
+  - generic [ref=e4]: "Controlled setup. Both primary images render the locked ShaderToy parity Cornell from the identical native camera (pos 0.5, 0.22, 0.55 → target 0.35, 0.2, 0.1, FOV 80°, 640×480). The only difference is the GI algorithm: the validated six-cascade surface-RC kernel with temporal feedback (24 frames), versus a deterministic CPU path tracer (64 spp, 5 bounces, 104.8M rays, PCG-seeded) estimating the same transport convention. Both panels use the same display mapping (8× exposure + γ2.2) for viewing; statistics below are computed on the unmapped linear companions."
+  - 'heading "Primary: NEW (surface RC) vs PT (parity-scene path tracer)" [level=2] [ref=e5]'
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - heading "NEW — reference surface RC (G0–G9 validated)" [level=3] [ref=e8]
+      - img "reference surface RC" [ref=e9]
+      - generic [ref=e10]: Six cascades C0–C5, weighted upper merge, four-bin temporal feedback, 24 frames · linear mean (R,G,B) = 1.56 / 3.79 / 1.26, luminance 3.14
+    - generic [ref=e11]:
+      - heading "PT — parity-scene path tracer (same scene, same camera)" [level=3] [ref=e12]
+      - img "path traced parity scene" [ref=e13]
+      - generic [ref=e14]: Deterministic CPU PT, cosine sampling + sun next-event, mirror reflections enabled · linear mean (R,G,B) = 1.76 / 4.38 / 1.61, luminance 3.62
+  - heading "Difference map (|NEW − PT| × 4, red = larger)" [level=2] [ref=e15]
+  - generic [ref=e17]:
+    - img "difference heatmap" [ref=e18]
+    - generic [ref=e19]: Mean |Δ| (R,G,B) = 1.60 / 2.83 / 1.27 in 0–255 units. Largest deltas concentrate on the mirror sphere/box (PT renders true mirror reflections; the parity kernel's locked policy is reflective = zero — a deliberate, documented difference) and on high-gradient penumbra edges where the RC's coarse C0 angular resolution (2×2 directions) smooths detail the PT resolves.
+  - heading "Controlled statistics (linear, 0–255 scale)" [level=2] [ref=e20]
+  - table [ref=e21]:
+    - rowgroup [ref=e22]:
+      - row [ref=e23]:
+        - columnheader "region" [ref=e24]
+        - columnheader "NEW lum" [ref=e25]
+        - columnheader "PT lum" [ref=e26]
+        - columnheader "NEW (R,G,B)" [ref=e27]
+        - columnheader "PT (R,G,B)" [ref=e28]
+        - columnheader "reading" [ref=e29]
+      - row [ref=e30]:
+        - cell "whole image" [ref=e31]
+        - cell "3.14" [ref=e32]
+        - cell "3.62" [ref=e33]
+        - cell "1.56 / 3.79 / 1.26" [ref=e34]
+        - cell "1.76 / 4.38 / 1.61" [ref=e35]
+        - cell "RC within ~13% of PT" [ref=e36]
+      - row [ref=e37]:
+        - cell "left third" [ref=e38]
+        - cell "0.69" [ref=e39]
+        - cell "1.94" [ref=e40]
+        - cell "0.52 / 0.77 / 0.42" [ref=e41]
+        - cell "1.17 / 2.39 / 1.12" [ref=e42]
+        - cell "RC dimmer — shadowed red-wall side, coarse angular bins" [ref=e43]
+      - row [ref=e44]:
+        - cell "center third" [ref=e45]
+        - cell "3.58" [ref=e46]
+        - cell "3.37" [ref=e47]
+        - cell "1.86 / 4.46 / 1.53" [ref=e48]
+        - cell "1.64 / 4.12 / 1.50" [ref=e49]
+        - cell "matches within noise" [ref=e50]
+      - row [ref=e51]:
+        - cell "right third" [ref=e52]
+        - cell "4.84" [ref=e53]
+        - cell "5.26" [ref=e54]
+        - cell "2.29 / 6.14 / 1.84" [ref=e55]
+        - cell "2.45 / 6.62 / 2.20" [ref=e56]
+        - cell "sun-lit green wall tracks PT" [ref=e57]
+      - row [ref=e58]:
+        - cell "top half" [ref=e59]
+        - cell "3.76" [ref=e60]
+        - cell "4.75" [ref=e61]
+        - cell "2.01 / 4.68 / 1.63" [ref=e62]
+        - cell "2.33 / 6.01 / 2.17" [ref=e63]
+        - cell "ceiling/interior bounce close" [ref=e64]
+      - row [ref=e65]:
+        - cell "bottom half" [ref=e66]
+        - cell "2.52" [ref=e67]
+        - cell "2.49" [ref=e68]
+        - cell "1.10 / 2.91 / 0.90" [ref=e69]
+        - cell "1.19 / 2.75 / 1.05" [ref=e70]
+        - cell "floor matches within noise" [ref=e71]
+  - generic [ref=e72]: "Verdict. With scene and camera locked, the reference surface-RC kernel lands within ~13% of path-traced mean luminance and reproduces the same spatial energy distribution (green-dominant bounce from the sun-lit green wall, correct wall-color bleeding, correct shadow regions). Residual gaps are the expected approximation artifacts: 2×2 C0 angular bins blur shadowed regions (left third), and the locked reflective-zero policy makes the mirror sphere/box black where PT shows true reflections. No calibration floors, exposure hacks, or scene-specific multipliers exist anywhere in the reference path."
+  - heading "Context only — different scene (legacy analytic Cornell)" [level=2] [ref=e73]
+  - generic [ref=e74]:
+    - generic [ref=e75]:
+      - heading "OLD — legacy volumetric GI (different scene)" [level=3] [ref=e76]
+      - img "legacy volumetric GI" [ref=e77]
+      - generic [ref=e78]: Legacy Demo3D analytic Cornell, cascade GI, 180 frames. Included for context only — different geometry, materials, lights, and calibration; pixel comparison against the parity scene is not meaningful.
+    - generic [ref=e79]:
+      - heading "Legacy PT reference (different scene)" [level=3] [ref=e80]
+      - img "legacy PT" [ref=e81]
+      - generic [ref=e82]: "Legacy path tracer of the legacy scene, 200 frames. The old renderer's own ground truth: legacy GI lands within ~5% mean energy of it (63.0 vs 60.0)."
+    - generic [ref=e83]:
+      - heading "G9 baseline — direct only" [level=3] [ref=e84]
+      - img "G9 baseline" [ref=e85]
+      - generic [ref=e86]: "Reference disabled, 320×240: all black and exactly CPU-equal. From this camera no surface receives direct sun — every visible photon in NEW is indirect transport."
+    - generic [ref=e87]:
+      - heading "G9 linear validated output" [level=3] [ref=e88]
+      - img "G9 linear" [ref=e89]
+      - generic [ref=e90]: 320×240 linear pixels the G9 gate compared against the CPU oracle (76,800/76,800 pass, 1 silhouette-edge pixel via adjacent-ray conformance).
+  - heading "What's next — Phase 8 (Cornell semantic parity milestone)" [level=2] [ref=e91]
+  - generic [ref=e92]: "This controlled PT comparison becomes Phase 8's non-blocking quality report (now automated as CPU PT with deterministic seed). Phase 8 additionally runs G0–G10 from a clean launch into one report, captures deterministic diagnostics, documents deliberate differences from ShaderToy (currently: reflective-zero policy; chart-edge clamp policy; the two locked PI literals), and blocks progression if any difference alters a locked invariant. Exit = semantic parity declared for the Cornell kernel, not general mesh support."
+  - generic [ref=e93]:
+    - text: "Artifacts: this page, stats.json, stats_controlled.json, and all PNGs live in"
+    - code [ref=e94]: 3d/tools/10_refactor/phase7_final/compare/
+    - text: ". Regenerate:"
+    - code [ref=e95]: "--reference-render-shot"
+    - text: (RC),
+    - code [ref=e96]: "--reference-pt-shot"
+    - text: "(PT), legacy flags per Phase 7 README. Gate reports:"
+    - code [ref=e97]: tools/10_refactor/phase*/runs/
+    - text: .

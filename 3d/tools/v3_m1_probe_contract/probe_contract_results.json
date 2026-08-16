@@ -1,0 +1,155 @@
+{
+  "N": 2048,
+  "scenes": {
+    "cornell": {
+      "status": "ok",
+      "screen": {
+        "status": "ok",
+        "valid": 37866,
+        "cascade_mean": 0.16997981071472168,
+        "pt_indirect_mean": 0.4077158570289612,
+        "ratio_self": 0.48447662591934204,
+        "p05_rel": -0.8683153390884399,
+        "p50_rel": -0.6095550656318665,
+        "p95_rel": 0.19704410433769226,
+        "abs_p95": 0.8892039656639099,
+        "dim_pct": 86.70047007869857,
+        "bright_pct": 3.773834046374056
+      },
+      "probe_contract": {
+        "mean_lum_chain": [
+          0.121084,
+          0.116963,
+          0.0958193,
+          0.0454526
+        ],
+        "adjacent_mean_ratios": [
+          1.035233364397288,
+          1.220662225668524,
+          2.108114827314609
+        ],
+        "coverage": [
+          {
+            "index": 0,
+            "resolution": 32,
+            "dirRes": 8,
+            "meanLum": 0.121084,
+            "maxLum": 1.60905,
+            "anyPct": 100.0,
+            "surfPct": 99.8413,
+            "skyPct": 0.0
+          },
+          {
+            "index": 1,
+            "resolution": 16,
+            "dirRes": 16,
+            "meanLum": 0.116963,
+            "maxLum": 0.909993,
+            "anyPct": 100.0,
+            "surfPct": 99.7559,
+            "skyPct": 0.0
+          },
+          {
+            "index": 2,
+            "resolution": 8,
+            "dirRes": 16,
+            "meanLum": 0.0958193,
+            "maxLum": 0.760417,
+            "anyPct": 100.0,
+            "surfPct": 100.0,
+            "skyPct": 0.0
+          },
+          {
+            "index": 3,
+            "resolution": 4,
+            "dirRes": 16,
+            "meanLum": 0.0454526,
+            "maxLum": 0.0835164,
+            "anyPct": 100.0,
+            "surfPct": 100.0,
+            "skyPct": 0.0
+          }
+        ],
+        "direction_hint": "mixed_probe_contract"
+      }
+    },
+    "sponza": {
+      "status": "ok",
+      "screen": {
+        "status": "ok",
+        "valid": 693,
+        "cascade_mean": 0.273588627576828,
+        "pt_indirect_mean": 0.05887740105390549,
+        "ratio_self": 4.7148027420043945,
+        "p05_rel": 2.6144814491271973,
+        "p50_rel": 3.8200926780700684,
+        "p95_rel": 4.527912616729736,
+        "abs_p95": 4.527912616729736,
+        "dim_pct": 0.0,
+        "bright_pct": 100.0
+      },
+      "probe_contract": {
+        "mean_lum_chain": [
+          0.156862,
+          0.151476,
+          0.125903,
+          0.0472123
+        ],
+        "adjacent_mean_ratios": [
+          1.0355567878739866,
+          1.2031166850670756,
+          2.6667415059211264
+        ],
+        "coverage": [
+          {
+            "index": 0,
+            "resolution": 32,
+            "dirRes": 8,
+            "meanLum": 0.156862,
+            "maxLum": 2.07878,
+            "anyPct": 100.0,
+            "surfPct": 99.1119,
+            "skyPct": 0.0
+          },
+          {
+            "index": 1,
+            "resolution": 16,
+            "dirRes": 16,
+            "meanLum": 0.151476,
+            "maxLum": 0.697266,
+            "anyPct": 100.0,
+            "surfPct": 99.6582,
+            "skyPct": 0.0
+          },
+          {
+            "index": 2,
+            "resolution": 8,
+            "dirRes": 16,
+            "meanLum": 0.125903,
+            "maxLum": 0.435954,
+            "anyPct": 100.0,
+            "surfPct": 100.0,
+            "skyPct": 0.0
+          },
+          {
+            "index": 3,
+            "resolution": 4,
+            "dirRes": 16,
+            "meanLum": 0.0472123,
+            "maxLum": 0.0728556,
+            "anyPct": 100.0,
+            "surfPct": 100.0,
+            "skyPct": 0.0
+          }
+        ],
+        "direction_hint": "mixed_probe_contract"
+      }
+    }
+  },
+  "cross_scene_summary": {
+    "sponza_over_cornell_c0_mean_ratio": 1.2954808232301542,
+    "sponza_over_cornell_screen_cascade_mean_ratio": 1.6095360174038182,
+    "sponza_over_cornell_ratio_self_ratio": 9.731744504820213,
+    "direction": "not_global_probe_chain_energy; prioritize final_sampling_or_reference_local_contract"
+  }
+}

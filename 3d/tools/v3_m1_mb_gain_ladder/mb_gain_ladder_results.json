@@ -1,0 +1,131 @@
+{
+  "sponza": {
+    "0.00": {
+      "status": "ok",
+      "valid": 693,
+      "ratio_self": 0.9689198732376099,
+      "bad_pct": 0.5772005772005772,
+      "p95_abs": 0.2721080780029297,
+      "diag_rgb_max": 0.15869140625,
+      "source": "stage9"
+    },
+    "0.10": {
+      "status": "ok",
+      "valid": 693,
+      "ratio_self": 1.0401538610458374,
+      "bad_pct": 1.7316017316017316,
+      "p95_abs": 0.25307443737983704,
+      "diag_rgb_max": 0.1614990234375,
+      "source": "stage9"
+    },
+    "0.20": {
+      "status": "ok",
+      "valid": 693,
+      "ratio_self": 1.1439038515090942,
+      "bad_pct": 16.017316017316016,
+      "p95_abs": 0.3508244454860687,
+      "diag_rgb_max": 0.16845703125,
+      "source": "stage9"
+    },
+    "0.30": {
+      "status": "ok",
+      "valid": 693,
+      "ratio_self": 1.2675151824951172,
+      "bad_pct": 47.90764790764791,
+      "p95_abs": 0.4924685060977936,
+      "diag_rgb_max": 0.177001953125,
+      "source": "stage9"
+    },
+    "0.40": {
+      "status": "ok",
+      "valid": 693,
+      "ratio_self": 1.4181172847747803,
+      "bad_pct": 73.16017316017316,
+      "p95_abs": 0.6666046380996704,
+      "diag_rgb_max": 0.1871337890625,
+      "source": "stage9"
+    },
+    "0.50": {
+      "status": "ok",
+      "valid": 693,
+      "ratio_self": 1.6128158569335938,
+      "bad_pct": 90.04329004329004,
+      "p95_abs": 0.8888323307037354,
+      "diag_rgb_max": 0.1998291015625,
+      "source": "stage8_mb_half"
+    },
+    "1.00": {
+      "status": "ok",
+      "valid": 693,
+      "ratio_self": 4.7148027420043945,
+      "bad_pct": 100.0,
+      "p95_abs": 4.527912616729736,
+      "diag_rgb_max": 0.390869140625,
+      "source": "stage7"
+    }
+  },
+  "cornell": {
+    "0.25": {
+      "status": "ok",
+      "valid": 36956,
+      "ratio_self": 0.23726795613765717,
+      "bad_pct": 0.46000649420933004,
+      "p95_abs": 0.8990567922592163,
+      "diag_rgb_max": 0.257080078125,
+      "source": "stage9"
+    },
+    "0.50": {
+      "status": "ok",
+      "valid": 36970,
+      "ratio_self": 0.28631871938705444,
+      "bad_pct": 0.9223694887746822,
+      "p95_abs": 0.8801607489585876,
+      "diag_rgb_max": 0.28955078125,
+      "source": "stage9"
+    },
+    "0.75": {
+      "status": "ok",
+      "valid": 36996,
+      "ratio_self": 0.36056509613990784,
+      "bad_pct": 1.5866580170829279,
+      "p95_abs": 0.8566078543663025,
+      "diag_rgb_max": 0.34130859375,
+      "source": "stage9"
+    },
+    "1.00": {
+      "status": "ok",
+      "valid": 37036,
+      "ratio_self": 0.49231481552124023,
+      "bad_pct": 3.855707959822875,
+      "p95_abs": 0.856779932975769,
+      "diag_rgb_max": 0.4296875,
+      "source": "stage8_cornell_base"
+    }
+  },
+  "sc1_gain0_vs_mb_off_equivalence": {
+    "stage9_gain0_p95": 0.2721080780029297,
+    "stage8_mb_off_p95": 0.2721080780029297,
+    "abs_diff": 0.0,
+    "equivalent_within_1pct": true
+  },
+  "crossing_estimate_p95_eq_050": 0.30432506098282075,
+  "cornell_tolerance_violations": [
+    {
+      "gain": 0.25,
+      "p95_rise": 0.042276859283447266,
+      "ratio_drop": 0.25504685938358307
+    },
+    {
+      "gain": 0.5,
+      "p95_rise": 0.023380815982818604,
+      "ratio_drop": 0.2059960961341858
+    },
+    {
+      "gain": 0.75,
+      "p95_rise": -0.00017207860946655273,
+      "ratio_drop": 0.1317497193813324
+    }
+  ],
+  "fork_recommendation": "FORK_PER_SCENE_OR_PROBE",
+  "narrative": "Crossing \u2248 0.304; Cornell at gain=0.5 violates tolerance (|p95| rise=+0.023, ratio_self drop=+0.206). No single global gain works; Stage 10 must pursue per-scene (Fork A) or probe-local (Fork B) gain."
+}

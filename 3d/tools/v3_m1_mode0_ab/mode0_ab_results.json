@@ -1,0 +1,121 @@
+{
+  "variants": {
+    "sponza_g010": {
+      "status": "ok",
+      "valid": 1965,
+      "composite_rms": 0.019604917615652084,
+      "composite_rms_clamped": 0.01945485547184944,
+      "composite_mae": 0.014673544093966484,
+      "composite_mean_relative_error": 0.10968808084726334,
+      "direct_share": 0.8770888447761536,
+      "synth_sanity_ratio_vs_png": 204.89291381835938,
+      "side_by_side_png": "tools\\v3_m1_mode0_ab\\visuals\\sponza_g010_synth_vs_pt.png"
+    },
+    "sponza_g050": {
+      "status": "ok",
+      "valid": 1965,
+      "composite_rms": 0.045803315937519073,
+      "composite_rms_clamped": 0.04447195678949356,
+      "composite_mae": 0.042427510023117065,
+      "composite_mean_relative_error": 0.32656294107437134,
+      "direct_share": 0.8770888447761536,
+      "synth_sanity_ratio_vs_png": 83.21595001220703,
+      "side_by_side_png": "tools\\v3_m1_mode0_ab\\visuals\\sponza_g050_synth_vs_pt.png"
+    },
+    "sponza_g100": {
+      "status": "ok",
+      "valid": 1965,
+      "composite_rms": 0.20600752532482147,
+      "composite_rms_clamped": 0.19069676101207733,
+      "composite_mae": 0.20152010023593903,
+      "composite_mean_relative_error": 1.5679004192352295,
+      "direct_share": 0.8770888447761536,
+      "synth_sanity_ratio_vs_png": 11.207666397094727,
+      "side_by_side_png": "tools\\v3_m1_mode0_ab\\visuals\\sponza_g100_synth_vs_pt.png"
+    },
+    "sponza_hybrid": {
+      "status": "ok",
+      "valid": 1965,
+      "composite_rms": 0.00999534409493208,
+      "composite_rms_clamped": 0.009577324613928795,
+      "composite_mae": 0.00889694131910801,
+      "composite_mean_relative_error": 0.0651308000087738,
+      "direct_share": 0.8770888447761536,
+      "synth_sanity_ratio_vs_png": 362.20123291015625,
+      "side_by_side_png": "tools\\v3_m1_mode0_ab\\visuals\\sponza_hybrid_synth_vs_pt.png"
+    },
+    "cornell_g010": {
+      "status": "ok",
+      "valid": 37226,
+      "composite_rms": 0.39445751905441284,
+      "composite_rms_clamped": 0.3892257809638977,
+      "composite_mae": 0.3375369608402252,
+      "composite_mean_relative_error": 0.4428006112575531,
+      "direct_share": 0.4865272045135498,
+      "synth_sanity_ratio_vs_png": 96.02920532226562,
+      "side_by_side_png": "tools\\v3_m1_mode0_ab\\visuals\\cornell_g010_synth_vs_pt.png"
+    },
+    "cornell_g050": {
+      "status": "ok",
+      "valid": 37226,
+      "composite_rms": 0.36777791380882263,
+      "composite_rms_clamped": 0.36256909370422363,
+      "composite_mae": 0.3123635947704315,
+      "composite_mean_relative_error": 0.4080440104007721,
+      "direct_share": 0.4865272045135498,
+      "synth_sanity_ratio_vs_png": 54.9821891784668,
+      "side_by_side_png": "tools\\v3_m1_mode0_ab\\visuals\\cornell_g050_synth_vs_pt.png"
+    },
+    "cornell_g100": {
+      "status": "ok",
+      "valid": 37226,
+      "composite_rms": 0.2991695702075958,
+      "composite_rms_clamped": 0.29404768347740173,
+      "composite_mae": 0.24957549571990967,
+      "composite_mean_relative_error": 0.33599746227264404,
+      "direct_share": 0.4865272045135498,
+      "synth_sanity_ratio_vs_png": 19.16008949279785,
+      "side_by_side_png": "tools\\v3_m1_mode0_ab\\visuals\\cornell_g100_synth_vs_pt.png"
+    },
+    "cornell_hybrid": {
+      "status": "ok",
+      "valid": 37226,
+      "composite_rms": 0.27040547132492065,
+      "composite_rms_clamped": 0.2652929127216339,
+      "composite_mae": 0.23102232813835144,
+      "composite_mean_relative_error": 0.3104764521121979,
+      "direct_share": 0.4865272045135498,
+      "synth_sanity_ratio_vs_png": 18.322168350219727,
+      "side_by_side_png": "tools\\v3_m1_mode0_ab\\visuals\\cornell_hybrid_synth_vs_pt.png"
+    }
+  },
+  "verdicts": {
+    "sponza": {
+      "verdict": "STAGE8_9_VINDICATED",
+      "hybrid_rms": 0.00999534409493208,
+      "excess_rms_over_hybrid": {
+        "sponza_g010": 0.009609573520720005,
+        "sponza_g050": 0.035807971842586994,
+        "sponza_g100": 0.1960121812298894
+      },
+      "competitive_with_hybrid": [],
+      "mode0_best_gain_key": "sponza_g010",
+      "mode0_best_rms": 0.019604917615652084,
+      "mode17_winning_gain_key": "sponza_g010"
+    },
+    "cornell": {
+      "verdict": "STAGE8_9_VINDICATED",
+      "hybrid_rms": 0.27040547132492065,
+      "excess_rms_over_hybrid": {
+        "cornell_g010": 0.12405204772949219,
+        "cornell_g050": 0.09737244248390198,
+        "cornell_g100": 0.02876409888267517
+      },
+      "competitive_with_hybrid": [],
+      "mode0_best_gain_key": "cornell_g100",
+      "mode0_best_rms": 0.2991695702075958,
+      "mode17_winning_gain_key": "cornell_g100"
+    }
+  },
+  "tolerance_frac": 0.05
+}

@@ -1,0 +1,10 @@
+[m1-stage11c] m1stage11c_cornell_directional_N2048_m17 -> tools/v3_m1_cornell_light_type/captures_cornell_directional/m1stage11c_cornell_directional_N2048_m17.log
+[m1-stage11c] m1stage11c_cornell_directional_N2048_m17 exit=0
+  moved: m1stage11c_cornell_directional_N2048_m17.png
+  moved: m1stage11c_cornell_directional_N2048_m17_cascade_gi.exr
+  moved: m1stage11c_cornell_directional_N2048_m17_pt_full.exr
+  moved: m1stage11c_cornell_directional_N2048_m17_pt_direct.exr
+  moved: m1stage11c_cornell_directional_N2048_m17_gbuffer.exr
+  moved: m1stage11c_cornell_directional_N2048_m17_probe_diag.exr
+  moved: m1stage11c_cornell_directional_N2048_m17_probe_contrib.exr
+  moved: m1stage11c_cornell_directional_N2048_m17_probe_bin.exr

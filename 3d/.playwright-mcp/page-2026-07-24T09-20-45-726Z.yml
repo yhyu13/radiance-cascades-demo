@@ -1,0 +1,102 @@
+- generic [active] [ref=f13e1]:
+  - heading "Old RC vs New RC vs PT — Same Scene (Legacy Cornell Box)" [level=1] [ref=f13e2]
+  - generic [ref=f13e3]: Captured 2026-07-24 · branch 3d_v4.0 · NVIDIA RTX 2080 SUPER · same scene, same camera, different GI algorithm
+  - generic [ref=f13e4]:
+    - text: "Controlled setup. All three images render the legacy Cornell box (red/green walls, white walls, tall/short boxes, ceiling light) from the legacy camera (0,0,4)→(0,0,0) fovy 60, 640×480. NEW and PT use the identical emissive ceiling quad light; OLD uses the legacy renderer's point light. This capture is after three fixes: PT vertical flip, a capture-path corruption that produced garish color blobs (raylib"
+    - code [ref=f13e5]: LoadImageFromTexture
+    - text: on RGBA32F textures), and the merge upper-band offset for small charts.
+  - heading "Three-way comparison" [level=2] [ref=f13e6]
+  - generic [ref=f13e7]:
+    - generic [ref=f13e8]:
+      - heading "OLD — legacy volumetric RC (current app visual)" [level=3] [ref=f13e9]
+      - img "legacy volumetric GI" [ref=f13e10]
+      - generic [ref=f13e11]: Demo3D cascade GI, 180 frames, point light · luminance mean 63.03 (own light calibration)
+    - generic [ref=f13e12]:
+      - heading "NEW — reference surface RC on legacy Cornell (this work)" [level=3] [ref=f13e13]
+      - img "new RC on legacy Cornell" [ref=f13e14]
+      - generic [ref=f13e15]: Six cascades, weighted merge, four-bin feedback, 24 frames, emissive ceiling quad · luminance mean 7.33
+    - generic [ref=f13e16]:
+      - heading "PT — path tracer, same scene (quality reference)" [level=3] [ref=f13e17]
+      - img "PT legacy Cornell" [ref=f13e18]
+      - generic [ref=f13e19]: Deterministic CPU PT, 64 spp × 5 bounces, same emissive quad · luminance mean 5.11
+  - heading "What's correct, what's limited" [level=2] [ref=f13e20]
+  - generic [ref=f13e21]:
+    - text: "Correct and matching PT: red/green wall color bleeding, white-wall and floor illumination, the bright spot under the ceiling light, box shadows on the floor, and overall wall/ceiling energy (left/right/top regions match PT within ~10%). The earlier garish blobs were a capture-path corruption ("
+    - code [ref=f13e22]: LoadImageFromTexture
+    - text: inflating the blue channel and zeroing patches on RGBA32F textures) — not an algorithm bug — and are now gone after reading with
+    - code [ref=f13e23]: glGetTexImage
+    - text: directly.
+  - generic [ref=f13e24]:
+    - text: "Limitation — dark boxes (diagnosed, not a bug): the two boxes are black in NEW while PT shows lit tops and dim sides. Three compounding reasons, all honest:"
+    - list [ref=f13e25]:
+      - listitem [ref=f13e26]: No direct-light path for an emissive source. The kernel's direct term D is directional-sun only (disabled here). The ceiling light is an emissive quad, so box tops receive light only through bounce feedback — they must wait for light to arrive via the cascade hierarchy and temporal feedback.
+      - listitem [ref=f13e27]: Conservative merge visibility on small box geometry. The weighted merge rejects look-back candidates whose rays cross the small box rims, so upper-cascade light (present at C3–C5 on the box tops) does not propagate down to the C0/C1 box-top bins the final view reads. Large walls receive light easily; small elevated box tops do not. This is the technique's own trade-off, not a port error (CPU and GPU agree).
+      - listitem [ref=f13e28]: Box sides are uncharted in this integration (they get direct light and cast shadows but no bounce), so sides are darker than PT. Box tops are charted.
+    - text: Charting all box faces and relaxing nothing else is the honest next step to lift the boxes toward PT, tracked for the scene-generalization phase.
+  - heading "Measured statistics (linear luminance)" [level=2] [ref=f13e29]
+  - table [ref=f13e30]:
+    - rowgroup [ref=f13e31]:
+      - row [ref=f13e32]:
+        - columnheader "region" [ref=f13e33]
+        - columnheader "NEW" [ref=f13e34]
+        - columnheader "PT" [ref=f13e35]
+        - columnheader "ratio" [ref=f13e36]
+        - columnheader "reading" [ref=f13e37]
+      - row [ref=f13e38]:
+        - cell "whole image" [ref=f13e39]
+        - cell "7.33" [ref=f13e40]
+        - cell "5.11" [ref=f13e41]
+        - cell "1.43" [ref=f13e42]
+        - cell "NEW brighter (small-light coarse-bin aliasing, documented)" [ref=f13e43]
+      - row [ref=f13e44]:
+        - cell "left (red wall)" [ref=f13e45]
+        - cell "0.73" [ref=f13e46]
+        - cell "0.83" [ref=f13e47]
+        - cell "0.88" [ref=f13e48]
+        - cell "match" [ref=f13e49]
+      - row [ref=f13e50]:
+        - cell "center (back wall + light)" [ref=f13e51]
+        - cell "19.70" [ref=f13e52]
+        - cell "13.02" [ref=f13e53]
+        - cell "1.51" [ref=f13e54]
+        - cell "coarse-bin small-light aliasing" [ref=f13e55]
+      - row [ref=f13e56]:
+        - cell "right (green wall)" [ref=f13e57]
+        - cell "1.60" [ref=f13e58]
+        - cell "1.49" [ref=f13e59]
+        - cell "1.07" [ref=f13e60]
+        - cell "match" [ref=f13e61]
+      - row [ref=f13e62]:
+        - cell "top (ceiling)" [ref=f13e63]
+        - cell "3.48" [ref=f13e64]
+        - cell "3.71" [ref=f13e65]
+        - cell "0.94" [ref=f13e66]
+        - cell "match" [ref=f13e67]
+      - row [ref=f13e68]:
+        - cell "bottom (floor)" [ref=f13e69]
+        - cell "11.19" [ref=f13e70]
+        - cell "6.50" [ref=f13e71]
+        - cell "1.72" [ref=f13e72]
+        - cell "coarse-bin small-light aliasing" [ref=f13e73]
+  - heading "Parity-scene context (different scene)" [level=2] [ref=f13e74]
+  - generic [ref=f13e75]:
+    - generic [ref=f13e76]:
+      - heading "NEW on ShaderToy parity Cornell" [level=3] [ref=f13e77]
+      - img "parity scene" [ref=f13e78]
+      - generic [ref=f13e79]: The locked parity target. Validated G0–G9; within ~13% of parity PT.
+    - generic [ref=f13e80]:
+      - heading "Parity-scene PT" [level=3] [ref=f13e81]
+      - img "parity PT" [ref=f13e82]
+      - generic [ref=f13e83]: Same scene/camera PT of the locked parity Cornell.
+  - generic [ref=f13e84]:
+    - text: "Artifacts: this page, all PNGs, and stats live in"
+    - code [ref=f13e85]: 3d/tools/10_refactor/phase7_final/compare/
+    - text: ". Regenerate:"
+    - code [ref=f13e86]: "--legacy-render"
+    - text: ","
+    - code [ref=f13e87]: "--legacy-pt-shot"
+    - text: ","
+    - code [ref=f13e88]: "--validate-reference-legacy"
+    - text: ". Gate reports:"
+    - code [ref=f13e89]: tools/10_refactor/phase*/runs/
+    - text: .

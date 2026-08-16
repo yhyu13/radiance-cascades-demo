@@ -1,0 +1,20 @@
+[m1-stage11b] m1stage11b_cornell_cam1_g100_N2048_m17 -> tools/v3_m1_cornell_audit/captures_cornell_cam1/m1stage11b_cornell_cam1_g100_N2048_m17.log
+[m1-stage11b] m1stage11b_cornell_cam1_g100_N2048_m17 exit=0
+  moved: m1stage11b_cornell_cam1_g100_N2048_m17.png
+  moved: m1stage11b_cornell_cam1_g100_N2048_m17_cascade_gi.exr
+  moved: m1stage11b_cornell_cam1_g100_N2048_m17_pt_full.exr
+  moved: m1stage11b_cornell_cam1_g100_N2048_m17_pt_direct.exr
+  moved: m1stage11b_cornell_cam1_g100_N2048_m17_gbuffer.exr
+  moved: m1stage11b_cornell_cam1_g100_N2048_m17_probe_diag.exr
+  moved: m1stage11b_cornell_cam1_g100_N2048_m17_probe_contrib.exr
+  moved: m1stage11b_cornell_cam1_g100_N2048_m17_probe_bin.exr
+[m1-stage11b] m1stage11b_cornell_cam2_g100_N2048_m17 -> tools/v3_m1_cornell_audit/captures_cornell_cam2/m1stage11b_cornell_cam2_g100_N2048_m17.log
+[m1-stage11b] m1stage11b_cornell_cam2_g100_N2048_m17 exit=0
+  moved: m1stage11b_cornell_cam2_g100_N2048_m17.png
+  moved: m1stage11b_cornell_cam2_g100_N2048_m17_cascade_gi.exr
+  moved: m1stage11b_cornell_cam2_g100_N2048_m17_pt_full.exr
+  moved: m1stage11b_cornell_cam2_g100_N2048_m17_pt_direct.exr
+  moved: m1stage11b_cornell_cam2_g100_N2048_m17_gbuffer.exr
+  moved: m1stage11b_cornell_cam2_g100_N2048_m17_probe_diag.exr
+  moved: m1stage11b_cornell_cam2_g100_N2048_m17_probe_contrib.exr
+  moved: m1stage11b_cornell_cam2_g100_N2048_m17_probe_bin.exr

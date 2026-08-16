@@ -1,0 +1,99 @@
+- generic [active] [ref=e1]:
+  - heading "Old vs New vs PT — Visual Comparison (Phase 7 checkpoint)" [level=1] [ref=e2]
+  - generic [ref=e3]: Captured 2026-07-24 · branch 3d_v4.0 · commit 7eb6f66 · NVIDIA RTX 2080 SUPER · all images 640×480 unless noted
+  - generic [ref=e4]: What you are looking at. Three renderers of Cornell-box-style scenes. Old is the legacy volumetric radiance-cascades GI that ships in the app today. New is the Phase 2–7 reference surface-RC kernel (ShaderToy parity scene) rendered through the validated C0 contract. PT is the legacy path-traced reference of the legacy scene (ground-truth-ish for the old image only — the reference kernel has no PT yet; that comparison is Phase 8's non-blocking quality report).
+  - heading "Main comparison" [level=2] [ref=e5]
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - heading "OLD — legacy volumetric GI (current app visual)" [level=3] [ref=e8]
+      - img "legacy volumetric GI" [ref=e9]
+      - generic [ref=e10]: Demo3D legacy analytic Cornell · cascade GI on, 180 frames · render-mode 0 · deterministic seed · luminance mean 63.0
+    - generic [ref=e11]:
+      - heading "NEW — reference surface RC (Phase 7, G9-validated)" [level=3] [ref=e12]
+      - img "reference surface RC" [ref=e13]
+      - generic [ref=e14]: "ShaderToy parity Cornell · six cascades + temporal feedback, 24 frames · display policy: 8× exposure + γ2.2 for viewing (validated pixels are linear) · luminance mean 62.6"
+    - generic [ref=e15]:
+      - heading "PT — legacy path-traced reference (legacy scene ground truth)" [level=3] [ref=e16]
+      - img "legacy PT reference" [ref=e17]
+      - generic [ref=e18]: Legacy PT accumulator · render-mode 16, 200 frames · luminance mean 60.0, higher variance (stddev 94 vs 79 for GI)
+  - heading "Validated evidence panels (G9 artifacts, 320×240, linear)" [level=2] [ref=e19]
+  - generic [ref=e20]:
+    - generic [ref=e21]:
+      - heading "NEW — linear validated output" [level=3] [ref=e22]
+      - img "G9 linear final" [ref=e23]
+      - generic [ref=e24]: "The exact pixels the G9 gate compared against the CPU oracle (76,800/76,800 pass). Dark is physically correct: the room is enclosed, sun enters only through ceiling blades."
+    - generic [ref=e25]:
+      - heading "Baseline — reference disabled (direct only)" [level=3] [ref=e26]
+      - img "G9 baseline" [ref=e27]
+      - generic [ref=e28]: "All black and matches the CPU baseline exactly: from this camera, no surface receives direct sun and no ray reaches sky. Every visible photon in the NEW image is indirect transport."
+  - heading "Measured statistics (8-bit channel values)" [level=2] [ref=e29]
+  - table [ref=e30]:
+    - rowgroup [ref=e31]:
+      - row [ref=e32]:
+        - columnheader "image" [ref=e33]
+        - columnheader "mean R" [ref=e34]
+        - columnheader "mean G" [ref=e35]
+        - columnheader "mean B" [ref=e36]
+        - columnheader "lum mean" [ref=e37]
+        - columnheader "lum σ" [ref=e38]
+        - columnheader "left (R,G,B)" [ref=e39]
+        - columnheader "center (R,G,B)" [ref=e40]
+        - columnheader "right (R,G,B)" [ref=e41]
+      - row [ref=e42]:
+        - cell "OLD legacy GI" [ref=e43]
+        - cell "64.11" [ref=e44]
+        - cell "63.52" [ref=e45]
+        - cell "55.08" [ref=e46]
+        - cell "63.03" [ref=e47]
+        - cell "79.13" [ref=e48]
+        - cell "39.5 / 24.0 / 23.0 red bleed" [ref=e49]
+        - cell "128.1 / 126.8 / 118.9" [ref=e50]
+        - cell "24.9 / 39.9 / 23.5 green bleed" [ref=e51]
+      - row [ref=e52]:
+        - cell "NEW reference RC" [ref=e53]
+        - cell "46.44" [ref=e54]
+        - cell "69.51" [ref=e55]
+        - cell "42.25" [ref=e56]
+        - cell "62.64" [ref=e57]
+        - cell "56.40" [ref=e58]
+        - cell "16.9 / 19.7 / 14.1" [ref=e59]
+        - cell "57.0 / 85.3 / 52.7" [ref=e60]
+        - cell "65.4 / 103.4 / 59.9 sun-lit green wall" [ref=e61]
+      - row [ref=e62]:
+        - cell "PT legacy reference" [ref=e63]
+        - cell "61.14" [ref=e64]
+        - cell "60.42" [ref=e65]
+        - cell "51.75" [ref=e66]
+        - cell "59.95" [ref=e67]
+        - cell "94.31" [ref=e68]
+        - cell "27.9 / 20.1 / 17.6 red bleed" [ref=e69]
+        - cell "134.8 / 133.1 / 119.8" [ref=e70]
+        - cell "20.9 / 28.3 / 18.1 green bleed" [ref=e71]
+      - row [ref=e72]:
+        - cell "G9 linear (320×240)" [ref=e73]
+        - cell "1.48" [ref=e74]
+        - cell "3.61" [ref=e75]
+        - cell "1.24" [ref=e76]
+        - cell "2.98" [ref=e77]
+        - cell "3.04" [ref=e78]
+        - cell "same image as NEW before display mapping" [ref=e79]
+      - row [ref=e80]:
+        - cell "G9 baseline direct-only" [ref=e81]
+        - cell "0.0" [ref=e82]
+        - cell "0.0" [ref=e83]
+        - cell "0.0" [ref=e84]
+        - cell "0.0" [ref=e85]
+        - cell "0.0" [ref=e86]
+        - cell "no direct light visible from this camera" [ref=e87]
+  - heading "Reading the differences" [level=2] [ref=e88]
+  - generic [ref=e89]: "Old vs PT (same legacy scene): luminance means 63.0 vs 60.0 — legacy volumetric GI approximates its own PT reference within ~5% mean energy, with the expected red/green wall bleeding on the correct sides. PT shows more variance noise at 200 frames. This is the old renderer behaving as designed."
+  - generic [ref=e90]: "New vs Old/PT is NOT expected to match: the NEW image renders the ShaderToy parity Cornell (locked materials, enclosed room, sun only through animated ceiling blades, mirror sphere/box, black uncharted cylinders), not the legacy scene. Dominant green cast is physically correct there: the green wall (0.05, 0.95, 0.1) is sun-facing with ~9.5× the red wall's effective reflectance, and the red wall faces away from the sun. The legacy scene uses different geometry, lights, and its own calibration, so cross-scene pixel comparison is meaningless by design."
+  - generic [ref=e91]: "Display mapping caveat: only the NEW 640×480 panel has exposure 8× + gamma 2.2 applied for human viewing (display policy; transport and G9-validated pixels remain linear). OLD and PT panels are shown as their renderers output them."
+  - heading "What's next — Phase 8 (Cornell semantic parity milestone)" [level=2] [ref=e92]
+  - generic [ref=e93]: "Run G0–G10 from a clean launch in one report; capture deterministic diagnostic artifacts; compare native reference output against a PT rendering of the parity scene as a non-blocking quality report (new apples-to-apples PT comparison, replacing this page's cross-scene caveat); document any deliberate differences from ShaderToy; no progression if a difference alters a locked invariant. Exit condition: all semantic gates pass in one report, no hidden calibration constants, stable indirect transport and color bleeding — labeled semantic parity, not general mesh support."
+  - generic [ref=e94]:
+    - text: "Artifacts: this page, stats.json, and the five PNGs live in"
+    - code [ref=e95]: 3d/tools/10_refactor/phase7_final/compare/
+    - text: ". Regenerate captures with the commands in the Phase 7 README. Gate reports:"
+    - code [ref=e96]: tools/10_refactor/phase*/runs/
+    - text: .
