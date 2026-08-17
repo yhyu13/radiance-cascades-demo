@@ -318,3 +318,43 @@ most bins are occluded. The corrected form keeps the renormalization (the correc
 α-gate excluding surface-hit bins (A5 payload migration) + multi-bounce under-emit (A8,
 journey H-A'), now visible because the corrected mask counts dark pixels as failures.
 **A2 does not pass its gate; do not proceed to A3 on A2's strength alone.**
+
+### 7.2 A5 — consumer α-gate (measured)
+
+The α-gate in `sampleProbeDir` (`w = wcos·ΔΩ·a.a`) excluded surface-hit bins (`α=0`),
+throwing away the wall radiance that dominates an enclosed box. Removing it (A5 step 1,
+`ddaa997`) recovers ~50% of the under-emit:
+
+| config | ratio (corrected mask) | dim% |
+|---|---|---|
+| ΔΩ + α-gate | 0.43 | 88% |
+| ΔΩ, no α-gate (A5 step 1) | **0.66** | 67% |
+
+Consumer is now a plain cos-weighted average radiance (matches the reference's
+"bake weights, consume plain sum"). Leak prevention must move to the merge
+(`sampleUpperDirWeighted`) distance channel — **A5 step 2, not yet done**.
+
+### 7.3 A6/A4 — single-bounce isolation + light parity (measured)
+
+| config | ratio (corrected mask) |
+|---|---|
+| no α-gate, MB on | 0.66 |
+| no α-gate, **MB off (single-bounce)** | **0.22** |
+
+Single-bounce under-emits ~4.5× — this is the point-light geometry (journey Stage 11c,
+"`--light-direction` closes 87% of the gap"). Multi-bounce (current stochastic MC)
+recovers 0.22 → 0.66 but remains short of 0.90.
+
+**A4 blocked on the PT reference:** switching the cascade to ShaderToy's directional sun
+(`--light-direction=-0.6755,1,0.7374`) makes the PT reference go black (it is
+point-light-only), so CV1 is uncomputable (valid mask = 0 pixels). A4 requires extending
+the PT reference to the same directional sun + sky before it can be validated.
+
+### 7.4 Re-prioritized remaining order (measurement-driven)
+
+1. **A4-prime** — extend `pt_reference.comp` to directional sun + sky; then switch the
+   cascade to sun+sky. Biggest single-bounce lever (Stage 11c: 87% of gap).
+2. **A8** — deterministic multi-bounce (prev-C0 feedback) for the residual H-A'.
+3. **A5 step 2** — merge distance channel (leak prevention, currently absent).
+4. **A7** — bake-side ΔΩ weighting (moderate).
+5. **A3** — geometry parity (NOT CV1-critical; cascade-vs-PT is same-scene).
