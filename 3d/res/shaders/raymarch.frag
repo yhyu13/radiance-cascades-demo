@@ -444,12 +444,13 @@ ProbeSample sampleProbeDir(ivec3 pc, vec3 normal, int D) {
             float wcos   = max(0.0, dot(bdir, normal));
             vec4  a      = texelFetch(uDirectionalAtlas,
                                       ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
-            // A2: octahedral per-bin solid angle weight (only change vs pre-A2).
-            // The renormalized cos-weighted average radiance is kept — it is the
-            // correct Lambert L_bar = E/pi; dropping it (raw E * 1/pi) under-emits
-            // when most bins are occluded (alpha=0). See A2 CV1 gate (ratio 0.26).
+            // A2: octahedral per-bin solid angle weight.
+            // A5: no alpha-gate in the consumer — surface-hit bins store the wall's
+            // outgoing radiance, which IS the signal; gating by alpha=0 threw it away
+            // (the ~2x under-emit measured in the A2 CV1 gate). Visibility moves to the
+            // merge (sampleUpperDirWeighted) with a proper distance channel.
             float dOmega = uSolidAngleLUT[dy * D + dx];
-            float w      = wcos * dOmega * a.a;
+            float w      = wcos * dOmega;
             irrad   += a.rgb * w;
             wsum    += w;
             wcosSum += wcos;
@@ -482,7 +483,7 @@ ProbeDirDetail sampleProbeDirDetail(ivec3 pc, vec3 normal, int D) {
             float wcos = max(0.0, dot(bdir, normal));
             vec4  a    = texelFetch(uDirectionalAtlas,
                                     ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
-            float w    = wcos * uSolidAngleLUT[dy * D + dx] * a.a;
+            float w    = wcos * uSolidAngleLUT[dy * D + dx];   // A5: no alpha-gate in consumer
             irrad   += a.rgb * w;
             wsum    += w;
             wcosSum += wcos;
