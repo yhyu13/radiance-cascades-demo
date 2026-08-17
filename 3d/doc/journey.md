@@ -113,12 +113,27 @@
 
 ---
 
-## Era 10 — Phase 11 generalization (current, 2026-08)
+## Era 10 — Phase 11 generalization (2026-08)
 
 | ME | YOU |
 |---|---|
 | "Generalize the proven kernel from hardcoded Cornell charts to real mesh surfaces (Sponza)." | Wrote `generalization_design.md`: the **chart stays the radiance atom**; only the chart-provider and tracer-integration seams change. Recommended authored UV2 charts + a new kind-5 mesh-island trace primitive; rejected AABB/box proxies and surfel pages. |
 | **"Dump the JOURNEY doc (two columns ME / YOU)."** | This document. |
+
+---
+
+## Era 11 — Cornell-box audit: volumetric RC vs ShaderToy (2026-08-17, current)
+
+| ME | YOU |
+|---|---|
+| "The Sponza scene is too complex for our SDF — the SDF isn't good enough for RC. Use the Cornell box instead to test the new RC." | Audited the SDF and confirmed: analytic Cornell is a clean signed field (**good enough**); Sponza's mesh path is a clamped UDF of a hollow surface shell that trilinear-march tunnels through (**not good enough**). The switch is correct. |
+| "Systematically examine the new RC against the ShaderToy reference — concept + implementation, plan the gap, is the SDF correct, is the RC correct, then renderdoc a frame. Long task: use swarm agents + the rigorous-proof skill." | Ran a 5-agent swarm + adversarial audit (rigorous-proof methodology: pin the claim, diverse portfolio, audit for gaps/handwaving/circularity). Wrote `doc/12_cornell_rc_audit/rc_audit_report.md`. |
+| *(headline finding)* | The consumer contract the project **believes it shipped** — `irrad = (4/D²)·Σ(L·cos⁺)` (Era 7, "CV1 0.650 → 0.846") — **is not in the committed code.** `raymarch.frag` still uses renormalized `Σ(L·cos·α)/Σ(cos·α)`; `(4/D²)` exists only in unapplied `diff_remote.patch`. Provenance gap: fix was measured on another branch or reverted in `dd4f5df`. |
+| *(concept diff)* | 8 concept divergences: surface-charts vs uniform 3D grid; analytic trace vs SDF-march; square-ring hemisphere vs octahedral full-sphere; cubemap hit-distance `.w` vs binary α `.a`; sun+sky vs point-light + env-fill-OFF (default). |
+| *(RC correctness)* | **PARTIALLY correct.** Octahedral round-trip, cos⁺ orientation, merge blend all correct. Top-3 defects: (1) `sampleUpperDirWeighted` reads upper atlas `.a` as a hit distance but the bake writes binary α; (2) consumer missing the octahedral Jacobian + `(4/D²)`; (3) `reduction_3d` unweighted D² average. |
+| *(renderdoc)* | Rebuilt + ran headless (`--runtime-shell=legacy --auto-rdoc --exit-frames=3000`), captured analytic-Cornell frame 420. GPU ≈ 37.7 ms; C2 bake is the hotspot (11.2 ms for 512 probes → march-length, not probe-count). Full report: `doc/12_cornell_rc_audit/renderdoc_report.md`. |
+| *(discovery: app-shell split)* | The Phase-10 refactor made the default `app3d` shell run the surface-RC reference; the volumetric RC now runs behind `--runtime-shell=legacy`. Also: the auto-analysis scripts fail under the default Python 2.7 (non-ASCII source) — `rdoc_extract.py` is fine (qrenderdoc's Python 3.6). |
+| **"Dump to JOURNEY.md."** | This entry. |
 
 ---
 
