@@ -16,6 +16,7 @@
 #include "demo3d.h"
 #include "exr_writer.h"
 #include "config.h"
+#include "octahedral_solid_angle.h"
 // Note: <windows.h> is intentionally NOT included here — it conflicts with raylib.h
 // via winuser.h (CloseWindow / ShowCursor overload clash). Windows API calls for
 // RenderDoc DLL loading are isolated in rdoc_helper.cpp.
@@ -2905,6 +2906,15 @@ void Demo3D::raymarchPass() {
         glm::ivec3 atlasVolSize(cascades[selC].resolution);
         glUniform3iv(glGetUniformLocation(prog, "uAtlasVolumeSize"), 1, glm::value_ptr(atlasVolSize));
         glUniform1i(glGetUniformLocation(prog, "uAtlasDirRes"),      cascadeDirRes[selC]);
+        // A2: per-bin octahedral solid-angle LUT for the consumer (matches uAtlasDirRes).
+        {
+            GLint lutLoc = glGetUniformLocation(prog, "uSolidAngleLUT");
+            if (lutLoc >= 0) {
+                glUniform1fv(lutLoc, 256,
+                             (cascadeDirRes[selC] >= 16) ? kOctaSolidAngleD16
+                                                         : kOctaSolidAngleD8);
+            }
+        }
         atlasAvailable = true;
     }
     glUniform1i(glGetUniformLocation(prog, "uUseDirectionalGI"), (useDirectionalGI && atlasAvailable) ? 1 : 0);

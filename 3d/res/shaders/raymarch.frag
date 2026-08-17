@@ -197,6 +197,10 @@ uniform vec3 uAtlasGridSize;
 /** Phase 5g: directional resolution D for the C0 atlas */
 uniform int uAtlasDirRes;
 
+/** A2: per-bin octahedral solid angle (steradians), indexed [dy*D+dx].
+ *  Uploaded from kOctaSolidAngleD8 / kOctaSolidAngleD16 (padded to 256). */
+uniform float uSolidAngleLUT[256];
+
 /** Phase 5g: 1=cosine-weighted directional atlas sampling, 0=isotropic average (default) */
 uniform int uUseDirectionalGI;
 
@@ -430,26 +434,28 @@ struct DirectionalDetail {
 
 ProbeSample sampleProbeDir(ivec3 pc, vec3 normal, int D) {
     vec3  irrad   = vec3(0.0);
-    float wsum    = 0.0;        // sum(wcos * a.a) — for irrad normalization
     float wcosSum = 0.0;        // sum(wcos)        — for oscillation normalization
     vec3  leakRgb = vec3(0.0);
     float oscSum  = 0.0;        // sum(wcos * 4*a.a*(1-a.a))
     for (int dy = 0; dy < D; ++dy) {
         for (int dx = 0; dx < D; ++dx) {
-            vec3  bdir = binToDir(ivec2(dx, dy), D);
-            float wcos = max(0.0, dot(bdir, normal));
-            vec4  a    = texelFetch(uDirectionalAtlas,
-                                    ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
-            float w    = wcos * a.a;
+            vec3  bdir   = binToDir(ivec2(dx, dy), D);
+            float wcos   = max(0.0, dot(bdir, normal));
+            vec4  a      = texelFetch(uDirectionalAtlas,
+                                      ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
+            // A2: solid-angle-weighted irradiance integral E = sum L cos^+ DeltaOmega.
+            // alpha-gate (a.a) preserved until A5 payload migration.
+            float dOmega = uSolidAngleLUT[dy * D + dx];
+            float w      = wcos * dOmega * a.a;
             irrad   += a.rgb * w;
-            wsum    += w;
             wcosSum += wcos;
             leakRgb += a.rgb * wcos * (1.0 - a.a);
             oscSum  += wcos * 4.0 * a.a * (1.0 - a.a);
         }
     }
     ProbeSample r;
-    r.irrad       = irrad / max(wsum, 1e-4);
+    // Lambert: L_o = (rho/pi) E. Caller multiplies by albedo (rho); fold 1/pi here.
+    r.irrad       = irrad * (1.0 / PI);
     r.leak        = dot(leakRgb, vec3(0.2126, 0.7152, 0.0722));
     r.oscillation = oscSum / max(wcosSum, 1e-4);
     return r;
@@ -473,7 +479,7 @@ ProbeDirDetail sampleProbeDirDetail(ivec3 pc, vec3 normal, int D) {
             float wcos = max(0.0, dot(bdir, normal));
             vec4  a    = texelFetch(uDirectionalAtlas,
                                     ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
-            float w    = wcos * a.a;
+            float w    = wcos * uSolidAngleLUT[dy * D + dx] * a.a;
             irrad   += a.rgb * w;
             wsum    += w;
             wcosSum += wcos;
@@ -492,7 +498,7 @@ ProbeDirDetail sampleProbeDirDetail(ivec3 pc, vec3 normal, int D) {
 
     float invW = 1.0 / max(wsum, 1e-4);
     ProbeSample s;
-    s.irrad       = irrad * invW;
+    s.irrad       = irrad * (1.0 / PI);   // A2: solid-angle-weighted; fold 1/pi (Lambert)
     s.leak        = dot(leakRgb, vec3(0.2126, 0.7152, 0.0722));
     s.oscillation = oscSum / max(wcosSum, 1e-4);
 
