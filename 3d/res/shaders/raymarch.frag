@@ -444,13 +444,12 @@ ProbeSample sampleProbeDir(ivec3 pc, vec3 normal, int D) {
             float wcos   = max(0.0, dot(bdir, normal));
             vec4  a      = texelFetch(uDirectionalAtlas,
                                       ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
-            // A2: octahedral per-bin solid angle weight.
-            // A5: no alpha-gate in the consumer — surface-hit bins store the wall's
-            // outgoing radiance, which IS the signal; gating by alpha=0 threw it away
-            // (the ~2x under-emit measured in the A2 CV1 gate). Visibility moves to the
-            // merge (sampleUpperDirWeighted) with a proper distance channel.
+            // A2: octahedral per-bin solid angle weight. The alpha-gate (a.a) is
+            // leak-prevention (temporally-accumulated transmittance) and stays until
+            // A5 lands the distance + transmittance channels atomically (one channel
+            // is never both).
             float dOmega = uSolidAngleLUT[dy * D + dx];
-            float w      = wcos * dOmega;
+            float w      = wcos * dOmega * a.a;
             irrad   += a.rgb * w;
             wsum    += w;
             wcosSum += wcos;
@@ -483,7 +482,7 @@ ProbeDirDetail sampleProbeDirDetail(ivec3 pc, vec3 normal, int D) {
             float wcos = max(0.0, dot(bdir, normal));
             vec4  a    = texelFetch(uDirectionalAtlas,
                                     ivec3(pc.x * D + dx, pc.y * D + dy, pc.z), 0);
-            float w    = wcos * uSolidAngleLUT[dy * D + dx];   // A5: no alpha-gate in consumer
+            float w    = wcos * uSolidAngleLUT[dy * D + dx] * a.a;   // alpha-gate = leak prevention
             irrad   += a.rgb * w;
             wsum    += w;
             wcosSum += wcos;
