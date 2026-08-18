@@ -345,15 +345,19 @@ Single-bounce under-emits ~4.5× — this is the point-light geometry (journey S
 "`--light-direction` closes 87% of the gap"). Multi-bounce (current stochastic MC)
 recovers 0.22 → 0.66 but remains short of 0.90.
 
-**A4 blocked on the PT reference:** switching the cascade to ShaderToy's directional sun
-(`--light-direction=-0.6755,1,0.7374`) makes the PT reference go black (it is
-point-light-only), so CV1 is uncomputable (valid mask = 0 pixels). A4 requires extending
-the PT reference to the same directional sun + sky before it can be validated.
+**A4 not blocked — "point-light-only" was a misdiagnosis.** The PT reference **does** have
+directional light (`uLightDir`/`uUseDirectionalLight`, `pt_reference.comp:52-55,260-262`,
+wired in `demo3d.cpp:3594-3599`). The "black" (pt_full mean 0.00023) was a **light-direction
+sign error**: I passed the ShaderToy `GetSunDirection` value (`-0.6755,1,0.7374`, y=+1) directly,
+but the cascade/PT convention is `lightDirection` = light-travel direction (sun→scene), so the
+sun ended up below the floor. Flipped to `0.6755,-1,-0.7374`: pt_direct 0.00013 → 0.018.
+A4 = correct sun direction + sun color `(2.5,2.25,1.625)` + sky `(0.7,0.8,1.0)`.
 
 ### 7.4 Re-prioritized remaining order (measurement-driven)
 
-1. **A4-prime** — extend `pt_reference.comp` to directional sun + sky; then switch the
-   cascade to sun+sky. Biggest single-bounce lever (Stage 11c: 87% of gap).
+1. **A4** — switch to directional sun + sky with the correct sign + ShaderToy values
+   (sun dir `0.6755,-1,-0.7374`, sun `(2.5,2.25,1.625)`, sky `(0.7,0.8,1.0)`). Biggest
+   single-bounce lever (Stage 11c: 87% of gap). No PT-reference extension needed.
 2. **A8** — deterministic multi-bounce (prev-C0 feedback) for the residual H-A'.
 3. **A5 step 2** — merge distance channel (leak prevention, currently absent).
 4. **A7** — bake-side ΔΩ weighting (moderate).
