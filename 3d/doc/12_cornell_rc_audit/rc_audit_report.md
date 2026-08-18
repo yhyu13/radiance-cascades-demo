@@ -189,8 +189,9 @@ step diverges.
 
 - **Primary = CV1 ratio with a reference-derived validity mask:** `valid = pt_indirect_lum > 0.05`
   only. A valid pixel where the cascade is fully dark is a **failure**, not excluded.
-  **Floor the ratio at a physical minimum** (`kRatioFloor = 1/64 ≈ 0.0156`, the cascade
-  noise floor) — NOT the analyzer's `1e-6` clip, which pins `p95(|ln|)` to `|ln(1e-6)| = 13.8`.
+  **Floor the ratio at a physical minimum** (`kRatioFloor = 1/64 ≈ 0.0156`, an **assumed**
+  cascade noise floor — not measured, label it so until it is) — NOT the analyzer's `1e-6`
+  clip, which pins `p95(|ln|)` to `|ln(1e-6)| = 13.8`.
   Report the `casc==0` coverage separately; it is a subset of `dim%`, not an independent gate.
   Statistic, named exactly, **all four**: **`p95(|ln(cascade/PT)|) ≤ 0.50`**,
   **`ratio_mean ∈ [0.95,1.05]`**, **`dim% ≤ 5%`**, **`bright% ≤ 5%`** — not a subset (a
@@ -382,5 +383,38 @@ The A2 gate did not pass (§7.1), yet the session measured A5/A6 anyway. That vi
    not move CV1, **delete it from the gate list** rather than run ahead of it.
 
 Every measurement table headlines **dim% and bright%** (the energy gates) and reports
-`casc==0` coverage as its own column. `p95(|ln|)` is demoted until the zero-floor is
-handled. Current build: `dim ≈ 88%` (18× over 5%), `bright ≈ 3.4%` (in spec).
+`casc==0` coverage as its own column (a subset of dim%, not independent). `p95(|ln|)` is
+restored, floored at `kRatioFloor = 1/64` (an **assumed** cascade noise floor, not measured
+— see §5.3). Current build: `dim ≈ 88%` (18× over 5%), `bright ≈ 3.4%` (in spec).
+
+### 7.5 A5 "before" state — locked via fresh renderdoc capture (2026-08-18)
+
+Fresh `--auto-rdoc` capture of current HEAD (frame 351, analytic Cornell, mode 0, α-gate
+restored + A2 ΔΩ): `tools/captures/rdoc_frame_frame351.{rdc,_thumb.png}`.
+
+Final-frame thumbnail luminance (1280×720, LDR):
+
+| stat | value |
+|---|---|
+| median | **0.000** |
+| % pixels < 5% | **56.9%** |
+| % pixels < 10% | 56.9% (the dark cluster is all <5% — no intermediate) |
+| p90 | 0.753 |
+| p99 / max | 0.886 / 0.930 |
+| % pixels > 90% | **0.0%** |
+| mean | 0.199 |
+
+This is **bimodal, not uniformly dim**: the directly-lit floor/ceiling near the light
+render at healthy brightness (direct ≈ 0.9), while the walls, the tall box, and every
+GI-only surface sit at ~0. That is the α-gate's signature — direct works, indirect is off
+(the gate excludes surface-hit bins, which carry the bounce light). `ratio_mean 0.43` is
+the mean of that bimodal and under-sells how broken the walls look.
+
+The over-bright/leak side is clean: max 0.93, 0.0% > 90% — consistent with `bright% 3.4%`
+in-spec. Leak prevention is doing its job; it's just also doing the surface-hit exclusion
+A5 fixes.
+
+**A5 prediction (locked):** the distance+transmittance migration should turn the ~57%-black
+walls back on. **Visual acceptance check: the walls and tall box go from near-black to
+visibly red/green/white in the final frame.** This is the single most visible thing A5
+buys, and it is cheap to eyeball alongside the numeric gate (§7.4 item 2).
