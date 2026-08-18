@@ -57,15 +57,17 @@ ratio = np.where(valid, casc_lum / np.maximum(pti_lum, 1e-9), np.nan)
 ratio_valid = ratio[valid]
 log_ratio = np.log(np.clip(ratio_valid, 1e-6, 1e6))
 
-print("=== A2 post-fix CV1 (cornell, cam0, N=1024, mode-17) ===")
+casc_zero_pct = 100.0 * np.mean(ratio_valid < 1e-6)
+
+print("=== CV1 (cascade vs PT, reference-derived validity mask) ===")
 print(f"pixels total={n_total} valid={n_valid} ({100.0*n_valid/n_total:.1f}%) excluded={n_excl}")
 print(f"casc_mean        = {np.mean(casc_lum[valid]):.4f}")
 print(f"pt_indirect_mean = {np.mean(pti_lum[valid]):.4f}")
-print(f"ratio_mean       = {np.mean(ratio_valid):.4f}")
-print(f"ratio_p50        = {np.percentile(ratio_valid, 50):.4f}")
-print(f"p95(|ln ratio|)  = {np.percentile(np.abs(log_ratio), 95):.4f}   (target <= 0.50)")
-print(f"dim%%  (ratio<0.7)= {100.0*np.mean(ratio_valid < 0.7):.1f}%%")
-print(f"bright%%(ratio>1.3)= {100.0*np.mean(ratio_valid > 1.3):.1f}%%")
+print(f"ratio_mean       = {np.mean(ratio_valid):.4f}   (NOT the gate)")
+print(f"dim%%  (ratio<0.7) = {100.0*np.mean(ratio_valid < 0.7):.1f}%%   (gate: <= 5%%)")
+print(f"bright%%(ratio>1.3) = {100.0*np.mean(ratio_valid > 1.3):.1f}%%   (gate: <= 5%%)")
+print(f"casc==0 coverage = {casc_zero_pct:.1f}%% of valid px (drives the p95 clamp)")
+print(f"p95(|ln ratio|)  = {np.percentile(np.abs(log_ratio), 95):.4f}   (CLAMP ARTIFACT if coverage>=5%%; demoted)")
 
 # Old mask (pti>0.05 & casc>0.001) for apples-to-apples vs historical baseline
 old_mask = (pti_lum > 0.05) & (casc_lum > 0.001)

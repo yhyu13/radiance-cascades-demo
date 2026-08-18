@@ -305,14 +305,18 @@ Conclusions:
 
 **A2 CV1 gate (measured 2026-08-17, cornell/cam0/N=1024/mode-17):**
 
-| impl | ratio_mean | p95(\|ln\|) | dim% | bright% |
+| impl | ratio_mean | dim% | bright% | casc==0 coverage |
 |---|---|---|---|---|
-| first attempt (drop renormalization + 1/π) | 0.26 | 13.8 | 97.7% | — |
-| corrected (ΔΩ-weighted renormalization, α-gate intact) | 0.43 | 13.8 | 88.4% | 3.4% |
+| first attempt (drop renormalization + 1/π) | 0.26 | 97.7% | 0.5% | ≥5% |
+| corrected (ΔΩ-weighted renormalization, α-gate intact) | 0.43 | 88.4% | 3.4% | ≥5% |
 
-Gate (§5.3) is `p95(|ln|) ≤ 0.50`, `dim% ≤ 5%`, `bright% ≤ 5%` — **`ratio_mean` is not the
-gate.** On the gate the build is `p95 ≈ 13.8` (28× over) and `dim ≈ 88%` (18× over): a
-hard FAIL, and the ΔΩ change was never expected to move it (the under-emit is bake-side).
+Gate (§5.3) is `dim% ≤ 5%`, `bright% ≤ 5%`, `p95(|ln|) ≤ 0.50`. The honest energy signal is
+**dim% and bright%**: `dim ≈ 88%` (18× over) is the real failure; `bright ≈ 3.4%` is **in
+spec** — the leak/over-bright side is under control even with the α-gate intact.
+`p95(|ln|) = 13.8` is a **clamp artifact** — it equals `|ln(1e-6)|`, the analyzer's
+zero-floor, and is byte-identical across the two impls because ≥5% of valid pixels have
+cascade ≈ 0. It is a coverage number wearing a magnitude costume, demoted until the
+zero-floor is handled. `ratio_mean` is likewise not the gate.
 
 **Finding:** the first attempt's "raw irradiance + 1/π" was a **bug** — it divided by the
 fixed π instead of the actual visible solid angle `Σ(cos·ΔΩ·α)`, under-emitting ~4× when
@@ -339,33 +343,39 @@ is not a data point.
 
 The MB-off number (0.22) is the **known Cornell MB-off collapse** (journey Stage 8:
 `ratio_self 0.49 → 0.21`, explicitly labeled "a diagnostic, not a fix"), and it was
-measured on the α-gate-removed build — **double-confounded**. It points at **multi-bounce
-under enclosed geometry (H-A', Stage 11d)**, not point-light geometry. Stage 11c's
-"point-light 87%" was **superseded by 11d** (which falsified H-A); do not cite it.
+measured on the α-gate-removed build — **double-confounded**. Its attribution is
+**unverified**: H-A' (multi-bounce under enclosed geometry) is the leading **hypothesis**
+from Stage 11d, not a finding — 11d queued 11e.A (N=8192 vs 2048 convergence test) to
+confirm it, and 11e.A never ran. Stage 11c's "point-light 87%" is superseded. §7.4 step 3
+is what tests H-A'; the conclusion is not pre-written.
 
-**A4 is circular until directional PT self-validates.** Stage 11c's "87%" was
-cascade-directional vs PT-point-light — two different scenes (the report itself noted the
-cascade surpassed PT 1.98×). It was a symptom discriminator, never a parity measurement.
-Rewriting the PT reference to directional sun+sky adds a new reference-side error surface
-(sun/sky sampling, sky gradient, analytic shadow) into the ground truth. Before A4 can be
-a lever, directional PT must pass its own analytic Lambert/sky checks. ("Make PT not go
-black" is not a correctness bar.)
+**A4 is not blocked and not circular** — `322a344` established the PT reference already has
+directional light (`uLightDir`/`uUseDirectionalLight`, wired in `demo3d.cpp:3594-3599`):
+a sign flip changes pt_direct (0.00013 → 0.018), so the direction genuinely reaches PT.
+A4 = correct sun sign (`0.6755,-1,-0.7374`) + sun/sky values (`(2.5,2.25,1.625)` /
+`(0.7,0.8,1.0)`) + a cheap analytic-Lambert/sky self-validation. The "rewrite the PT
+reference" framing is **deleted** — it re-committed the point-light premise that `322a344`
+had falsified.
 
 ### 7.4 Corrected path + STOP discipline
 
 The A2 gate did not pass (§7.1), yet the session measured A5/A6 anyway. That violates
 §5.4 "a miss = STOP, not retry" and §7.1's own "do not proceed." Corrected order:
 
-1. **A5 (full, atomic)** — land the distance + transmittance channel migration together,
-   then re-measure with leak prevention intact. That is the first real data point.
-2. **Single-bounce isolation, done right** — PT bounces pinned to 1, α-gate restored,
-   then attribute (expected: multi-bounce H-A', not light type).
-3. **A4 as a reference-correctness project** — self-validate directional PT (analytic
-   Lambert/sky) before it can validate the cascade.
-4. **A8** — deterministic multi-bounce.
-5. **A3/A7** — geometry and bake-side weighting, only after the above. If A3 genuinely
-   does not move CV1, **delete it from the gate list** rather than run ahead of it.
+1. **A4 (cheap, unblocking)** — correct sun sign (`0.6755,-1,-0.7374`) + sun/sky values +
+   analytic-Lambert/sky self-validation. Must precede single-bounce isolation (step 3 must
+   not measure under the wrong light type).
+2. **A5 (full, atomic)** — land the distance + transmittance channel migration together.
+   **Pre-committed gate (locked now, before the migration lands): `dim% ≤ 5%` AND
+   `bright% ≤ 5%`, with `casc==0` coverage reported as its own column; no `p95(|ln|)`
+   until the zero-floor is handled.** Locked pre-migration so the result cannot be
+   re-narrated the way A5 step 1's was.
+3. **Single-bounce isolation, done right** — PT bounces pinned to 1, α-gate migrated — the
+   test that confirms or rejects H-A' (currently unverified).
+4. **A8** — deterministic multi-bounce, only if step 3 confirms H-A'.
+5. **A3/A7** — geometry and bake-side weighting, only after the above. If A3 genuinely does
+   not move CV1, **delete it from the gate list** rather than run ahead of it.
 
-Every measurement table carries `p95(|ln|)`, `dim%`, `bright%` (the locked gate §5.3), not
-just `ratio_mean`. On the gate, the current build is `p95 ≈ 13.8` (28× over 0.50) and
-`dim ≈ 88%` (18× over 5%).
+Every measurement table headlines **dim% and bright%** (the energy gates) and reports
+`casc==0` coverage as its own column. `p95(|ln|)` is demoted until the zero-floor is
+handled. Current build: `dim ≈ 88%` (18× over 5%), `bright ≈ 3.4%` (in spec).
