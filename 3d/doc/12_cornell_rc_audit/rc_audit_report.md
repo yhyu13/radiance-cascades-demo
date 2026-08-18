@@ -189,9 +189,12 @@ step diverges.
 
 - **Primary = CV1 ratio with a reference-derived validity mask:** `valid = pt_indirect_lum > 0.05`
   only. A valid pixel where the cascade is fully dark is a **failure**, not excluded.
-  Handle `casc == 0` safely (floor/clamp) and report coverage + exclusion counts.
-  Statistic, named exactly: **`p95(|ln(cascade/PT)|) ≤ 0.50`** (95th percentile of the
-  absolute log-ratio), with `ratio_mean ∈ [0.95,1.05]`, `bright% ≤ 5%`, `dim% ≤ 5%`.
+  **Floor the ratio at a physical minimum** (`kRatioFloor = 1/64 ≈ 0.0156`, the cascade
+  noise floor) — NOT the analyzer's `1e-6` clip, which pins `p95(|ln|)` to `|ln(1e-6)| = 13.8`.
+  Report the `casc==0` coverage separately; it is a subset of `dim%`, not an independent gate.
+  Statistic, named exactly, **all four**: **`p95(|ln(cascade/PT)|) ≤ 0.50`**,
+  **`ratio_mean ∈ [0.95,1.05]`**, **`dim% ≤ 5%`**, **`bright% ≤ 5%`** — not a subset (a
+  uniform ratio of 0.75 passes dim/bright (±30% tails) but fails `ratio_mean`).
 - **Secondary = EXR HDR pixel-diff**, valid only after identical reconstruction / camera /
   exposure / materials / lighting (A3/A4). Surrogate target = in-tree
   `reference_transport.comp` mode-2 final view / CPU oracle (no ShaderToy Cornell EXR exists).
@@ -315,8 +318,10 @@ Gate (§5.3) is `dim% ≤ 5%`, `bright% ≤ 5%`, `p95(|ln|) ≤ 0.50`. The hones
 spec** — the leak/over-bright side is under control even with the α-gate intact.
 `p95(|ln|) = 13.8` is a **clamp artifact** — it equals `|ln(1e-6)|`, the analyzer's
 zero-floor, and is byte-identical across the two impls because ≥5% of valid pixels have
-cascade ≈ 0. It is a coverage number wearing a magnitude costume, demoted until the
-zero-floor is handled. `ratio_mean` is likewise not the gate.
+cascade ≈ 0. Fix (not demotion): floor the ratio at the physical min (`kRatioFloor = 1/64`,
+§5.3), which makes `p95` a real energy gap. `ratio_mean` and `p95` are **restored to the
+gate** — a uniform ratio of 0.75 passes dim/bright (±30% tails) but must still fail
+`ratio_mean ∈ [0.95,1.05]`.
 
 **Finding:** the first attempt's "raw irradiance + 1/π" was a **bug** — it divided by the
 fixed π instead of the actual visible solid angle `Σ(cos·ΔΩ·α)`, under-emitting ~4× when
@@ -332,7 +337,7 @@ leak dimension**, and 0.66 cannot be decomposed into real GI vs bleed.
 
 | config | ratio_mean | status |
 |---|---|---|
-| ΔΩ + α-gate intact | 0.43 | **the only honest number** |
+| ΔΩ + α-gate intact | 0.43 | characterized, not correct — the α-gate still excludes surface-hit radiance (the A5 defect) |
 | ΔΩ, α-gate removed | 0.66 | **known-invalid (leak removed)** |
 
 `ddaa997` is **reverted**. A5 must land as ONE atomic migration — the distance channel and
@@ -366,10 +371,10 @@ The A2 gate did not pass (§7.1), yet the session measured A5/A6 anyway. That vi
    analytic-Lambert/sky self-validation. Must precede single-bounce isolation (step 3 must
    not measure under the wrong light type).
 2. **A5 (full, atomic)** — land the distance + transmittance channel migration together.
-   **Pre-committed gate (locked now, before the migration lands): `dim% ≤ 5%` AND
-   `bright% ≤ 5%`, with `casc==0` coverage reported as its own column; no `p95(|ln|)`
-   until the zero-floor is handled.** Locked pre-migration so the result cannot be
-   re-narrated the way A5 step 1's was.
+   **Pre-committed gate (locked now, before the migration lands): §5.3 verbatim — all four
+   stats — `p95(|ln|) ≤ 0.50` AND `ratio_mean ∈ [0.95,1.05]` AND `dim% ≤ 5%` AND
+   `bright% ≤ 5%`, with the ratio floored at the physical min (`kRatioFloor = 1/64`).
+   Locked pre-migration so the result cannot be re-narrated the way A5 step 1's was.**
 3. **Single-bounce isolation, done right** — PT bounces pinned to 1, α-gate migrated — the
    test that confirms or rejects H-A' (currently unverified).
 4. **A8** — deterministic multi-bounce, only if step 3 confirms H-A'.

@@ -55,7 +55,8 @@ n_excl = n_total - n_valid
 
 ratio = np.where(valid, casc_lum / np.maximum(pti_lum, 1e-9), np.nan)
 ratio_valid = ratio[valid]
-log_ratio = np.log(np.clip(ratio_valid, 1e-6, 1e6))
+K_RATIO_FLOOR = 1.0 / 64.0   # physical floor (cascade noise floor), not 1e-6
+log_ratio = np.log(np.clip(ratio_valid, K_RATIO_FLOOR, 1e6))
 
 casc_zero_pct = 100.0 * np.mean(ratio_valid < 1e-6)
 
@@ -66,8 +67,8 @@ print(f"pt_indirect_mean = {np.mean(pti_lum[valid]):.4f}")
 print(f"ratio_mean       = {np.mean(ratio_valid):.4f}   (NOT the gate)")
 print(f"dim%%  (ratio<0.7) = {100.0*np.mean(ratio_valid < 0.7):.1f}%%   (gate: <= 5%%)")
 print(f"bright%%(ratio>1.3) = {100.0*np.mean(ratio_valid > 1.3):.1f}%%   (gate: <= 5%%)")
-print(f"casc==0 coverage = {casc_zero_pct:.1f}%% of valid px (drives the p95 clamp)")
-print(f"p95(|ln ratio|)  = {np.percentile(np.abs(log_ratio), 95):.4f}   (CLAMP ARTIFACT if coverage>=5%%; demoted)")
+print(f"casc==0 coverage = {casc_zero_pct:.1f}%% of valid px (subset of dim%%; not an independent gate)")
+print(f"p95(|ln ratio|)  = {np.percentile(np.abs(log_ratio), 95):.4f}   (gate: <= 0.50, floored at 1/64)")
 
 # Old mask (pti>0.05 & casc>0.001) for apples-to-apples vs historical baseline
 old_mask = (pti_lum > 0.05) & (casc_lum > 0.001)
