@@ -404,17 +404,27 @@ Final-frame thumbnail luminance (1280×720, LDR):
 | % pixels > 90% | **0.0%** |
 | mean | 0.199 |
 
-This is **bimodal, not uniformly dim**: the directly-lit floor/ceiling near the light
-render at healthy brightness (direct ≈ 0.9), while the walls, the tall box, and every
-GI-only surface sit at ~0. That is the α-gate's signature — direct works, indirect is off
-(the gate excludes surface-hit bins, which carry the bounce light). `ratio_mean 0.43` is
-the mean of that bimodal and under-sells how broken the walls look.
+**CORRECTED (2026-08-19): the "walls black" reading was wrong — a sampling error.**
+Re-sampling at the actual wall screen positions (from the mode-1 normal map: left wall
+normal=+x at ≈(0.35,0.55), right wall normal=−x at ≈(0.65,0.55)) shows the walls ARE rendered:
 
-The over-bright/leak side is clean: max 0.93, 0.0% > 90% — consistent with `bright% 3.4%`
-in-spec. Leak prevention is doing its job; it's just also doing the surface-hit exclusion
-A5 fixes.
+| pixel | RGB | meaning |
+|---|---|---|
+| left wall (0.35,0.55) | (0.84, 0.49, 0.45) | **red** |
+| right wall (0.65,0.55) | (0.50, 0.84, 0.45) | **green** |
+| floor / back | 0.87–0.89 | white |
+| background (0.1,0.1) | (0,0,0) | void |
 
-**A5 prediction (locked):** the distance+transmittance migration should turn the ~57%-black
-walls back on. **Visual acceptance check: the walls and tall box go from near-black to
-visibly red/green/white in the final frame.** This is the single most visible thing A5
-buys, and it is cheap to eyeball alongside the numeric gate (§7.4 item 2).
+The 56.9% `<5%` "black" pixels are the **background void** (the box is open-fronted; the
+camera sees nothing around/behind it), not the walls. The histogram's bimodal shape was
+real (median 0.0) but its interpretation was not: **mode 0 renders the Cornell box
+correctly** — red/green walls, white floor/ceiling/back, all directly lit.
+
+The real "not perfect" is the **cascade's indirect under-emit** (`dim 88%` in GI-only
+mode 17), not any visible wall blackness. That is the multi-bounce H-A' hypothesis
+(still unverified) — a numeric/energy gap, not a "walls are black" visual bug.
+
+**A5 was attempted on this false premise and reverted.** The α-gate (leak prevention) is
+not causing a visible defect; the plain-sum consumer + distance-channel changes were
+reverted to HEAD (α-gate intact). A5, if pursued, must be motivated by the GI-only
+under-emit, not by a "walls black" claim.
