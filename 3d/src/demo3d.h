@@ -878,7 +878,8 @@ public:
     // Phase 6b — RenderDoc GPU frame capture (called from main3d.cpp main loop)
     void beginRdocFrameIfPending();
     void endRdocFrameIfPending();
-    void setAutoRdocMode(float delaySeconds) { autoRdocDelaySeconds = delaySeconds; }
+    // --auto-rdoc is rejected at CLI (2026-08-22). Intentionally a no-op.
+    void setAutoRdocMode(float) {}
     bool isSkippingUI() const { return skipUIRendering; }
 
     // Phase 2F: Raymarch integration controls

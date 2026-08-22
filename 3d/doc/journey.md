@@ -141,6 +141,70 @@
 
 ---
 
+## Era 12 — RenderDoc tooling consolidation (2026-08-20)
+
+| ME | YOU |
+|---|---|
+| **"Can we remove all the auto-RenderDoc efforts AND the skill? At what cost?"** | Split the question. The skill (`.claude/skills/renderdoc-gpu-debug/`, an `rdc-cli`-based vendored repo) is ≈ zero cost to remove. The auto pipeline (`--auto-rdoc` + `rdoc_extract.py` + `analyze_renderdoc.py`) is ≈300 lines + 3 tools + 1.8 GB captures, and is the repo's only *operational* GPU-cost measurement path. |
+| **"Demonstrate the skill can do what auto-RenderDoc does (whole feat)."** *(2026-08-20)* | Paper mapping only. Honest finding then: "a documented superset, not yet a working replacement" — `rdc doctor` was red (ABI-mismatched `renderdoc.pyd`). |
+| **"now demonstrate The skill can do what auto renderdoc do (whole feat). dump to journey.md"** *(2026-08-22)* | **Live-ran the whole auto-pipeline feature set through the skill.** `rdc doctor` 11/11 green (RenderDoc 1.45). Replayed auto-capture frame 424 (byte-identical stage PNGs). Then captured a *new* frame **without `--auto-rdoc`**: `rdc capture --frame 480` → `rdoc_frame_frame480.rdc` (33 045 777 bytes, OpenGL, 8 cascade dispatches). Evidence below. |
+| **"if auto rdoc and relates are obsolete, disable them by default, make sure we will not accidentally use them again"** *(2026-08-22)* | Fail-closed L2+L3. `--auto-rdoc` is rejected in `App3D::run` before InitWindow (exit 2). G-key still saves a `.rdc` but does **not** spawn extract/analyze unless `RDOC_LEGACY=1`. `rdoc_extract.py` / `analyze_renderdoc.py` refuse (exit 2) without that env; extract uses `os._exit` so qrenderdoc cannot swallow it. `setAutoRdocMode` is a no-op; the 8s timer is dead. Historical how-to `doc/13_renderdoc_auto_rdoc.md` now opens with the replacement `rdc capture` command. |
+
+### Capability mapping — skill (`rdc-cli`) vs auto pipeline
+
+| Auto pipeline feature | Skill command actually run (2026-08-22) | Match |
+|---|---|---|
+| Headless capture (`--auto-rdoc`, 8s warm-up, in-process `TriggerCapture()`) | `rdc capture --frame 480 --timeout 180 --json -- .\build\RadianceCascades3D.exe --runtime-shell=legacy --exit-frames=600` → `rdoc_frame_frame480.rdc` 33 045 777 B, OpenGL, frame 480, pid 112468 | ✅ live. No DLL-preload / 8s timer. `--wait-for-exit` is a trap (CreateTargetControl after the process dies → `failed to connect to target`); omit it. |
+| Force-all-cascades in the captured frame | App-side (`forceCascadeRebuild` + `renderFrameIndex=0`). Frame 480 still had all **8 dispatches** (4× `radiance_3d` + 4× `reduction_3d`) because stagger wraps within 480 frames | ✅ observed, not because of the skill. A random `--frame N` is not guaranteed to contain all 4 cascades. |
+| Hide ImGui (`skipUIRendering` 0.1s before trigger) | Skill has no equivalent. Live thumb shows the Quick Start overlay over the Cornell box | ⚠️ UI-in-frame. Workaround: `--trigger` + G-key, or keep the 3-line skip in the app. |
+| Per-pass GPU timing (`FetchCounters(GPU Duration)`) | `rdc counters --name "GPU Duration" --json`. Frame 480: C0 bake 3.38 ms, C1 6.85 ms, **C2 10.64 ms**, C3 6.35 ms, raymarch 7.12 ms, gi_blur 1.68 ms | ✅ same counter. Absolute µs differ vs the auto extractor on frame 424 (C2 38.2 ms, raymarch 44.4 ms) — replay ±2–5×, lesson A1, not a tool gap. |
+| Action-tree walk | `rdc events --limit 50`, `rdc passes --json` — markers `radiance_3d` / `reduction_3d` / `raymarch` / `gi_blur` resolve from `glPushDebugGroup` | ✅ richer (and named) |
+| Stage texture export at mid-Z | `rdc texture ID --slice Z -o out.png`. Frame 424 PNGs are **byte-identical** to `rdoc_extract.py` (sdf 3591, albedo 1338, C0 atlas 80413, C1 atlas 75363, C0 grid 1365). `rdc resources --name sdfTexture` finds the `glObjectLabel` names the VFS numeric listing hides | ✅ native `--slice`; the 2026-08-20 ⚠️ was wrong |
+| Final-frame thumbnail | `rdc thumbnail -o thumb.png` | ✅ 1:1 |
+| Auto-analysis (`analyze_renderdoc.py` → Claude → `_pipeline.md`) | All `rdc` commands take `--json`. The Claude glue is project-specific either way, and already fails under Python 2.7 | ⚠️ not a RenderDoc feature. Agent reads the PNGs + JSON directly; the 250-line script is optional |
+
+**Skill-only, beyond the auto pipeline (not exercised this run):** `rdc pixel X Y` · `rdc debug pixel/vertex/thread` · `rdc pipeline` / `rdc bindings` · `rdc shader-replace` · `rdc diff` · `rdc tex-stats`.
+
+### Live evidence (2026-08-22)
+
+Toolchain: `D:\GitRepo-My\rdc-cli\.venv\Scripts\rdc.exe` v0.1.dev1, `RENDERDOC_PYTHON_PATH=D:\GitRepo-My\rdc-cli\.local\renderdoc`. `rdc doctor` 11/11 `[ok]` (python 3.14.3, renderdoc-module **1.45**, replay-support, renderdoccmd 1.45, VS Build Tools 17.14, vulkan layer registered).
+
+Replay of auto-pipeline capture `rdoc_frame_frame424.rdc`:
+
+```
+rdc open tools/captures/rdoc_frame_frame424.rdc
+rdc info --json          # API=OpenGL, 8 dispatches, 3 draws
+rdc passes --json        # radiance_3d / raymarch / gi_blur
+rdc events --limit 80    # eid 57/127/197/267 = radiance_3d; 68/138/208/278 = reduction_3d; 348 raymarch; 376 gi_blur
+rdc resources --json     # sdfTexture=59, albedoTexture=60, cascade0_probeGrid=159, cascade0_probeAtlas=160, cascade1_probeAtlas=164
+rdc texture 59 --slice 64 -o skill_demo_frame424/sdfTexture.png
+rdc thumbnail -o skill_demo_frame424/thumb.png
+rdc close
+```
+
+Live capture (no `--auto-rdoc`, no in-process `TriggerCapture`):
+
+```
+rdc capture --frame 480 --timeout 180 --json -o live.rdc -- .\build\RadianceCascades3D.exe --runtime-shell=legacy --exit-frames=600
+# → {"success": true, "path": "...\rdoc_frame_frame480.rdc", "frame": 480, "byte_size": 33045777, "api": "OpenGL"}
+```
+
+Artifacts: `3d/tools/analysis/skill_demo_frame424/` (replay PNGs + `live_thumb.png` + live sdf/albedo/C0 atlas). Capture file landed in the app's in-process template `tools/captures/rdoc_frame_frame480.rdc` because `initRenderDoc()` still runs and sets `SetCaptureFilePathTemplate` — the skill injected RenderDoc; the app's L1 path just named the file.
+
+### What this changes vs 2026-08-20
+
+The 2026-08-20 caveat ("skill cannot run in this repo today") is **closed**. The extract/timing/texture/thumbnail half is a working replacement. The capture half is a working replacement **if** you drop `--wait-for-exit` and accept (a) ImGui in the frame and (b) cascade-stagger not being forced.
+
+**Remaining reason to keep any auto-pipeline code:** ~20 lines of L1 (`forceCascadeRebuild` + `renderFrameIndex=0` + `skipUIRendering`). L2 (8s timer / `--auto-rdoc`) and L3 (`rdoc_extract.py` + `analyze_renderdoc.py`) are now redundant with the skill. Deleting L1 as well means a random `--frame N` may miss a cascade, and the captured frame includes the debug UI.
+
+### Open items
+
+- L2+L3 are fail-closed, not deleted (escape hatch `RDOC_LEGACY=1`). Delete later if unused.
+- Keep L1 (`forceCascadeRebuild` / `skipUIRendering`) for G-key all-cascade captures.
+- `rdc` is not on PATH for this repo; session used `D:\GitRepo-My\rdc-cli\.venv\Scripts\rdc.exe` + `RENDERDOC_PYTHON_PATH`.
+
+---
+
 ## The recurring lesson of this project
 
 Every time a fix was built on intuition, measurement or a reference diff overturned it:

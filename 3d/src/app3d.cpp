@@ -63,6 +63,22 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument(argv[i]);
+        if (argument == "--auto-rdoc") {
+            // Fail-closed 2026-08-22: L2 timer + L3 qrenderdoc extract are obsolete.
+            // Skill renderdoc-gpu-debug / rdc-cli is the capture+inspect path.
+            // No escape hatch on this flag — copied docs/scripts must fail, not fire.
+            std::cerr
+                << "[APP3D] --auto-rdoc is obsolete (2026-08-22).\n"
+                << "[APP3D] Use rdc-cli (skill renderdoc-gpu-debug), e.g.\n"
+                << "  rdc capture --frame 480 --timeout 180 --json -- "
+                   ".\\build\\RadianceCascades3D.exe --runtime-shell=legacy --exit-frames=600\n"
+                << "  rdc open <file.rdc>\n"
+                << "  rdc counters --name \"GPU Duration\" --json\n"
+                << "[APP3D] Do not pass --wait-for-exit. G-key still saves a .rdc (no auto-extract).\n"
+                << "[APP3D] See doc/journey.md Era 12.\n";
+            config.valid = false;
+            continue;
+        }
         if (argument == "--validate-reference-cornell-scene") {
             config.validateReferenceScene = true;
             continue;

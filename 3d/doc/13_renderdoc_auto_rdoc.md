@@ -1,10 +1,28 @@
-# `--auto-rdoc` — how the in-process RenderDoc capture works
+# `--auto-rdoc` — OBSOLETE (2026-08-22)
 
-A learning note on the project's headless GPU-capture flag:
+**Do not run `--auto-rdoc`.** The flag is rejected at process entry (exit 2).
+The replacement is `rdc-cli` (skill `renderdoc-gpu-debug`):
+
+```powershell
+rdc capture --frame 480 --timeout 180 --json -- `
+  .\build\RadianceCascades3D.exe --runtime-shell=legacy --exit-frames=600
+rdc open tools\captures\rdoc_frame_frame480.rdc
+rdc counters --name "GPU Duration" --json
+```
+
+Do not pass `--wait-for-exit`. G-key still saves a `.rdc` (no auto-extract).
+Forensic replay of this old pipeline: `RDOC_LEGACY=1`. See `doc/journey.md` Era 12.
+
+---
+
+# Historical: how the in-process RenderDoc capture worked
+
+A learning note on the project's (retired) headless GPU-capture flag:
 
 ```powershell
 cd 3d
-.\build\RadianceCascades3D.exe --runtime-shell=legacy --auto-rdoc --exit-frames=3000
+# REJECTED — kept only as the historical command:
+# .\build\RadianceCascades3D.exe --runtime-shell=legacy --auto-rdoc --exit-frames=3000
 ```
 
 One flag: captures a single GPU frame in-process after an 8s warm-up, then

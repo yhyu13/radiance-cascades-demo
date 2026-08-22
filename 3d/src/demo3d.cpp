@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -751,18 +752,12 @@ void Demo3D::update() {
     // Track previous-frame state for the codex 02 F2 disable-cleanup branch.
     dynamicSphereWasEnabled = (dynamicSphereEnabled && useOBJMesh && useGPUSDF && meshVoxelBaseTexture);
 
-    // Phase 6b: auto-capture after warm-up delay (--auto-rdoc mode)
-    // Hides UI one frame before capture so the thumbnail shows the clean 3D scene.
+     // Phase 6b: --auto-rdoc timer is dead (flag rejected at CLI, 2026-08-22).
+     // G-key still queues pendingRdocCapture. Left as a no-op so a stale
+     // setAutoRdocMode call cannot silently re-arm the 8s capture.
 #ifdef _WIN32
-    if (autoRdocDelaySeconds > 0.0f && !autoRdocFired && rdoc) {
-        if (time >= autoRdocDelaySeconds - 0.1f)
-            skipUIRendering = true;  // hide ImGui one frame before capture
-        if (time >= autoRdocDelaySeconds) {
-            pendingRdocCapture = true;
-            autoRdocFired = true;
-            std::cout << "[6b] Auto-capture triggered (t=" << time << "s)\n";
-        }
-    }
+    (void)autoRdocDelaySeconds;
+    (void)autoRdocFired;
 #endif
 }
 
@@ -6384,7 +6379,7 @@ void Demo3D::renderTutorialPanel() {
     // 6b: RenderDoc capture (doc only, no runtime toggle)
     {
         ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
-            "  [6b] RenderDoc GPU capture workflow (see doc; no runtime UI)");
+            "  [6b] G = save .rdc  (auto-rdoc obsolete; inspect with rdc-cli)");
     }
 
     ImGui::NewLine();
@@ -6578,13 +6573,29 @@ void Demo3D::endRdocFrameIfPending() {
     if (rdoc->GetCapture(n - 1, capPath, &pathLen, &ts)) {
         std::string path(capPath, pathLen > 0 ? pathLen - 1 : 0);
         std::cout << "[6b] Capture saved: " << path << std::endl;
-        launchRdocAnalysis(path);
+        const char* legacy = std::getenv("RDOC_LEGACY");
+        if (legacy && legacy[0] == '1' && legacy[1] == '\0') {
+            launchRdocAnalysis(path);
+        } else {
+            std::cout << "[6b] Auto-extract/analyze is obsolete (2026-08-22). "
+                         "Inspect with rdc-cli, e.g.\n"
+                         "  rdc open \"" << path << "\"\n"
+                         "  rdc counters --name \"GPU Duration\" --json\n"
+                         "Set RDOC_LEGACY=1 only to re-run qrenderdoc extract.\n";
+        }
     }
 #endif
 }
 
 void Demo3D::launchRdocAnalysis(const std::string& capturePath) {
     namespace fs = std::filesystem;
+    const char* legacy = std::getenv("RDOC_LEGACY");
+    if (!(legacy && legacy[0] == '1' && legacy[1] == '\0')) {
+        std::cerr << "[6b] launchRdocAnalysis refused (RDOC_LEGACY!=1). "
+                     "Use rdc-cli (skill renderdoc-gpu-debug). See doc/journey.md Era 12.\n";
+        return;
+    }
+    std::cerr << "[6b] RDOC_LEGACY=1: launching obsolete qrenderdoc extract.\n";
     // Use absolute path — qrenderdoc.exe runs from its install dir so relative paths resolve there.
     std::string outDir = fs::absolute(fs::path(rdocAnalysisDir)).string();
     fs::create_directories(fs::path(rdocAnalysisDir));
@@ -6605,7 +6616,8 @@ void Demo3D::launchRdocAnalysis(const std::string& capturePath) {
     std::thread([capturePath, outDir, extractPath, analyzePath]() {
         std::string envPrefix =
             "set \"RDOC_CAPTURE=" + capturePath + "\""
-            " && set \"RDOC_OUTDIR=" + outDir + "\"";
+            " && set \"RDOC_OUTDIR=" + outDir + "\""
+            " && set \"RDOC_LEGACY=1\"";
 
         // Step 1: extract via qrenderdoc (blocks until sys.exit(0) in rdoc_extract.py)
         std::string extractCmd =

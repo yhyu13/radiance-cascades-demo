@@ -26,6 +26,14 @@ import datetime
 import subprocess
 import json
 
+# Fail-closed 2026-08-22: Claude glue is optional; inspect via rdc-cli instead.
+# Must refuse before load_dotenv so a leftover tools/.env cannot fire an API call.
+if os.environ.get("RDOC_LEGACY") != "1":
+    # Print statements so Python 2.7 also refuses with this message.
+    print("[analyze] OBSOLETE (2026-08-22). Use rdc-cli (skill renderdoc-gpu-debug).")
+    print("Set RDOC_LEGACY=1 only to force this script. See doc/journey.md Era 12.")
+    sys.exit(2)
+
 # ---------------------------------------------------------------------------
 # Load .env (tools/.env alongside this script)
 # ---------------------------------------------------------------------------

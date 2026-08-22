@@ -23,6 +23,20 @@ import json
 import pathlib
 import traceback
 
+# Fail-closed 2026-08-22: skill renderdoc-gpu-debug / rdc-cli replaced this
+# qrenderdoc extract path. Accidental invocation (old docs, G-key auto-launch)
+# must not run. Forensic replay of an existing .rdc only: set RDOC_LEGACY=1.
+if os.environ.get("RDOC_LEGACY") != "1":
+    # Print statements (not print()) so Python 2.7 also refuses with this
+    # message instead of a SyntaxError. os._exit: qrenderdoc swallows sys.exit.
+    print("[extract] OBSOLETE (2026-08-22). Use rdc-cli (skill renderdoc-gpu-debug).")
+    print("  rdc open <file.rdc>")
+    print("  rdc counters --name \"GPU Duration\" --json")
+    print("  rdc texture ID --slice Z -o out.png")
+    print("Set RDOC_LEGACY=1 only to force this script. See doc/journey.md Era 12.")
+    sys.stdout.flush()
+    os._exit(2)
+
 # ---------------------------------------------------------------------------
 # Log file: qrenderdoc's stdout is not visible in the parent console.
 # All output goes to <RDOC_OUTDIR>/<stem>_extract.log instead.

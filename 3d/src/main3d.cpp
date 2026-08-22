@@ -416,7 +416,8 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
 
     // --auto-analyze:  burst capture + AI analysis then exit
     // --auto-sequence: sequence capture (N frames) + AI analysis then exit
-    // --auto-rdoc:     RenderDoc GPU capture after 8s warm-up (stays open; G also works)
+    // --auto-rdoc:     OBSOLETE 2026-08-22 (rejected in App3D::run before this runtime).
+    //                  Capture via rdc-cli; G-key still saves a .rdc (no auto-extract).
     // --load-obj=NAME: load OBJ mesh once at startup (Step 2/3 testing).
     //   Step 6: NAME accepts cornell | cornell-orig | sponza | sponza-master.
     // --exit-frames=N: quit after rendering N frames (CI-friendly Step 2 verification)
@@ -462,8 +463,10 @@ int runLegacyDemo3DRuntime(int argc, char* argv[], const LegacyRuntimeLaunch& la
             demo->setAutoSequenceMode(true);
             std::cout << "[MAIN] --auto-sequence: will sequence-capture, analyze, then exit.\n";
         } else if (arg == "--auto-rdoc") {
-            demo->setAutoRdocMode(8.0f);
-            std::cout << "[MAIN] --auto-rdoc: will capture RenderDoc frame after 8s warm-up.\n";
+            // Belt-and-suspenders: App3D already rejects this before InitWindow.
+            std::cerr << "[MAIN] --auto-rdoc is obsolete (2026-08-22). "
+                         "Use rdc capture (skill renderdoc-gpu-debug). See doc/journey.md Era 12.\n";
+            runtimeArtifactFailure = true;
         } else if (arg.rfind("--load-obj=", 0) == 0) {
             loadObjName = arg.substr(11);
             std::cout << "[MAIN] --load-obj=" << loadObjName << ": will load at startup.\n";
