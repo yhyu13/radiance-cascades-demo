@@ -16,6 +16,9 @@ tools/phase*_rdoc_extract.*
 tools/frame_*.png
 tools/frame_*.md
 
+# Zhihu column paste-pack figures (Zhihu does not render mermaid)
+!3d/doc/14_new_rc_quality_perf/zhihu/images/*.png
+
 # v4 verified captures (keep these)
 !v4_phase3_sponza_pscene.png
 !v4_phase3_sponza_pscene_cascade_gi.exr
