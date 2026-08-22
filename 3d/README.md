@@ -156,8 +156,48 @@ Key runtime commands:
 | `--legacy-render=N [--legacy-render-shot=FILE]` | Legacy Cornell new-RC render |
 | `--legacy-pt-shot=FILE` | Legacy Cornell path-trace shot |
 | `--validate-reference-<gate> --reference-<gate>-report=FILE` | Run a G1-G10 validation gate |
+| `--auto-rdoc` | **Rejected (exit 2).** Obsolete 2026-08-22. Use `rdc capture` below. |
 
 Runtime shaders are loaded from the canonical source directory configured by CMake. The build also synchronizes a packaging copy under `build/res/shaders`.
+
+### GPU capture (RenderDoc) — use `rdc-cli`, not `--auto-rdoc`
+
+`--auto-rdoc` (8s in-process `TriggerCapture` + `qrenderdoc --py rdoc_extract.py` + `analyze_renderdoc.py`) is **fail-closed**. The replacement is the `renderdoc-gpu-debug` skill (`rdc-cli`). Comparison and live evidence: `doc/journey.md` Era 12. Historical internals: `doc/13_renderdoc_auto_rdoc.md`.
+
+This machine (not on PATH):
+
+```powershell
+$env:RENDERDOC_PYTHON_PATH = "D:\GitRepo-My\rdc-cli\.local\renderdoc"
+$rdc = "D:\GitRepo-My\rdc-cli\.venv\Scripts\rdc.exe"
+```
+
+Capture a volumetric-RC frame (from `3d/`; **do not** pass `--wait-for-exit` or `--auto-rdoc`):
+
+```powershell
+& $rdc doctor
+& $rdc capture --frame 480 --timeout 180 --json -- `
+  .\build\RadianceCascades3D.exe --runtime-shell=legacy --exit-frames=600
+```
+
+Inspect (always `open` → work → `close`):
+
+```powershell
+& $rdc open .\tools\captures\rdoc_frame_frame480.rdc
+& $rdc info --json
+& $rdc passes --json
+& $rdc events --limit 50
+& $rdc counters --name "GPU Duration" --json
+& $rdc resources --json                    # sdfTexture / albedoTexture / cascade*_probeAtlas
+& $rdc texture 59 --slice 64 -o sdf.png    # 3D mid-Z; IDs from resources
+& $rdc thumbnail -o thumb.png
+& $rdc close
+```
+
+| Need | Use |
+|------|-----|
+| Headless capture + GPU Duration + stage PNGs | `rdc capture` then the inspect block above |
+| All 4 cascades in one frame **and** no ImGui overlay | Run `--runtime-shell=legacy`, press **G** (app-side `forceCascadeRebuild` + `skipUIRendering`). Then `rdc open` the `.rdc`. `rdc capture --frame N` does not hide UI and does not force stagger. |
+| Forensic replay of the old extract scripts | `RDOC_LEGACY=1` only. Default is refuse (exit 2). |
 
 ### Phase 0 Baseline
 
@@ -198,6 +238,7 @@ This CPU-only validation freezes the independent ShaderToy Cornell scene and cha
 | Space | Toggle between modes |
 | F1 | Toggle UI visibility |
 | F2 | Take screenshot |
+| G | Save a RenderDoc `.rdc` (legacy shell; no auto-extract — inspect with `rdc open`) |
 | R | Reload shaders (hot-swap) |
 | C | Clear scene |
 | Escape | Exit application |
@@ -399,5 +440,5 @@ For questions or issues:
 
 ---
 
-**Last Updated**: 2026-03-30  
+**Last Updated**: 2026-08-22  
 **Version**: 0.1 (Work in Progress)
