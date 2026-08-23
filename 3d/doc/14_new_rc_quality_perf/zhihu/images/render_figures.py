@@ -331,6 +331,41 @@ def fig8_takeaway():
     save(img, "08-takeaway.png")
 
 
+def fig9_tree():
+    img, d = canvas()
+    t(d, (40, 28), "验收是一棵树，不是一个开关", F_TITLE)
+    t(d, (40, 78), "根错了，枝叶再漂亮也会在同一处裂开。红字是「不是什么」。", F_P, MUTED)
+
+    box(d, (470, 130, 930, 230), outline=GREEN, width=3, fill=(236, 246, 236))
+    t(d, (700, 155), "根　正确不是观感", F_H, GREEN, "mt")
+    t(d, (700, 200), "不是：图好看就算对", F_S, RED, "mt")
+
+    box(d, (470, 270, 930, 360), outline=ACCENT, width=3)
+    t(d, (700, 295), "主干　三问分开，红了停在本层", F_H, ACCENT, "mt")
+    t(d, (700, 335), "不是：拿后一问的好看、更快覆盖前一问", F_S, RED, "mt")
+
+    d.line([(700, 230), (700, 270)], fill=WALL, width=3)
+    d.line([(700, 360), (700, 400)], fill=WALL, width=3)
+    d.line([(200, 400), (1200, 400)], fill=WALL, width=3)
+
+    branches = [
+        (70, GREEN, "是什么", "近密远疏", "不是每像素几百条"),
+        (400, ACCENT, "对", "和参考对得上", "不是截图好看"),
+        (730, AMBER, "亮", "切几块，换档", "不是乘系数"),
+        (1060, MUTED, "快", "空白不必算", "不是报快了几倍"),
+    ]
+    for x, color, title, yes, no in branches:
+        d.line([(x + 135, 400), (x + 135, 430)], fill=WALL, width=3)
+        box(d, (x, 430, x + 270, 620), outline=color, width=3)
+        t(d, (x + 135, 455), title, F_H, color, "mt")
+        t(d, (x + 135, 510), yes, F_P, INK, "mt")
+        t(d, (x + 135, 560), no, F_S, RED, "mt")
+
+    box(d, (470, 660, 930, 740), outline=WALL, width=2, fill=(236, 240, 246))
+    t(d, (700, 700), "叶　盒子对上，再换大厅", F_P, INK, "mt")
+    save(img, "09-tree.png")
+
+
 if __name__ == "__main__":
     fig0()
     fig1()
@@ -341,3 +376,4 @@ if __name__ == "__main__":
     fig6_wrong()
     fig7_thread()
     fig8_takeaway()
+    fig9_tree()

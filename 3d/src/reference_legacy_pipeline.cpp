@@ -53,6 +53,8 @@ bool ReferenceLegacyPipeline::runFrame() {
     if (!initialized_ || transportShader_ == 0 || !atlases_.valid())
         return false;
     for (int cascade = 5; cascade >= 0; --cascade) {
+        const std::string group = "legacy_transport.C" + std::to_string(cascade);
+        gl::pushDebugGroup(group.c_str());
         glUseProgram(transportShader_);
         glUniform1i(glGetUniformLocation(transportShader_, "uMode"), 1);
         glUniform1i(glGetUniformLocation(transportShader_, "uCascade"), cascade);
@@ -64,6 +66,7 @@ bool ReferenceLegacyPipeline::runFrame() {
                     reflegacy::kPhysicalWidth);
         glUniform1i(glGetUniformLocation(transportShader_, "uPhysicalHeight"),
                     reflegacy::kPhysicalHeight);
+        glUniform1f(glGetUniformLocation(transportShader_, "uC0Log2Offset"), 0.0f);
         glBindImageTexture(2, atlases_.writeTexture(static_cast<uint32_t>(cascade)),
                            0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
         glActiveTexture(GL_TEXTURE4);
@@ -79,6 +82,7 @@ bool ReferenceLegacyPipeline::runFrame() {
         glActiveTexture(GL_TEXTURE0);
         glDispatchCompute(reflegacy::kPhysicalWidth / 8, reflegacy::kPhysicalHeight / 8, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        gl::popDebugGroup();
     }
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT |
                     GL_TEXTURE_UPDATE_BARRIER_BIT);
@@ -109,6 +113,8 @@ bool ReferenceLegacyPipeline::renderFinalView(GLuint target, int width, int heig
     glUniform1f(glGetUniformLocation(transportShader_, "uAspect"), camera_.aspect);
     glUniform1f(glGetUniformLocation(transportShader_, "uExposure"), exposure_);
     glUniform1f(glGetUniformLocation(transportShader_, "uInvGamma"), invGamma_);
+    glUniform1f(glGetUniformLocation(transportShader_, "uC0Log2Offset"), 0.0f);
+    gl::pushDebugGroup("legacy_final");
     glBindImageTexture(2, target, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, atlases_.readTexture(0));
@@ -119,5 +125,6 @@ bool ReferenceLegacyPipeline::renderFinalView(GLuint target, int width, int heig
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT |
                     GL_TEXTURE_UPDATE_BARRIER_BIT);
     glBindImageTexture(2, 0, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    gl::popDebugGroup();
     return !gl::checkGLError("ReferenceLegacyPipeline::renderFinalView", 0);
 }

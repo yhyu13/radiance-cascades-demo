@@ -1,0 +1,42 @@
+{
+  "schema_version": "reference-transport-report-v1",
+  "payload_schema": "ReferenceSurfaceTexelV1",
+  "result": "PASS",
+  "gates": {
+    "G5-payload-contract": "PASS",
+    "G8-material-direct-light": "PASS"
+  },
+  "gpu": {
+    "vendor": "NVIDIA Corporation",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "opengl_version": "3.3.0 NVIDIA 577.00"
+  },
+  "shaders": [
+    {"name": "reference_transport.comp", "sha256": "b67a6a44247c6fe0ece0abf75f3779fab8e95a4d8ef911b93549e47bf8da4db7", "compiled": true}
+  ],
+  "metrics": {
+    "fixtures_checked": 13,
+    "fixtures_failed": 0,
+    "gpu_fixture_failures": 0,
+    "band_samples_checked": 1142,
+    "band_samples_failed": 0,
+    "payload_failures": 0,
+    "inactive_failures": 0,
+    "classification_failures": 0,
+    "gl_errors": 0,
+    "sky_samples": 324,
+    "hit_samples": 818,
+    "distinct_hit_distances": 680,
+    "max_rgb_error": 5.96046e-08,
+    "max_alpha_error": 2.5034e-06
+  },
+  "phase_scope": {
+    "temporal_feedback": "disabled (B=0)",
+    "upper_merge": "disabled",
+    "calibration_floor": "none",
+    "proxy_visibility": "none",
+    "direct_scale_bypass": "none"
+  },
+  "mismatches": [
+  ]
+}

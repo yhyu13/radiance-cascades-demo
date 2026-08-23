@@ -1,0 +1,47 @@
+{
+  "schema_version": "new-rc-gpu-baseline-v1",
+  "algorithm": "surface-rc",
+  "note": "Same App3D path after Phase 12-D split dispatch. G9 max_pixel_error identical to full-atlas LINEAR (0.0806657).",
+  "gpu": {
+    "vendor": "NVIDIA Corporation",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2"
+  },
+  "capture": {
+    "tool": "rdc-cli",
+    "command": "rdc capture --frame 24 --timeout 180 --json -- .\\build\\RadianceCascades3D.exe --reference-render=40",
+    "rdc": "new_rc_split_frame24.rdc",
+    "frame": 24,
+    "api": "OpenGL",
+    "byte_size": 46023165,
+    "date": "2026-08-22"
+  },
+  "quality_profile": "parity",
+  "atlas_filter": "linear",
+  "dispatch": {
+    "mode": "split-skip-interior-padding",
+    "workgroups_primary": 4096,
+    "workgroups_interior": 1024,
+    "workgroups_per_cascade": 5120,
+    "threads_per_cascade": 327680,
+    "threads_per_frame": 1966080,
+    "thread_reduction_vs_full_atlas": 0.375
+  },
+  "physical": {
+    "width": 1024,
+    "height": 512,
+    "cascades": 6,
+    "format": "RGBA32F",
+    "storage_bytes": 100663296
+  },
+  "gpu_duration_seconds": {
+    "C5": 0.000901984,
+    "C4": 0.001462304,
+    "C3": 0.001211136,
+    "C2": 0.00095088,
+    "C1": 0.000736896,
+    "C0": 0.000686432,
+    "final": 0.000410624,
+    "transport_sum": 0.005949632,
+    "caveat": "Do not claim 28.6/5.95 = 4.8x. The before capture is non-monotonic (replay variance). Honest claim: thread count -37.5%; G9 bit-identical; this capture is the current production New RC baseline."
+  }
+}

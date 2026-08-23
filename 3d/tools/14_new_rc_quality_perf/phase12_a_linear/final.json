@@ -1,0 +1,35 @@
+{
+  "schema_version": "reference-final-report-v1",
+  "payload_schema": "ReferenceSurfaceTexelV1",
+  "atlas_filter": "linear",
+  "result": "PASS",
+  "gates": {"G9-final-consumer": "PASS"},
+  "display_policy": {
+    "reconstruction": "exact four-bin from completed C0 read view",
+    "visible_surface_albedo": true,
+    "one_over_pi": false,
+    "direct_light": "composited separately per pixel",
+    "reflective": "zero (parity kernel)",
+    "display_map": "linear"
+  },
+  "metrics": {
+    "view": [320, 240],
+    "converge_frames": 8,
+    "generation": 8,
+    "pixels_checked": 76800,
+    "pixels_failed": 0,
+    "baseline_failed": 0,
+    "classification_failed": 0,
+    "identity_failures": 0,
+    "stub_indicators": 0,
+    "differing_pixels_vs_baseline": 63455,
+    "boundary_pixels_adjacent_bin": 68,
+    "silhouette_pixels_adjacent_ray": 1,
+    "nan_inf_failures": 0,
+    "gl_errors": 0,
+    "max_pixel_error": 0.0806657
+  },
+  "scope": {"final_rendering": "validation view only", "legacy_modes": "unchanged", "diagnostic_atlases": "read-only"},
+  "mismatches": [
+  ]
+}

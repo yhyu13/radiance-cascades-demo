@@ -1,0 +1,18 @@
+{
+  "schema_version": "new-rc-occupancy-v1",
+  "algorithm": "surface-rc",
+  "quality_profile": "parity",
+  "atlas_filter": "linear",
+  "physical_width": 1024,
+  "physical_height": 512,
+  "texels_per_cascade": 524288,
+  "storage_bytes": 100663296,
+  "cascades": [
+    {"cascade": 0, "total": 524288, "active": 327680, "inactive": 196608, "inactive_ratio": 0.375},
+    {"cascade": 1, "total": 524288, "active": 327660, "inactive": 196628, "inactive_ratio": 0.375038},
+    {"cascade": 2, "total": 524288, "active": 326448, "inactive": 197840, "inactive_ratio": 0.37735},
+    {"cascade": 3, "total": 524288, "active": 326599, "inactive": 197689, "inactive_ratio": 0.377062},
+    {"cascade": 4, "total": 524288, "active": 327395, "inactive": 196893, "inactive_ratio": 0.375544},
+    {"cascade": 5, "total": 524288, "active": 327680, "inactive": 196608, "inactive_ratio": 0.375}
+  ]
+}

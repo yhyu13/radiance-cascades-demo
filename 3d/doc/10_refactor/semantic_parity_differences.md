@@ -78,6 +78,31 @@ and all G0–G10 evidence are unchanged. The legacy scene's box side faces are
 currently uncharted (documented integration limitation); box top faces are
 charted.
 
+## 8. Atlas sampling is GL_LINEAR, including distance alpha
+
+**Reference:** ShaderToy cubemap `textureLod(iChannel3, dir, 0)` interpolates all
+channels. The original cubemap is RGBA8; distance lives in `.w` and is blended.
+
+**Plan §7.5 / G5 / header (Phase 3):** alpha is first-hit distance or the
+negative sky sentinel and "must never be linearly filtered" — i.e. NEAREST.
+
+**Native decision (Phase 12-A, 2026-08-22):** keep **LINEAR** as the production
+default. A/B on the same gates:
+
+| Gate | LINEAR | NEAREST |
+|---|---|---|
+| G5 payload | PASS | PASS (G5 does not sample the atlas) |
+| G6 merge | PASS | PASS (synthetic SSBO, no atlas) |
+| G7 + G10 | PASS, C0 energy[7]=14575.9 | PASS, C0 energy[7]=14564.1 (Δ −0.08%) |
+| G9 | PASS, max_pixel_error=0.0806657 | PASS, max_pixel_error=0.0802687 |
+
+CPU oracles (`sampleBilinear`, G7 epsilon 0.5, G9 epsilon 0.05) already model
+LINEAR. Look-back visibility in `mergeUpper` uses `floor()` (NEAREST-like) on
+the CPU; GPU `textureLod` at half-texel centres is the same under both filters.
+The measurable LINEAR effect is RGB feedback at chart-UV centres, matching
+ShaderToy. `--atlas-filter=nearest` remains an A/B switch; it is not the
+default. This is a recorded divergence from plan §7.5, not a hidden constant.
+
 ---
 
 **Rule:** any future change that would alter one of these differences must

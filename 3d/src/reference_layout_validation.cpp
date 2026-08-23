@@ -567,6 +567,7 @@ void runBandMarkers(GpuSession& session, Results& r, ReferenceRcAtlases& atlases
         glUniform1i(glGetUniformLocation(session.shader, "uMode"), 1);
         glUniform1i(glGetUniformLocation(session.shader, "uCascade"),
                     static_cast<GLint>(c));
+        glUniform1f(glGetUniformLocation(session.shader, "uC0Log2Offset"), 0.0f);
         glBindImageTexture(2, texture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
         glDispatchCompute(reflayout::kPhysicalWidth / 8, reflayout::kPhysicalHeight / 8, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);

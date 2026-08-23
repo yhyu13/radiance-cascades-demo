@@ -6,26 +6,52 @@
 #include <array>
 #include <cstdint>
 
-// Phase 3: owns the six persistent atlas pairs required by the reference
-// parity kernel. Each cascade owns a read texture and a write texture of
-// 1024x512 RGBA32F texels (physical per-cascade storage from plan 7.3).
-// Textures use nearest filtering: alpha carries first-hit distance or the
-// negative sky sentinel and must never be linearly filtered.
-// Phase 3 only allocates and labels the pairs and validates cleared state;
-// transport is not implemented yet.
+// Owns the six persistent atlas pairs required by the reference parity
+// kernel. Each cascade owns a read/write pair of RGBA32F textures
+// (physical per-cascade storage from plan 7.3; default 1024x512).
+//
+// Filter contract (Phase 12-A): plan §7.5 / G5 said NEAREST because alpha
+// is first-hit distance or the negative sky sentinel. Production historically
+// used GL_LINEAR to analogize ShaderToy cubemap textureLod, which interpolates
+// all channels including distance. The runtime filter is therefore selectable
+// (`RcAtlasFilter`) so G7/G9 can A/B the two policies; default remains LINEAR
+// until that ruling is recorded in semantic_parity_differences.md.
+
+enum class RcAtlasFilter { Linear, Nearest };
+
+inline const char* rcAtlasFilterName(RcAtlasFilter filter) {
+    return filter == RcAtlasFilter::Nearest ? "nearest" : "linear";
+}
+
+void setDefaultRcAtlasFilter(RcAtlasFilter filter);
+RcAtlasFilter defaultRcAtlasFilter();
+
+struct RcAtlasOccupancy {
+    int total = 0;
+    int inactive = 0;  // RGB zero AND alpha -1. Layout padding matches this
+                       // exactly on parity. Zero-weight sky bins can collide.
+    int active = 0;
+};
+
+RcAtlasOccupancy countAtlasOccupancy(GLuint texture, int width, int height);
 
 class ReferenceRcAtlases final {
 public:
-    ReferenceRcAtlases() = default;
+    ReferenceRcAtlases();
+    explicit ReferenceRcAtlases(RcAtlasFilter filter) : filter_(filter) {}
     // Legacy Cornell layout uses 1472x256 single-page physical storage.
-    ReferenceRcAtlases(int physicalWidth, int physicalHeight)
-        : width_(physicalWidth), height_(physicalHeight) {}
+    ReferenceRcAtlases(int physicalWidth, int physicalHeight,
+                       RcAtlasFilter filter = RcAtlasFilter::Linear)
+        : width_(physicalWidth), height_(physicalHeight), filter_(filter) {}
     ~ReferenceRcAtlases();
     ReferenceRcAtlases(const ReferenceRcAtlases&) = delete;
     ReferenceRcAtlases& operator=(const ReferenceRcAtlases&) = delete;
 
     bool allocate();
     void reset() noexcept;
+
+    void setFilter(RcAtlasFilter filter) { filter_ = filter; }
+    RcAtlasFilter filter() const { return filter_; }
 
     bool valid() const { return valid_; }
     GLuint readTexture(uint32_t cascade) const { return pairs_[cascade].read; }
@@ -48,6 +74,9 @@ public:
 
     // Cleared-state contract: RGB zero, alpha -1 (negative miss sentinel).
     bool verifyClearedState(uint32_t cascade, bool readSide) const;
+    RcAtlasOccupancy occupancy(uint32_t cascade, bool readSide) const;
+    int width() const { return width_; }
+    int height() const { return height_; }
 
 private:
     struct Pair {
@@ -57,6 +86,7 @@ private:
     std::array<Pair, 6> pairs_{};
     int width_ = 1024;
     int height_ = 512;
+    RcAtlasFilter filter_ = RcAtlasFilter::Linear;
     bool valid_ = false;
     bool historyValid_ = false;
     uint64_t historyGeneration_ = 0;

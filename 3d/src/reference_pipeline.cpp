@@ -4,6 +4,8 @@
 #include "gl_helpers.h"
 #include "reference_layout.h"
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 
 ReferenceRcPipeline::~ReferenceRcPipeline() {
@@ -57,6 +59,8 @@ bool ReferenceRcPipeline::runFrame() {
     if (!initialized_ || transportShader_ == 0 || !atlases_.valid())
         return false;
     for (int cascade = 5; cascade >= 0; --cascade) {
+        const std::string group = "reference_transport.C" + std::to_string(cascade);
+        gl::pushDebugGroup(group.c_str());
         glUseProgram(transportShader_);
         glUniform1i(glGetUniformLocation(transportShader_, "uMode"), 1);
         glUniform1i(glGetUniformLocation(transportShader_, "uCascade"), cascade);
@@ -68,6 +72,8 @@ bool ReferenceRcPipeline::runFrame() {
                     reflayout::kPhysicalWidth);
         glUniform1i(glGetUniformLocation(transportShader_, "uPhysicalHeight"),
                     reflayout::kPhysicalHeight);
+        glUniform1f(glGetUniformLocation(transportShader_, "uC0Log2Offset"),
+                    c0Log2Offset());
         glBindImageTexture(2, atlases_.writeTexture(static_cast<uint32_t>(cascade)),
                            0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
         glActiveTexture(GL_TEXTURE4);
@@ -81,13 +87,59 @@ bool ReferenceRcPipeline::runFrame() {
         glBindTexture(GL_TEXTURE_2D, atlases_.readTexture(0));
         glUniform1i(glGetUniformLocation(transportShader_, "uFeedbackC0"), 5);
         glActiveTexture(GL_TEXTURE0);
-        glDispatchCompute(reflayout::kPhysicalWidth / 8, reflayout::kPhysicalHeight / 8, 1);
+        // Skip unused interior padding (x>=256, y>=256): 37.5% of 1024x512.
+        // Primary page y in [0,256); interior used region x in [0,256), y in [256,512).
+        const GLint originLoc =
+            glGetUniformLocation(transportShader_, "uDispatchOrigin");
+        glUniform2i(originLoc, 0, 0);
+        glDispatchCompute(reflayout::kPhysicalWidth / 8, reflayout::kBandHeight / 8, 1);
+        glUniform2i(originLoc, 0, reflayout::kBandHeight);
+        glDispatchCompute(256 / 8, reflayout::kBandHeight / 8, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        gl::popDebugGroup();
     }
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT |
                     GL_TEXTURE_UPDATE_BARRIER_BIT);
     atlases_.swap();
     return !gl::checkGLError("ReferenceRcPipeline::runFrame", 0);
+}
+
+bool ReferenceRcPipeline::writeOccupancyJson(const std::string& path) const {
+    std::array<RcAtlasOccupancy, 6> occupancy{};
+    for (uint32_t c = 0; c < 6; ++c)
+        occupancy[c] = atlases_.occupancy(c, true);
+    const std::filesystem::path p(path);
+    std::error_code ec;
+    if (p.has_parent_path())
+        std::filesystem::create_directories(p.parent_path(), ec);
+    std::ofstream out(path, std::ios::trunc);
+    if (ec || !out)
+        return false;
+    out << "{\n";
+    out << "  \"schema_version\": \"new-rc-occupancy-v1\",\n";
+    out << "  \"algorithm\": \"surface-rc\",\n";
+    out << "  \"quality_profile\": \"" << rcQualityProfileName(quality_) << "\",\n";
+    out << "  \"atlas_filter\": \"" << rcAtlasFilterName(atlases_.filter()) << "\",\n";
+    out << "  \"physical_width\": " << atlases_.width() << ",\n";
+    out << "  \"physical_height\": " << atlases_.height() << ",\n";
+    out << "  \"texels_per_cascade\": " << (atlases_.width() * atlases_.height()) << ",\n";
+    out << "  \"storage_bytes\": "
+        << (static_cast<long long>(6) * 2 * atlases_.width() * atlases_.height() * 16)
+        << ",\n";
+    out << "  \"cascades\": [\n";
+    for (int c = 0; c < 6; ++c) {
+        const RcAtlasOccupancy& o = occupancy[static_cast<size_t>(c)];
+        const double inactiveRatio =
+            o.total > 0 ? static_cast<double>(o.inactive) / o.total : 0.0;
+        out << "    {\"cascade\": " << c
+            << ", \"total\": " << o.total
+            << ", \"active\": " << o.active
+            << ", \"inactive\": " << o.inactive
+            << ", \"inactive_ratio\": " << inactiveRatio << "}";
+        out << (c < 5 ? ",\n" : "\n");
+    }
+    out << "  ]\n}\n";
+    return out.good();
 }
 
 bool ReferenceRcPipeline::renderFinalView(GLuint target, int width, int height,
@@ -114,6 +166,9 @@ bool ReferenceRcPipeline::renderFinalView(GLuint target, int width, int height,
     // Validated path stays linear (1/1); interactive callers override.
     glUniform1f(glGetUniformLocation(transportShader_, "uExposure"), exposure_);
     glUniform1f(glGetUniformLocation(transportShader_, "uInvGamma"), invGamma_);
+    glUniform1f(glGetUniformLocation(transportShader_, "uC0Log2Offset"),
+                c0Log2Offset());
+    gl::pushDebugGroup("reference_final");
     glBindImageTexture(2, target, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, atlases_.readTexture(0));
@@ -125,5 +180,6 @@ bool ReferenceRcPipeline::renderFinalView(GLuint target, int width, int height,
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT |
                     GL_TEXTURE_UPDATE_BARRIER_BIT);
     glBindImageTexture(2, 0, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    gl::popDebugGroup();
     return !gl::checkGLError("ReferenceRcPipeline::renderFinalView", 0);
 }

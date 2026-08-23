@@ -1,0 +1,7 @@
+{
+  "schema_version": "reference-upper-merge-report-v1",
+  "result": "PASS",
+  "gates": {"G6-upper-cascade-weighted-merge": "PASS"},
+  "metrics": {"fixtures_checked": 5, "cpu_failures": 0, "gpu_failures": 0, "gl_errors": 0, "max_error": 5.96046e-08},
+  "scope": {"temporal_feedback": "disabled", "atlas_swap": "disabled", "final_rendering": "disabled"}
+}

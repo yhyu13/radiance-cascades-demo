@@ -181,6 +181,7 @@ bool writeReport(const std::string& path, const Results& r) {
     out << "{\n";
     out << "  \"schema_version\": \"reference-final-report-v1\",\n";
     out << "  \"payload_schema\": \"ReferenceSurfaceTexelV1\",\n";
+    out << "  \"atlas_filter\": \"" << rcAtlasFilterName(defaultRcAtlasFilter()) << "\",\n";
     out << "  \"result\": \"" << (passed ? "PASS" : "FAIL") << "\",\n";
     out << "  \"gates\": {\"G9-final-consumer\": \"" << (passed ? "PASS" : "FAIL") << "\"},\n";
     out << "  \"display_policy\": {\n";

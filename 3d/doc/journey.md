@@ -243,6 +243,31 @@ Files this session actually opened: `tools/captures/rdoc_frame_frame424.rdc` (re
 
 ---
 
+## Era 13 — Phase 12: New RC correctness / quality / performance control planes (2026-08-22)
+
+| ME | YOU |
+|---|---|
+| "下一个 phase 是什么 new rc 算法怎么优化性能和控制质量？我们怎么知道 new rc 是正确的？" + critic：不是 Sponza，不是 volumetric。 | Locked the object: New RC = default `App3D` / `reference_transport.comp`. Era 11/12 Cornell numbers belong to `--runtime-shell=legacy` and are not evidence. |
+| *(three-layer definition)* | **L1** G0–G10 semantic PASS. **L2** PT INFO `ratio=1.084` is the 2×2 C0 algorithm cap, not a port bug. **L3** had no New RC GPU baseline. Mixing the three is the v2.x MBRC failure line. |
+| *(Phase 12-A filter contract)* | Header/G5 said NEAREST; production was LINEAR. A/B: G5/G6 ignore atlas sampling; G7/G9 PASS both. LINEAR C0 energy 14575.9 vs NEAREST 14564.1 (−0.08%). Ruled **LINEAR** (ShaderToy cubemap + CPU `sampleBilinear`). Recorded as `semantic_parity_differences.md` §8. Switch: `--atlas-filter=`. |
+| *(Phase 12-B first New RC capture)* | `rdc capture --frame 24 -- .\\build\\RadianceCascades3D.exe --reference-render=40` (no legacy). Occupancy: **37.5% inactive**, shape = unused interior padding `x>=256 && y>=256`, not sparse probes. GPU JSON: `tools/14_new_rc_quality_perf/phase12_b/gpu_baseline.json`. Full-atlas transport_sum ≈ 28.6 ms, **non-monotonic** (C5 9.13, C3 8.58, C4 4.18) — replay variance, not a SLA. |
+| *(Phase 12-C quality profiles)* | `--rc-quality=parity\|high-c0`. Parity keeps `probeSize=2^(c+1)` and is the only validation path. High-c0 sets `uC0Log2Offset=1` (C0=4) in the shader only; `reference_layout.h` untouched. Validation refuses high-c0 (exit 2). High-c0 render smoke + occupancy JSON landed. |
+| *(Phase 12-D one lever)* | Inactive is a rectangle, so the lever is **split dispatch**, not a sparse worklist. Production now dispatches primary 1024×256 + interior 256×256 (−37.5% threads). G9 `max_pixel_error` identical to the LINEAR baseline (0.0806657). After-capture JSON: `phase12_d/gpu_after_split.json`. Do **not** claim 4.8× from the two Duration sums. Forbidden: gain / floor / proxy visibility. |
+| *(exit)* | Filter recorded, New RC GPU JSON in-tree, parity G5–G9 green, high-c0 does not pollute parity golden. Phase 11 M1 (UV2 packer) is now unblocked as a *follow-on*, not this phase. |
+
+---
+
+## Era 14 — Phase 11 M1: CPU UV2 island extractor + atlas packer (2026-08-23)
+
+| ME | YOU |
+|---|---|
+| "Phase 12 已完成。下一 phase 是 M1：CPU 侧 UV2 island extractor + atlas packer。" | Built `chart_provider` (extract + pack) and `--validate-chart-provider`. CPU-only. Locked `reference_layout.h` untouched. |
+| *(R4/R5/R6)* | Pack into 1024×256 band templates, two pages; `resolution.y=256`; `resolution.x` probe-aligned to 64; `logicalBase.x % resolution.x == 0` because `decodeProbe` uses `mod(uv, gRes)`. Optional gutter. |
+| *(Q5 Sponza UV2)* | `sponza.obj` has tiled albedo `vt` (range outside [0,1]). M1 fail-closed: `TiledUv`, empty charts. **Not** sold as general surface RC. Author UV2 before M3. Meshlet fallback not used. |
+| *(exit)* | Gate `P11-M1-uv2-packer`. Synthetic two-quad PASS; tiled/folded/overflow refuse; Cornell-width pack matches 0/256/512/640/768/896. |
+
+---
+
 ## The recurring lesson of this project
 
 Every time a fix was built on intuition, measurement or a reference diff overturned it:

@@ -1,0 +1,50 @@
+{
+  "schema_version": "new-rc-gpu-baseline-v1",
+  "algorithm": "surface-rc",
+  "note": "Default App3D. Not --runtime-shell=legacy. Not volumetric radiance_3d.comp.",
+  "gpu": {
+    "vendor": "NVIDIA Corporation",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2"
+  },
+  "capture": {
+    "tool": "rdc-cli",
+    "command": "rdc capture --frame 24 --timeout 180 --json -- .\\build\\RadianceCascades3D.exe --reference-render=40",
+    "rdc": "new_rc_parity_frame24.rdc",
+    "frame": 24,
+    "api": "OpenGL",
+    "byte_size": 46025135,
+    "date": "2026-08-22"
+  },
+  "quality_profile": "parity",
+  "atlas_filter": "linear",
+  "dispatch": {
+    "mode": "full-atlas",
+    "workgroups_per_cascade": 8192,
+    "threads_per_cascade": 524288,
+    "threads_per_frame": 3145728
+  },
+  "physical": {
+    "width": 1024,
+    "height": 512,
+    "cascades": 6,
+    "format": "RGBA32F",
+    "ping_pong": 2,
+    "storage_bytes": 100663296
+  },
+  "occupancy": {
+    "source": "occupancy.json",
+    "inactive_ratio_mean": 0.3758,
+    "inactive_shape": "unused interior padding x>=256 && y>=256 (196608 texels). Charted region is nearly fully active."
+  },
+  "gpu_duration_seconds": {
+    "C5": 0.009134112,
+    "C4": 0.004184736,
+    "C3": 0.008579616,
+    "C2": 0.002648064,
+    "C1": 0.00234752,
+    "C0": 0.001700736,
+    "final": 0.000691968,
+    "transport_sum": 0.028594784,
+    "caveat": "Non-monotonic C5>C3>C4. RenderDoc GPU Duration replay varies ±2-5x (journey Era 12). Use as first New RC baseline, not a tight SLA."
+  }
+}

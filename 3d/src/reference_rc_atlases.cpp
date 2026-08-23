@@ -6,6 +6,15 @@
 #include <iostream>
 #include <vector>
 
+namespace {
+RcAtlasFilter gDefaultFilter = RcAtlasFilter::Linear;
+}  // namespace
+
+void setDefaultRcAtlasFilter(RcAtlasFilter filter) { gDefaultFilter = filter; }
+RcAtlasFilter defaultRcAtlasFilter() { return gDefaultFilter; }
+
+ReferenceRcAtlases::ReferenceRcAtlases() : filter_(gDefaultFilter) {}
+
 ReferenceRcAtlases::~ReferenceRcAtlases() {
     reset();
 }
@@ -56,12 +65,13 @@ bool ReferenceRcAtlases::allocate() {
         for (int side = 0; side < 2; ++side) {
             const GLuint texture = textures[side];
             glBindTexture(GL_TEXTURE_2D, texture);
-            // Bilinear filtering matches the original ShaderToy's cubemap
-            // textureLod with default filtering, which smooths probe-grid
-            // banding. The alpha channel is also interpolated (the original
-            // cubemap stores RGBA8 and blends all channels including distance).
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            // Default LINEAR analogizes ShaderToy cubemap textureLod (all
+            // channels, including distance). NEAREST is the plan §7.5 / G5
+            // policy. Phase 12-A A/B selects via RcAtlasFilter.
+            const GLenum glFilter =
+                (filter_ == RcAtlasFilter::Nearest) ? GL_NEAREST : GL_LINEAR;
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F,
@@ -115,4 +125,28 @@ bool ReferenceRcAtlases::verifyClearedState(uint32_t cascade, bool readSide) con
             return false;
     }
     return true;
+}
+
+RcAtlasOccupancy countAtlasOccupancy(GLuint texture, int width, int height) {
+    RcAtlasOccupancy out;
+    if (texture == 0 || width <= 0 || height <= 0)
+        return out;
+    out.total = width * height;
+    std::vector<float> data(static_cast<size_t>(out.total) * 4);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, data.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+    for (size_t i = 0; i < data.size(); i += 4) {
+        if (data[i] == 0.0f && data[i + 1] == 0.0f && data[i + 2] == 0.0f &&
+            data[i + 3] == -1.0f)
+            ++out.inactive;
+        else
+            ++out.active;
+    }
+    return out;
+}
+
+RcAtlasOccupancy ReferenceRcAtlases::occupancy(uint32_t cascade, bool readSide) const {
+    const GLuint texture = readSide ? pairs_[cascade].read : pairs_[cascade].write;
+    return countAtlasOccupancy(texture, width_, height_);
 }

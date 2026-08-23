@@ -8,7 +8,13 @@
 #include <GL/glew.h>
 
 #include <cstdint>
-#include <vector>
+#include <string>
+
+enum class RcQualityProfile { Parity, HighC0 };
+
+inline const char* rcQualityProfileName(RcQualityProfile profile) {
+    return profile == RcQualityProfile::HighC0 ? "high-c0" : "parity";
+}
 
 // Phase 7: owns the validated reference frame pipeline (scene upload, atlas
 // allocation, per-frame C5->C0 hierarchy with feedback/merge, atomic swap)
@@ -18,9 +24,18 @@
 class ReferenceRcPipeline final {
 public:
     ReferenceRcPipeline() = default;
+    explicit ReferenceRcPipeline(RcAtlasFilter filter) : atlases_(filter) {}
     ~ReferenceRcPipeline();
     ReferenceRcPipeline(const ReferenceRcPipeline&) = delete;
     ReferenceRcPipeline& operator=(const ReferenceRcPipeline&) = delete;
+
+    void setQualityProfile(RcQualityProfile profile) { quality_ = profile; }
+    RcQualityProfile qualityProfile() const { return quality_; }
+    // Parity: probeSize = 2^(c+1) so C0 = 2. HighC0: 2^(c+2) so C0 = 4.
+    // Does not rewrite reference_layout.h; validation stays on Parity.
+    float c0Log2Offset() const {
+        return quality_ == RcQualityProfile::HighC0 ? 1.0f : 0.0f;
+    }
 
     bool initialize();
     void shutdown() noexcept;
@@ -49,6 +64,8 @@ public:
         invGamma_ = invGamma;
     }
 
+    bool writeOccupancyJson(const std::string& path) const;
+
 private:
     ReferenceCornellScene scene_;
     ReferenceCamera camera_;
@@ -57,6 +74,7 @@ private:
     GLuint transportShader_ = 0;
     float exposure_ = 1.0f;
     float invGamma_ = 1.0f;
+    RcQualityProfile quality_ = RcQualityProfile::Parity;
     bool initialized_ = false;
 };
 

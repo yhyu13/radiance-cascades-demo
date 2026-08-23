@@ -74,6 +74,8 @@ set(SOURCES_3D
     src/reference_legacy_validation.cpp
     src/reference_transport.cpp
     src/reference_transport_validation.cpp
+    src/chart_provider.cpp
+    src/chart_provider_validation.cpp
     src/demo3d.cpp
     src/gl_helpers.cpp
     src/analytic_sdf.cpp  # Analytic SDF primitives for Phase 0
@@ -101,6 +103,8 @@ set(HEADERS_3D
     src/reference_legacy_validation.h
     src/reference_transport.h
     src/reference_transport_validation.h
+    src/chart_provider.h
+    src/chart_provider_validation.h
     src/demo3d.h
     src/analytic_sdf.h  # Analytic SDF header
     include/gl_helpers.h

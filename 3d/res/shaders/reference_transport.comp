@@ -84,6 +84,12 @@ uniform float uCamTan;
 uniform float uAspect;
 uniform float uExposure;
 uniform float uInvGamma;
+// Phase 12-C: 0 = parity probeSize=2^(c+1); 1 = high-c0 probeSize=2^(c+2).
+// Validation never sets this; GLSL default 0 keeps G0-G10 bit-identical.
+uniform float uC0Log2Offset = 0.0;
+// Phase 12-D: texel origin of this dispatch. Default 0 preserves full-atlas
+// validation dispatches. Production skips unused interior padding.
+uniform ivec2 uDispatchOrigin = ivec2(0);
 
 const float THETA_PI = 3.14192653;
 const float PI       = 3.141592653;
@@ -329,14 +335,17 @@ vec3 feedbackB(TraceHit h) {
         return vec3(0.0);
     vec2 res, base;
     chartInfo(uint(h.chartId), res, base);
-    vec2 halfRes = res*0.5;
-    vec2 suv = clamp(h.chartUv*halfRes, vec2(0.5), halfRes - 0.5) + base;
+    float c0Size = pow(2.0, 1.0 + uC0Log2Offset);
+    vec2 cell = res / c0Size;
+    vec2 suv = clamp(h.chartUv*cell, vec2(0.5), cell - 0.5) + base;
     ivec2 sz = textureSize(uFeedbackC0, 0);
-    vec2 offs[4] = vec2[4](vec2(0.0), vec2(halfRes.x, 0.0), vec2(0.0, halfRes.y), halfRes);
     vec3 sum = vec3(0.0);
-    for (int i = 0; i < 4; ++i) {
-        vec2 phys = globalToPhysicalF(0, suv + offs[i]);
-        sum += textureLod(uFeedbackC0, phys / vec2(sz), 0.0).rgb;
+    int n = int(c0Size + 0.5);
+    for (int j = 0; j < n; ++j) {
+        for (int i = 0; i < n; ++i) {
+            vec2 phys = globalToPhysicalF(0, suv + vec2(float(i), float(j))*cell);
+            sum += textureLod(uFeedbackC0, phys / vec2(sz), 0.0).rgb;
+        }
     }
     return sum;
 }
@@ -491,7 +500,7 @@ ProbeDecode decodeProbe(vec2 uv) {
     // Cascade band is page-relative: mod by 1536 handles the two-page parity
     // layout (interior page y>=1536) and is a no-op for single-page scenes.
     float probeCascade = floor(mod(uv.y, 1536.0) / 256.0);
-    float probeSize = pow(2.0, probeCascade + 1.0);
+    float probeSize = pow(2.0, probeCascade + 1.0 + uC0Log2Offset);
     vec2 modUV = mod(uv, gRes);
     vec2 probePositions = gRes / probeSize;
     vec3 probePos = gPos + mod(modUV.x, probePositions.x)*probeSize*texelScale*gTan
@@ -619,7 +628,7 @@ void main() {
     }
 
     // Band transport.
-    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy) + uDispatchOrigin;
     if (texel.x >= uPhysicalWidth || texel.y >= uPhysicalHeight)
         return;
     // Two-page (parity) atlas: physical y<256 is the primary page, y>=256 is

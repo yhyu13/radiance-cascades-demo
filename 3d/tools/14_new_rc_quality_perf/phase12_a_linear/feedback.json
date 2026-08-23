@@ -1,0 +1,30 @@
+{
+  "schema_version": "reference-feedback-report-v1",
+  "payload_schema": "ReferenceSurfaceTexelV1",
+  "atlas_filter": "linear",
+  "result": "PASS",
+  "gates": {
+    "G7-temporal-feedback": "PASS",
+    "G10-determinism-stability": "PASS"
+  },
+  "scheduler": {"dispatch_order": [5, 4, 3, 2, 1, 0, 5, 4, 3, 2, 1, 0], "final_generation": 9},
+  "metrics": {
+    "address_fixtures_checked": 24,
+    "address_fixtures_failed": 0,
+    "bounce_checks_failed": 0,
+    "reset_checks_failed": 0,
+    "generation_checks_failed": 0,
+    "alias_failures": 0,
+    "sentinel_failures": 0,
+    "stability_failures": 0,
+    "determinism_failures": 0,
+    "nan_inf_failures": 0,
+    "band_samples_checked": 721,
+    "band_samples_failed": 0,
+    "gl_errors": 0,
+    "c0_energies": [4773.21, 7774.5, 9898.2, 11446.7, 12594.3, 13450.3, 14092.4, 14575.9]
+  },
+  "scope": {"upper_merge": "enabled", "temporal_feedback": "previous-generation C0", "atlas_swap": "after complete frames only", "final_rendering": "disabled"},
+  "mismatches": [
+  ]
+}

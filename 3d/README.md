@@ -156,6 +156,10 @@ Key runtime commands:
 | `--legacy-render=N [--legacy-render-shot=FILE]` | Legacy Cornell new-RC render |
 | `--legacy-pt-shot=FILE` | Legacy Cornell path-trace shot |
 | `--validate-reference-<gate> --reference-<gate>-report=FILE` | Run a G1-G10 validation gate |
+| `--validate-chart-provider --chart-provider-report=FILE` | Phase 11 M1 CPU UV2 packer (R4/R5/R6). No GPU. |
+| `--atlas-filter=linear\|nearest` | Atlas sampling (default LINEAR; Phase 12-A) |
+| `--rc-quality=parity\|high-c0` | Quality profile. Default `parity` is the only G0–G10 gate. `high-c0` is refused by validation. |
+| `--occupancy-json=PATH` | Write per-cascade active/inactive counts after a reference render |
 | `--auto-rdoc` | **Rejected (exit 2).** Obsolete 2026-08-22. Use `rdc capture` below. |
 
 Runtime shaders are loaded from the canonical source directory configured by CMake. The build also synchronizes a packaging copy under `build/res/shaders`.
@@ -171,13 +175,15 @@ $env:RENDERDOC_PYTHON_PATH = "D:\GitRepo-My\rdc-cli\.local\renderdoc"
 $rdc = "D:\GitRepo-My\rdc-cli\.venv\Scripts\rdc.exe"
 ```
 
-Capture a volumetric-RC frame (from `3d/`; **do not** pass `--wait-for-exit` or `--auto-rdoc`):
+Capture a **New RC** (default App3D surface kernel) frame (from `3d/`; **do not** pass `--wait-for-exit`, `--auto-rdoc`, or `--runtime-shell=legacy`):
 
 ```powershell
 & $rdc doctor
-& $rdc capture --frame 480 --timeout 180 --json -- `
-  .\build\RadianceCascades3D.exe --runtime-shell=legacy --exit-frames=600
+& $rdc capture --frame 24 --timeout 180 --json -- `
+  .\build\RadianceCascades3D.exe --reference-render=40
 ```
+
+Volumetric RC remains `--runtime-shell=legacy` only. Its Duration numbers are a different algorithm.
 
 Inspect (always `open` → work → `close`):
 

@@ -1,6 +1,6 @@
 # Phase 11: Generalization Design — From Hardcoded Cornell Charts to Real Mesh Surfaces
 
-**Status:** Design decision (no code in this phase)
+**Status:** Design decision landed; M1 CPU packer implemented (2026-08-23). No GPU.
 **Source plan:** `doc/10_refactor/3d_radiance_cascades_refactor_plan.md` §Phase 11
 **Date:** 2026-08-06
 **Scope:** Decide how the proven reference kernel moves from the hardcoded Cornell chart set to arbitrary mesh surfaces. This document does **not** port anything; it fixes the chart-provider and tracer boundary and selects a primary approach.
@@ -177,7 +177,7 @@ The packer (island → `logicalBase` + resolution) and the layout params are the
 
 ## 7. Suggested milestones (next design cycle)
 
-- **M1 — UV2 island extractor + atlas packer (CPU tool):** produce `ChartProviderResult` for a Sponza UV2 pass; validate packer output against the layout contract (R4/R5/R6) without touching the GPU.
+- **M1 — UV2 island extractor + atlas packer (CPU tool):** produce `ChartProviderResult` for a unique-UV2 mesh; validate packer output against the layout contract (R4/R5/R6) without touching the GPU. **Done (2026-08-23).** Sponza OBJ has tiled albedo `vt`, not unique UV2 — fail-closed (`TiledUv`), no charts emitted. See `tools/11_generalization/phase11_m1/`.
 - **M2 — kind-5 mesh-island trace in `reference_transport.comp`:** CPU oracle parity for island hits; Cornell parity scene must remain bit-identical (constraint 3).
 - **M3 — Sponza authored-UV2 pilot scene:** run the full transport/merge/feedback/final on a real-mesh chart set and report against the same measurement cameras. **No parity claim from proxy geometry** — this is the first geometry-linked result.
 - **M4 — decision on fallbacks:** meshlet derivation quality gate, then a standing proposal for surfel/virtual-texture infra.
@@ -195,7 +195,7 @@ The packer (island → `logicalBase` + resolution) and the layout params are the
 
 ## 9. Open questions for the next cycle
 
-1. Sponza UV2 availability: author a clean UV2 pass, or rely on the fallback meshlet path for a first pilot?
+1. Sponza UV2 availability: **answered 2026-08-23.** `res/scene/sponza.obj` has one tiled albedo `vt` channel (`uv` range outside `[0,1]`, overlapping islands). Not unique UV2. Author a clean UV2 pass before M3. Meshlet fallback remains explicit and is **not** used by M1.
 2. Atlas budget: what per-scene logical/physical size is acceptable for Sponza-scale chart counts?
 3. Island count target: how small can islands get before the fixed probe-coupling overhead dominates (the §5.2 failure mode)?
 4. Double-sided/backface policy for thin walls (the parity scene uses one-sided quads with explicit flip flags).

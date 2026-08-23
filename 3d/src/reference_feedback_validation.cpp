@@ -148,6 +148,7 @@ void dispatchCascade(GpuSession& s, ReferenceRcAtlases& atlases, int cascade,
     glUniform1i(glGetUniformLocation(s.shader, "uHistoryValid"), historyValid ? 1 : 0);
     glUniform1i(glGetUniformLocation(s.shader, "uPhysicalWidth"), reflayout::kPhysicalWidth);
     glUniform1i(glGetUniformLocation(s.shader, "uPhysicalHeight"), reflayout::kPhysicalHeight);
+    glUniform1f(glGetUniformLocation(s.shader, "uC0Log2Offset"), 0.0f);
     glBindImageTexture(2, atlases.writeTexture(static_cast<uint32_t>(cascade)), 0,
                        GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
     glActiveTexture(GL_TEXTURE4);
@@ -291,6 +292,7 @@ bool writeReport(const std::string& path, const Results& r,
     out << "{\n";
     out << "  \"schema_version\": \"reference-feedback-report-v1\",\n";
     out << "  \"payload_schema\": \"ReferenceSurfaceTexelV1\",\n";
+    out << "  \"atlas_filter\": \"" << rcAtlasFilterName(defaultRcAtlasFilter()) << "\",\n";
     out << "  \"result\": \"" << (passed ? "PASS" : "FAIL") << "\",\n";
     out << "  \"gates\": {\n";
     out << "    \"G7-temporal-feedback\": \"" << (r.g7() ? "PASS" : "FAIL") << "\",\n";

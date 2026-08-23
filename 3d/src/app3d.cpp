@@ -1,4 +1,5 @@
 #include "app3d.h"
+#include "chart_provider_validation.h"
 #include "legacy_demo3d_runtime.h"
 #include "reference_cornell_scene.h"
 #include "reference_layout_validation.h"
@@ -37,6 +38,7 @@ struct StartupConfig {
     bool validateReferenceFeedback = false;
     bool validateReferenceFinal = false;
     bool validateReferenceLegacy = false;
+    bool validateChartProvider = false;
     int legacyRenderFrames = -1;
     std::string_view legacyRenderShot;
     std::string_view legacyPtShot;
@@ -55,6 +57,10 @@ struct StartupConfig {
     std::string_view referenceMergeReport;
     std::string_view referenceFeedbackReport;
     std::string_view referenceFinalReport;
+    RcAtlasFilter atlasFilter = RcAtlasFilter::Linear;
+    RcQualityProfile quality = RcQualityProfile::Parity;
+    std::string_view occupancyJson;
+    std::string_view chartProviderReport;
 };
 
 StartupConfig parseStartupConfig(int argc, char* argv[]) {
@@ -70,8 +76,8 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
             std::cerr
                 << "[APP3D] --auto-rdoc is obsolete (2026-08-22).\n"
                 << "[APP3D] Use rdc-cli (skill renderdoc-gpu-debug), e.g.\n"
-                << "  rdc capture --frame 480 --timeout 180 --json -- "
-                   ".\\build\\RadianceCascades3D.exe --runtime-shell=legacy --exit-frames=600\n"
+                << "  rdc capture --frame 24 --timeout 180 --json -- "
+                   ".\\build\\RadianceCascades3D.exe --reference-render=40\n"
                 << "  rdc open <file.rdc>\n"
                 << "  rdc counters --name \"GPU Duration\" --json\n"
                 << "[APP3D] Do not pass --wait-for-exit. G-key still saves a .rdc (no auto-extract).\n"
@@ -105,6 +111,10 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
         }
         if (argument == "--validate-reference-legacy") {
             config.validateReferenceLegacy = true;
+            continue;
+        }
+        if (argument == "--validate-chart-provider") {
+            config.validateChartProvider = true;
             continue;
         }
         constexpr std::string_view legacyReportPrefix = "--reference-legacy-report=";
@@ -208,6 +218,44 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
             config.referenceFinalReport = argument.substr(finalReportPrefix.size());
             continue;
         }
+        constexpr std::string_view atlasFilterPrefix = "--atlas-filter=";
+        if (argument.starts_with(atlasFilterPrefix)) {
+            const std::string_view value = argument.substr(atlasFilterPrefix.size());
+            if (value == "linear") {
+                config.atlasFilter = RcAtlasFilter::Linear;
+            } else if (value == "nearest") {
+                config.atlasFilter = RcAtlasFilter::Nearest;
+            } else {
+                std::cerr << "[APP3D] Invalid --atlas-filter '" << value
+                          << "'; expected linear or nearest.\n";
+                config.valid = false;
+            }
+            continue;
+        }
+        constexpr std::string_view qualityPrefix = "--rc-quality=";
+        if (argument.starts_with(qualityPrefix)) {
+            const std::string_view value = argument.substr(qualityPrefix.size());
+            if (value == "parity") {
+                config.quality = RcQualityProfile::Parity;
+            } else if (value == "high-c0") {
+                config.quality = RcQualityProfile::HighC0;
+            } else {
+                std::cerr << "[APP3D] Invalid --rc-quality '" << value
+                          << "'; expected parity or high-c0.\n";
+                config.valid = false;
+            }
+            continue;
+        }
+        constexpr std::string_view occupancyPrefix = "--occupancy-json=";
+        if (argument.starts_with(occupancyPrefix)) {
+            config.occupancyJson = argument.substr(occupancyPrefix.size());
+            continue;
+        }
+        constexpr std::string_view chartProviderReportPrefix = "--chart-provider-report=";
+        if (argument.starts_with(chartProviderReportPrefix)) {
+            config.chartProviderReport = argument.substr(chartProviderReportPrefix.size());
+            continue;
+        }
         constexpr std::string_view prefix = "--runtime-shell=";
         if (argument.starts_with(prefix)) {
             if (shellSeen) {
@@ -240,7 +288,9 @@ StartupConfig parseStartupConfig(int argc, char* argv[]) {
 
 }  // namespace
 
-int runReferenceRenderInteractive(int frames, const std::string& screenshotPath);
+int runReferenceRenderInteractive(int frames, const std::string& screenshotPath,
+                                  RcAtlasFilter atlasFilter, RcQualityProfile quality,
+                                  const std::string& occupancyJson);
 int runReferencePtCapture(const std::string& screenshotPath, int samplesPerPixel,
                           int maxBounces, bool reflectiveZero);
 int runLegacyRenderInteractive(int frames, const std::string& screenshotPath);
@@ -300,6 +350,11 @@ int App3D::run(int argc, char* argv[]) {
             std::cerr << "[APP3D] Reference merge validation requires app3d shell and report path.\n";
             return 2;
         }
+        if (config.quality != RcQualityProfile::Parity) {
+            std::cerr << "[APP3D] G6 validation is parity-only; refuse --rc-quality=high-c0.\n";
+            return 2;
+        }
+        setDefaultRcAtlasFilter(config.atlasFilter);
         return runReferenceMergeValidation(std::string(config.referenceMergeReport)) ? 0 : 1;
     }
 
@@ -308,7 +363,28 @@ int App3D::run(int argc, char* argv[]) {
             std::cerr << "[APP3D] Reference feedback validation requires app3d shell and report path.\n";
             return 2;
         }
+        if (config.quality != RcQualityProfile::Parity) {
+            std::cerr << "[APP3D] G7 validation is parity-only; refuse --rc-quality=high-c0.\n";
+            return 2;
+        }
+        setDefaultRcAtlasFilter(config.atlasFilter);
         return runReferenceFeedbackValidation(std::string(config.referenceFeedbackReport)) ? 0 : 1;
+    }
+
+    if (config.validateChartProvider) {
+        if (config.shell != RuntimeShell::App3D) {
+            std::cerr << "[APP3D] Chart-provider validation requires --runtime-shell=app3d.\n";
+            return 2;
+        }
+        if (config.chartProviderReport.empty()) {
+            std::cerr << "[APP3D] --chart-provider-report is required for validation.\n";
+            return 2;
+        }
+        const bool passed =
+            runChartProviderValidation(std::string(config.chartProviderReport));
+        std::cout << "[PHASE11-M1] chart provider report=" << config.chartProviderReport
+                  << " result=" << (passed ? "PASS" : "FAIL") << "\n";
+        return passed ? 0 : 1;
     }
 
     if (config.validateReferenceFinal) {
@@ -316,6 +392,11 @@ int App3D::run(int argc, char* argv[]) {
             std::cerr << "[APP3D] Reference final validation requires app3d shell and report path.\n";
             return 2;
         }
+        if (config.quality != RcQualityProfile::Parity) {
+            std::cerr << "[APP3D] G9 validation is parity-only; refuse --rc-quality=high-c0.\n";
+            return 2;
+        }
+        setDefaultRcAtlasFilter(config.atlasFilter);
         return runReferenceFinalValidation(std::string(config.referenceFinalReport)) ? 0 : 1;
     }
 
@@ -492,7 +573,9 @@ int App3D::run(int argc, char* argv[]) {
             return 2;
         }
         return runReferenceRenderInteractive(config.referenceRenderFrames,
-                                             std::string(config.referenceRenderShot));
+                                             std::string(config.referenceRenderShot),
+                                             config.atlasFilter, config.quality,
+                                             std::string(config.occupancyJson));
     }
 
     if (config.shell == RuntimeShell::Legacy) {
@@ -514,16 +597,22 @@ int App3D::run(int argc, char* argv[]) {
                   << "[APP3D]   --legacy-render=N [--legacy-render-shot=PATH]   --legacy-pt-shot=PATH\n"
                   << "[APP3D]   --validate-reference-{cornell-scene,layout,transport,merge,feedback,final,legacy}\n"
                   << "[APP3D]       with the matching --reference-*-report=PATH\n"
+                  << "[APP3D]   --validate-chart-provider --chart-provider-report=PATH\n"
+                  << "[APP3D]   --atlas-filter=linear|nearest   --rc-quality=parity|high-c0\n"
+                  << "[APP3D]   --occupancy-json=PATH\n"
                   << "[APP3D]   --debug-legacy-pixel=X,Y   --debug-legacy-c0=PATH\n";
         return 2;
     }
 
     // Default runtime: the reference surface-RC interactive view.
     std::cout << "[APP3D] backend=reference-surface-rc-default\n";
-    return runReferenceRenderInteractive(0, "");
+    return runReferenceRenderInteractive(0, "", config.atlasFilter, config.quality,
+                                         std::string(config.occupancyJson));
 }
 
-int runReferenceRenderInteractive(int frames, const std::string& screenshotPath) {
+int runReferenceRenderInteractive(int frames, const std::string& screenshotPath,
+                                  RcAtlasFilter atlasFilter, RcQualityProfile quality,
+                                  const std::string& occupancyJson) {
     constexpr int kViewWidth = 640;
     constexpr int kViewHeight = 480;
     SetConfigFlags(0);
@@ -540,12 +629,16 @@ int runReferenceRenderInteractive(int frames, const std::string& screenshotPath)
     }
     while (glGetError() != GL_NO_ERROR) {}
 
-    ReferenceRcPipeline pipeline;
+    setDefaultRcAtlasFilter(atlasFilter);
+    ReferenceRcPipeline pipeline(atlasFilter);
+    pipeline.setQualityProfile(quality);
     if (!pipeline.initialize()) {
         std::cerr << "[REFERENCE] pipeline init failed\n";
         CloseWindow();
         return 1;
     }
+    std::cout << "[REFERENCE] quality=" << rcQualityProfileName(quality)
+              << " atlas_filter=" << rcAtlasFilterName(atlasFilter) << "\n";
     // Display-only mapping for human viewing (validated pixels stay linear).
     pipeline.setDisplayMapping(8.0f, 1.0f / 2.2f);
 
@@ -578,7 +671,8 @@ int runReferenceRenderInteractive(int frames, const std::string& screenshotPath)
         BeginDrawing();
         ClearBackground(BLACK);
         DrawTexture(view, 0, 0, WHITE);
-        DrawText(TextFormat("Reference C0 view | frame %d | gen %llu | ESC quit | F12 shot",
+        DrawText(TextFormat("Reference C0 | %s | %s | frame %d | gen %llu | ESC quit | F12 shot",
+                            rcQualityProfileName(quality), rcAtlasFilterName(atlasFilter),
                             frame, (unsigned long long)pipeline.generation()),
                  8, 8, 10, LIME);
         EndDrawing();
@@ -652,6 +746,13 @@ int runReferenceRenderInteractive(int frames, const std::string& screenshotPath)
         else
             std::cerr << "[REFERENCE] screenshot write failed: "
                       << screenshotPath << "\n";
+    }
+
+    if (!occupancyJson.empty()) {
+        if (pipeline.writeOccupancyJson(occupancyJson))
+            std::cout << "[REFERENCE] occupancy=" << occupancyJson << "\n";
+        else
+            std::cerr << "[REFERENCE] occupancy write failed: " << occupancyJson << "\n";
     }
 
     glDeleteTextures(1, &target);
