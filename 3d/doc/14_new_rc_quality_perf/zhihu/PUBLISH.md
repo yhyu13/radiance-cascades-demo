@@ -18,11 +18,11 @@
 
 ## 配图上传顺序
 
-1. `images/01-two-paths.png` — 表面附着 vs 体网格，同名不是同一算法
-2. `images/02-three-layers.png` — 实现 / 近似 / 成本，红了停在本层
-3. `images/03-quality-knobs.png` — 空间与角度绑在同一幂次上
-4. `images/04-split-dispatch.png` — 空转是图集留白，按矩形少启动线程
-5. `images/05-roadmap.png` — 先能验收，再换真实网格
+1. `images/01-two-paths.png` — 探针长在墙上，还是铺在空里
+2. `images/02-three-layers.png` — 对 / 亮 / 快 三问
+3. `images/03-quality-knobs.png` — 切成 4 块 vs 16 块，小灯会不会撑满
+4. `images/04-split-dispatch.png` — 空白角落不必算
+5. `images/05-roadmap.png` — 先盒子对上，再换大厅
 
 正文里的本地图片路径粘贴后不会自动带上文件；在对应位置插入刚上传的图。
 
