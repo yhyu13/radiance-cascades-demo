@@ -70,6 +70,38 @@ def arrow(d, a, b, fill=ACCENT, w=4, head=14):
     d.polygon([b, p1, p2], fill=fill)
 
 
+def fan(d, cx, cy, n, length, spread=math.pi * 0.7, fill=GREEN, w=3):
+    a0 = -math.pi / 2 - spread / 2
+    for i in range(n):
+        a = a0 + spread * (i + 0.5) / n
+        arrow(d, (cx, cy), (cx + length * math.cos(a), cy + length * math.sin(a)),
+              fill=fill, w=w, head=9)
+    d.ellipse((cx - 8, cy - 8, cx + 8, cy + 8), fill=fill, outline=WALL)
+
+
+def fig0():
+    img, d = canvas()
+    t(d, (40, 28), "近处排得密，远处看得细", F_TITLE)
+    t(d, (40, 78), "总预算差不多。近处用「人多」换「每人只看几眼」；远处反过来。", F_P, MUTED)
+
+    box(d, (50, 140, 670, 700), fill=(236, 246, 236), outline=GREEN, width=3)
+    t(d, (360, 175), "近处", F_H, GREEN, "mt")
+    d.line([(120, 560), (600, 560)], fill=WALL, width=8)
+    for x in (160, 240, 320, 400, 480, 560):
+        fan(d, x, 552, 4, 95, fill=GREEN, w=3)
+    t(d, (360, 620), "探针多，每个只问四个方向", F_P, GREEN, "mt")
+    t(d, (360, 660), "管墙根那一米：接触阴影、颜色渗透", F_S, MUTED, "mt")
+
+    box(d, (730, 140, 1350, 700), fill=(236, 242, 250), outline=ACCENT, width=3)
+    t(d, (1040, 175), "远处", F_H, ACCENT, "mt")
+    d.line([(800, 560), (1280, 560)], fill=WALL, width=8)
+    for x in (920, 1160):
+        fan(d, x, 552, 12, 230, fill=ACCENT, w=2)
+    t(d, (1040, 620), "探针少，每个把天空切得很细", F_P, ACCENT, "mt")
+    t(d, (1040, 660), "管房间另一头过来的间接光", F_S, MUTED, "mt")
+    save(img, "00-cascades.png")
+
+
 def fig1():
     img, d = canvas()
     t(d, (40, 28), "探针放在墙上，还是放在空里？", F_TITLE)
@@ -222,6 +254,7 @@ def fig5():
 
 
 if __name__ == "__main__":
+    fig0()
     fig1()
     fig2()
     fig3()
