@@ -253,6 +253,84 @@ def fig5():
     save(img, "05-roadmap.png")
 
 
+def fig6_wrong():
+    img, d = canvas()
+    t(d, (40, 28), "对着路径追踪调到截图好看，是错路", F_TITLE)
+    t(d, (40, 78), "亮了不是对了。正路是先问实现有没有跑偏。", F_P, MUTED)
+
+    box(d, (50, 140, 670, 700), fill=(252, 236, 236), outline=RED, width=3)
+    t(d, (360, 180), "错路", F_H, RED, "mt")
+    for i, line in enumerate([
+        "图暗了 → 实现写错了",
+        "图亮了 → 终于对了",
+        "还有误差 → 乘个系数",
+        "截图好看 → 过关",
+    ]):
+        t(d, (360, 270 + i * 80), line, F_P, INK, "mt")
+    t(d, (360, 630), "不是：拿观感当正确", F_H, RED, "mt")
+
+    box(d, (730, 140, 1350, 700), fill=(236, 246, 236), outline=GREEN, width=3)
+    t(d, (1040, 180), "正路", F_H, GREEN, "mt")
+    for i, line in enumerate([
+        "先问：实现有没有跑偏",
+        "再问：亮得合不合理",
+        "最后问：跑不跑得起",
+        "前一问没过，后一问不算",
+    ]):
+        t(d, (1040, 270 + i * 80), line, F_P, INK, "mt")
+    t(d, (1040, 630), "是：三问分开，红了停在本层", F_H, GREEN, "mt")
+    save(img, "06-wrong-path.png")
+
+
+def fig7_thread():
+    img, d = canvas()
+    t(d, (40, 28), "判断按这条链往下走", F_TITLE)
+    t(d, (40, 78), "上一步如果拿观感当正确，后面再漂亮也会裂。", F_P, MUTED)
+
+    steps = [
+        (GREEN, "是什么", "近密远疏的探针"),
+        (ACCENT, "对不对", "实现有没有跑偏"),
+        (AMBER, "亮不亮", "切几块，不乘系数"),
+        (MUTED, "快不快", "空白不必算"),
+        (WALL, "下一步", "盒子对上再换大厅"),
+    ]
+    n = len(steps)
+    for i, (color, title, body) in enumerate(steps):
+        x = 40 + i * 272
+        box(d, (x, 200, x + 250, 480), outline=color, width=3)
+        t(d, (x + 125, 250), str(i + 1), F_TITLE, color, "mt")
+        t(d, (x + 125, 330), title, F_H, color, "mt")
+        t(d, (x + 125, 400), body, F_P, INK, "mt")
+        if i < n - 1:
+            d.polygon([(x + 258, 330), (x + 270, 340), (x + 258, 350)], fill=WALL)
+
+    t(d, (700, 580), "不是：对着路径追踪拧系数，直到截图好看", F_H, RED, "mt")
+    t(d, (700, 660), "也不是：拿空里那条老路径的毫秒数，指导墙上这条", F_P, MUTED, "mt")
+    save(img, "07-thread.png")
+
+
+def fig8_takeaway():
+    img, d = canvas()
+    t(d, (40, 28), "能抄走的是这三刀，不是文件名", F_TITLE)
+    t(d, (40, 78), "树叶会改名。切割如果错了，下一轮调参仍会在同一处裂开。", F_P, MUTED)
+
+    items = [
+        (GREEN, "对", "实现没跑偏", "图好看"),
+        (ACCENT, "亮", "亮一成是切得太粗", "乘系数"),
+        (AMBER, "快", "空白不必算", "报快了几倍"),
+        (MUTED, "下一步", "盒子对上再换大厅", "用盒子冒充大厅"),
+    ]
+    for i, (color, k, yes, no) in enumerate(items):
+        col, row = i % 2, i // 2
+        x = 70 + col * 660
+        y = 150 + row * 290
+        box(d, (x, y, x + 620, y + 250), outline=color, width=3)
+        t(d, (x + 40, y + 40), k, F_TITLE, color)
+        t(d, (x + 40, y + 120), "是  " + yes, F_H, GREEN)
+        t(d, (x + 40, y + 180), "不是  " + no, F_H, RED)
+    save(img, "08-takeaway.png")
+
+
 if __name__ == "__main__":
     fig0()
     fig1()
@@ -260,3 +338,6 @@ if __name__ == "__main__":
     fig3()
     fig4()
     fig5()
+    fig6_wrong()
+    fig7_thread()
+    fig8_takeaway()
