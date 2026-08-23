@@ -366,6 +366,27 @@ def fig9_tree():
     save(img, "09-tree.png")
 
 
+def fig10_same_cut():
+    img, d = canvas()
+    t(d, (40, 28), "同一刀：完成听现场，不听口头", F_TITLE)
+    t(d, (40, 78), "调全局光照和带 Agent 跑长任务，验收标准是同一件事。", F_P, MUTED)
+
+    box(d, (50, 150, 670, 680), fill=(236, 246, 236), outline=GREEN, width=3)
+    t(d, (360, 190), "全局光照", F_H, GREEN, "mt")
+    t(d, (360, 280), "是：和参考做法对得上", F_P, INK, "mt")
+    t(d, (360, 360), "是：亮一成要换档", F_P, INK, "mt")
+    t(d, (360, 440), "是：空白不必算，有数字", F_P, INK, "mt")
+    t(d, (360, 560), "不是：截图好看就算完", F_H, RED, "mt")
+
+    box(d, (730, 150, 1350, 680), fill=(236, 242, 250), outline=ACCENT, width=3)
+    t(d, (1040, 190), "带 Agent 跑长任务", F_H, ACCENT, "mt")
+    t(d, (1040, 280), "是：完整目标不能改小", F_P, INK, "mt")
+    t(d, (1040, 360), "是：完成要核对现场", F_P, INK, "mt")
+    t(d, (1040, 440), "是：卡住要反复出现才认", F_P, INK, "mt")
+    t(d, (1040, 560), "不是：模型说做完了就算完", F_H, RED, "mt")
+    save(img, "10-same-cut.png")
+
+
 if __name__ == "__main__":
     fig0()
     fig1()
@@ -377,3 +398,4 @@ if __name__ == "__main__":
     fig7_thread()
     fig8_takeaway()
     fig9_tree()
+    fig10_same_cut()

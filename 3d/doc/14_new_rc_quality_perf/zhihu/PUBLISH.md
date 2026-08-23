@@ -20,7 +20,8 @@
 6. `images/03-quality-knobs.png` — 切成 4 块 vs 16 块
 7. `images/04-split-dispatch.png` — 空白角落不必算
 8. `images/05-roadmap.png` — 先盒子对上，再换大厅
-9. `images/08-takeaway.png` — 收获：是什么 / 不是什么
+9. `images/10-same-cut.png` — 同一刀：完成听现场，不听口头
+10. `images/08-takeaway.png` — 收获：是什么 / 不是什么
 
 `01-two-paths.png` 仍在目录里，正文不用。
 
